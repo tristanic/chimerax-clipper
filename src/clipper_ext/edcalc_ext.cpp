@@ -23,6 +23,18 @@ namespace clipper_cx
 template <class T>
 bool EDcalc_mask_vdw<T>::operator() (Xmap<T>& xmap, const Atom_list& atoms ) const
 {
+    bool result;
+    if (n_threads_ > 1)
+        result = edcalc_threaded_(xmap, atoms);
+    else
+        result = edcalc_single_thread_(xmap, atoms);
+    return result;
+}
+
+
+template <class T>
+bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& atoms ) const
+{
     T zero = 0.0;
     xmap = zero; // Set all values to zero
     const Cell& cell = xmap.cell();
@@ -89,6 +101,111 @@ bool EDcalc_mask_vdw<T>::operator() (Xmap<T>& xmap, const Atom_list& atoms ) con
 }
 
 
+
+template <class T>
+bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms ) const
+{
+    // Note: thread-safety interlocks are *not* required here, since we never
+    // read from and write to the same map within any thread.
+    T zero = 0.0;
+    xmap = zero; // Set all values to zero
+    const Cell& cell = xmap.cell();
+    const Grid_sampling& grid = xmap.grid_sampling();
+
+    // Step 1: set all grid points within (atom radius + probe radius) to 1.
+    std::vector<std::future<void>> thread_results;
+    size_t atoms_per_thread = atoms.size() / n_threads_ + 1;
+    size_t start=0, end;
+    Grid_range gd(cell, grid, grid_radius_);
+    for (size_t i=0; i< n_threads_; ++i)
+    {
+        end = std::min(start+atoms_per_thread, atoms.size());
+        thread_results.push_back(std::async(std::launch::async,
+            [gd](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
+            {
+                Coord_orth xyz;
+                Coord_grid cg, g0, g1;
+                typename Xmap<T>::Map_reference_coord i0, iu, iv, iw;
+                for (size_t j=start; j<end; ++j)
+                {
+                    const auto& a = atoms[j];
+                    if (a.is_null()) continue;
+                    const auto& atom_radius = clipper_cx::data::vdw_radii.at(a.element().c_str());
+                    xyz = a.coord_orth();
+                    cg = xmap.coord_map(xyz).coord_grid();
+                    g0 = cg + gd.min();
+                    g1 = cg + gd.max();
+                    i0 = typename Xmap<T>::Map_reference_coord( xmap, g0 );
+                    for (iu=i0; iu.coord().u() < g1.u(); iu.next_u() ) {
+                        for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() ) {
+                            for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
+                                if ( (xyz-iw.coord_orth()).lengthsq() < pow(atom_radius+probe_radius, 2) )
+                                    xmap[iw] = 1.0;
+                            }
+                        }
+                    }
+                }
+            },
+            std::ref(xmap), std::cref(atoms), probe_radius_, start, end
+        ));
+        start += atoms_per_thread;
+    }
+    for (auto& r: thread_results)
+        r.get();
+
+    // Step 2: "shrink-wrap" the solvent mask back to the model atoms. For every
+    // grid point with a non-zero value, check if it is within shrink_radius_ of
+    // a grid point with a value of zero. If so, set its value to zero.
+
+    thread_results.clear();
+    gd = Grid_range(cell, grid, shrink_radius_);
+    Xmap<T> unshrunk(xmap);
+
+    size_t points_per_thread = (size_t)unshrunk.unique_points() / n_threads_ + 1;
+    start = 0;
+    for (size_t i=0; i<n_threads_; ++i)
+    {
+        thread_results.push_back(std::async(std::launch::async,
+            [start, points_per_thread, gd, zero](const Xmap<T>& unshrunk, Xmap<T>& xmap, const ftype& shrink_radius)
+            {
+                auto ix = typename Xmap<T>::Map_reference_index(unshrunk, (int)start);
+                typename Xmap<T>::Map_reference_coord iu, iv, iw;
+                Coord_orth xyz;
+                Coord_grid cg, g0, g1;
+                typename Xmap<T>::Map_reference_coord i0;
+                for (size_t j=0; j<points_per_thread && !ix.last(); ix.next(), ++j)
+                {
+                    if (unshrunk[ix] == zero)
+                        continue;
+                    xyz = ix.coord_orth();
+                    cg = xmap.coord_map(xyz).coord_grid();
+                    g0 = cg+gd.min();
+                    g1 = cg+gd.max();
+                    i0 = typename Xmap<T>::Map_reference_coord(xmap, g0);
+                    for (iu=i0; iu.coord().u() < g1.u(); iu.next_u() ) {
+                        for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() ) {
+                            for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
+                                if (unshrunk[iw] == zero) {
+                                    if ((xyz-iw.coord_orth()).lengthsq() < pow(shrink_radius, 2) ) {
+                                        xmap[iw] = zero;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            std::cref(unshrunk), std::ref(xmap), shrink_radius_
+        ));
+        start += points_per_thread;
+    }
+    for (auto& r: thread_results)
+        r.get();
+
+    return true;
+}
+
+
 template<class T>
 bool EDcalc_mask_vdw<T>::operator() (NXmap<T>& nxmap, const Atom_list& atoms) const
 {
@@ -99,7 +216,6 @@ bool EDcalc_mask_vdw<T>::operator() (NXmap<T>& nxmap, const Atom_list& atoms) co
 template<class T>
 bool EDcalc_aniso_thread<T>::operator() (Xmap<T>& xmap, const Atom_list& atoms) const
 {
-    auto start_time = std::chrono::steady_clock::now();
     xmap = 0.0;
     std::vector<std::future<bool>> results(n_threads_);
     size_t atoms_per_thread = atoms.size() / n_threads_;
@@ -122,9 +238,6 @@ bool EDcalc_aniso_thread<T>::operator() (Xmap<T>& xmap, const Atom_list& atoms) 
     for (const auto& spos: xmap.special_positions()) {
         xmap.set_data(spos.first, spos.second*xmap.get_data(spos.first));
     }
-    auto end_time = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed = end_time-start_time;
-    std::cout << "EDcalc with " << n_threads_ << " threads took " << elapsed.count() << " seconds." << std::endl;
     return true;
 }
 

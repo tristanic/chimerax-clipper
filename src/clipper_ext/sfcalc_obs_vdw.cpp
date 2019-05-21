@@ -3,7 +3,7 @@
  * @Date:   05-Feb-2019
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 16-May-2019
+ * @Last modified time: 21-May-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -70,7 +70,8 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   // do density calc from mask
 
   // start = std::chrono::steady_clock  ::now();
-  EDcalc_mask_vdw<ftype32> emcalc;
+  auto emcalc = EDcalc_mask_vdw<ftype32>();
+  emcalc.set_num_threads(nthreads);
   emcalc( xmap, atomu );
   for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
         !ix.last(); ix.next() )

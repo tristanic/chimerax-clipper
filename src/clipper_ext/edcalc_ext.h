@@ -30,16 +30,24 @@ class EDcalc_mask_vdw: public EDcalc_base<T>
 {
 public:
     // In my empirical tests, these slightly smaller probe/shrink radii seem better than the published ones
-    EDcalc_mask_vdw( const ftype grid_radius = 3.0, const ftype probe_radius = 0.6, const ftype shrink_radius = 0.7)
-        : grid_radius_(grid_radius), probe_radius_(probe_radius), shrink_radius_(shrink_radius)
+    EDcalc_mask_vdw( const ftype grid_radius = 3.0,
+                     const ftype probe_radius = 0.6,
+                     const ftype shrink_radius = 0.7,
+                     const size_t n_threads = 1)
+        : grid_radius_(grid_radius), probe_radius_(probe_radius),
+          shrink_radius_(shrink_radius), n_threads_(n_threads)
     {}
     bool operator() (Xmap<T>& xmap, const Atom_list& atoms) const;
     bool operator() (NXmap<T>& nxmap, const Atom_list& atoms) const;
+    void set_num_threads(size_t n) { n_threads_ = n; }
 
 private:
+    bool edcalc_single_thread_(Xmap<T>& xmap, const Atom_list& atoms) const;
+    bool edcalc_threaded_(Xmap<T>& xmap, const Atom_list& atoms) const;
     const ftype grid_radius_;
     const ftype probe_radius_;
     const ftype shrink_radius_;
+    size_t n_threads_;
 }; // class EDcalc_mask_vdw
 
 template<class T> class EDcalc_aniso_thread : public EDcalc_base<T> {

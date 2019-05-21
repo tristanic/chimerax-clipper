@@ -183,6 +183,9 @@ private:
     int multiplicity( const int& index ) const;
 
     const std::map<int, int>& special_positions() const { return cacheref.data().spos; }
+
+    inline const int& unique_points() const { return cacheref.data().num_unique; }
+    
     //! Map reference base class
     /*! This is a reference to an Map. It forms a base class for
       index-like and coordinate-like Map references. If you write a
