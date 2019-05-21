@@ -9,6 +9,13 @@ __pycache__/
 
 
 # C extensions
+*.dylib
+*.dll
+*.obj
+*.exp
+*.lib
+*.o
+*.o.d
 *.so
 *.so.*
 # Precompiled MKL libraries
