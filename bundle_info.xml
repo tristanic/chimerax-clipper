@@ -3,7 +3,7 @@
 @Date:   26-Feb-2018
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 15-May-2019
+@Last modified time: 22-May-2019
 @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 @Copyright: Copyright 2017-2018 Tristan Croll
 -->
@@ -29,6 +29,23 @@
   <Categories>
     <Category name="General"/>
   </Categories>
+
+  <CModule name="_map_mask" usesNumpy="true">
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <IncludeDir platform="windows">C:\include</IncludeDir>
+
+      <SourceFile>src/maps/_maps/mask.cpp</SourceFile>
+  </CModule>
+
 
   <CModule name="contour_thread" usesNumpy="true">
       <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>

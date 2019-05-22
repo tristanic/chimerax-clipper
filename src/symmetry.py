@@ -2,7 +2,7 @@
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 08-May-2019
+# @Last modified time: 22-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -702,6 +702,7 @@ class Symmetry_Manager(Model):
         self.spotlight_mode = False
         original_atoms = self.last_covered_selection = atoms
         atoms = original_atoms.unique_residues.atoms
+        atoms = atoms[atoms.element_names != 'H']
         asm = self.atomic_symmetry_model
         asm.show_selection_in_context(atoms,
             include_surrounding_residues=include_surrounding_residues,
