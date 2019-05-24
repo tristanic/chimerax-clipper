@@ -2,7 +2,7 @@
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 22-May-2019
+# @Last modified time: 24-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -399,8 +399,8 @@ class Symmetry_Manager(Model):
         self._stepper = None
         self._last_covered_selection = None
 
-        from chimerax.core.triggerset import TriggerSet
-        trig = self.triggers = TriggerSet()
+        # from chimerax.core.triggerset import TriggerSet
+        # trig = self.triggers = TriggerSet()
 
         trigger_names = (
             # Fires when Symmetry_Manager is in spotlight mode and the centre of
@@ -421,7 +421,7 @@ class Symmetry_Manager(Model):
             'backbone mode changed', # Changed backbone mode from ribbon to CA trace or vice versa
         )
         for t in trigger_names:
-            trig.add_trigger(t)
+            self.triggers.add_trigger(t)
 
         if ignore_model_symmetry:
             f = simple_p1_box

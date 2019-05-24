@@ -1,3 +1,13 @@
+# @Author: Tristan Croll <tic20>
+# @Date:   22-May-2019
+# @Email:  tic20@cam.ac.uk
+# @Last modified by:   tic20
+# @Last modified time: 24-May-2019
+# @License: Free for non-commercial use (see license.pdf)
+# @Copyright: 2017-2018 Tristan Croll
+
+
+
 from chimerax.core.models import Model
 
 class Surface_Zone:
@@ -5,7 +15,7 @@ class Surface_Zone:
     Add this as a property to a Volume object to provide it with the
     necessary information to update its triangle mask after re-contouring.
     '''
-    def __init__(self, distance, atoms = None, coords = None):
+    def __init__(self, session, distance, atoms = None, coords = None):
         '''
         Args:
           distance (float in Angstroms):
@@ -18,12 +28,14 @@ class Surface_Zone:
 
           Set both atoms and coords to None to disable automatic re-masking.
         '''
+        self.session = session
         self.update(distance, atoms, coords)
 
     def update(self, distance, atoms = None, coords = None):
         self.distance = distance
         self.atoms = atoms
         self.coords = coords
+
 
     @property
     def all_coords(self):
@@ -34,12 +46,15 @@ class Surface_Zone:
             return self.atoms.coords
         return self.coords
 
-def surface_zones(models, points, distance):
-    from chimerax.surface import zone
-    for m in models:
-        for s in m.surfaces:
-            spoints = s.position.inverse(is_orthonormal=True) * points
-            zone.surface_zone(s, spoints, distance, auto_update=True)
+
+
+
+
+    # from chimerax.surface import zone
+    # for m in models:
+    #     for s in m.surfaces:
+    #         spoints = s.position.inverse(is_orthonormal=True) * points
+    #         zone.surface_zone(s, spoints, distance, auto_update=True)
 
 
 class Map_Mgr(Model):
@@ -53,8 +68,10 @@ class Map_Mgr(Model):
         self._static_xmapsets = []
         self._nxmapsets = []
 
-        from chimerax.core.triggerset import TriggerSet
-        trig = self._triggers = TriggerSet()
+        self._zone_mgr = None
+
+        # from chimerax.core.triggerset import TriggerSet
+        # trig = self._triggers = TriggerSet()
 
         trigger_names = (
             # Deprecated
@@ -68,20 +85,20 @@ class Map_Mgr(Model):
             'spotlight moved',    # Just changed the centre of the box
         )
         for t in trigger_names:
-            trig.add_trigger(t)
+            self.triggers.add_trigger(t)
 
         # Handler for live box update
         self._box_update_handler = None
-        # Object storing the parameters required for masking (used after
-        # adjusting contours)
-        self._surface_zone = Surface_Zone(spotlight_radius, None, None)
-        # Is the map box moving with the centre of rotation?
 
+        # Is the map box moving with the centre of rotation?
         self._spotlight_center = None
+
+        self._initialize_zone_mgr()
 
         # Radius of the sphere in which the map will be displayed when
         # in live-scrolling mode
         self.spotlight_radius = spotlight_radius
+
 
         if self.spotlight_mode:
             self._start_spotlight_mode()
@@ -97,6 +114,15 @@ class Map_Mgr(Model):
 
         self.session.triggers.add_handler('frame drawn', self._first_init_cb)
         cm.add([self])
+
+    def _initialize_zone_mgr(self):
+        if self._zone_mgr is None:
+            from .mask_handler import Zone_Mgr
+            coords = [self.spotlight_center]
+            self._zone_mgr = Zone_Mgr(self.session, 1,
+                5)
+
+
 
     @property
     def xmapsets(self):
@@ -135,6 +161,10 @@ class Map_Mgr(Model):
         return [m for m in self.all_models() if isinstance(m, Volume)]
 
     @property
+    def all_surfaces(self):
+        return [s for m in self.all_maps for s in m.surfaces]
+
+    @property
     def crystal_mgr(self):
         return self._mgr
 
@@ -146,9 +176,9 @@ class Map_Mgr(Model):
     def structure(self):
         return self.crystal_mgr.structure
 
-    @property
-    def triggers(self):
-        return self._triggers
+    # @property
+    # def triggers(self):
+    #     return self._triggers
 
     @property
     def spacegroup(self):
@@ -171,7 +201,9 @@ class Map_Mgr(Model):
         self.triggers.activate_trigger('spotlight changed',
             (center, radius)
         )
-        self._surface_zone.update(radius, coords = numpy.array([center]))
+        # self._surface_zone.update(radius, coords = numpy.array([center]))
+        self._zone_mgr.radius = radius
+        self._zone_mgr.pad = radius
         self._reapply_zone()
 
     @property
@@ -213,10 +245,11 @@ class Map_Mgr(Model):
 
     @display.setter
     def display(self, switch):
+        Model.display.fset(self, switch)
         if switch:
             if self.spotlight_mode:
                 self._start_spotlight_mode()
-        Model.display.fset(self, switch)
+            self._reapply_zone()
 
     def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=1.5):
         from ..clipper_mtz import ReflectionDataContainer
@@ -252,6 +285,9 @@ class Map_Mgr(Model):
             self._stop_spotlight_mode()
 
     def _start_spotlight_mode(self):
+        zm = self._zone_mgr
+        zm.radius = zm.pad = self.spotlight_radius
+        # zm.coords = [self.spotlight_center]
         self.triggers.activate_trigger('spotlight changed',
             (self.spotlight_center, self.spotlight_radius)
         )
@@ -261,6 +297,7 @@ class Map_Mgr(Model):
             self.update_spotlight(None, self.spotlight_center)
         from chimerax.core.geometry import Places
         self.positions = Places()
+        self._reapply_zone()
 
     def _stop_spotlight_mode(self):
         if self._box_update_handler is not None:
@@ -278,14 +315,33 @@ class Map_Mgr(Model):
         self.triggers.activate_trigger('map box changed',
             (center, xyz_min, xyz_max))
 
-    def cover_coords(self, coords, mask_radius=3, extra_padding=0):
+    def cover_atoms(self, atoms, mask_radius=3, extra_padding=12):
+        '''
+        Expand all maps to a region large enough to cover the atoms, plus
+        mask_radius+extra_padding in every direction. Unlike cover_coords(),
+        the mask will be periodically updated in response to atom movements.
+        '''
+        self.triggers.activate_trigger('cover coords',
+            (atoms.coords, mask_radius+extra_padding))
+        zm = self._zone_mgr
+        zm.atoms = atoms
+        zm.radius = mask_radius
+        zm.pad = extra_padding
+        self._reapply_zone()
+
+
+    def cover_coords(self, coords, mask_radius=3, extra_padding=3):
         '''
         Expand all maps to a region large enough to cover the coords, plus
         mask_radius+extra_padding in every direction.
         '''
         self.triggers.activate_trigger('cover coords',
             (coords, mask_radius+extra_padding))
-        self._surface_zone.update(mask_radius, coords=coords)
+        zm = self._zone_mgr
+        zm.coords = coords
+        zm.radius = mask_radius
+        zm.pad = extra_padding
+        # self._surface_zone.update(mask_radius, coords=coords)
         self._reapply_zone()
 
     def update_spotlight(self, trigger_name, new_center):
@@ -299,7 +355,9 @@ class Map_Mgr(Model):
             import numpy
             self.triggers.activate_trigger('spotlight moved',
                 new_center)
-            self._surface_zone.update(self.spotlight_radius, coords = numpy.array([new_center]))
+            zm = self._zone_mgr
+            zm.coords = numpy.array([new_center])
+            # self._surface_zone.update(self.spotlight_radius, coords = numpy.array([new_center]))
             self._reapply_zone()
 
     def rezone_needed(self):
@@ -311,6 +369,7 @@ class Map_Mgr(Model):
 
     def _first_init_cb(self, *_):
         self.display = True
+        self.update_spotlight(_, self.spotlight_center)
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
@@ -326,10 +385,13 @@ class Map_Mgr(Model):
         Reapply any surface zone applied to the volume after changing box
         position.
         '''
-        coords = self._surface_zone.all_coords
-        radius = self._surface_zone.distance
-        if coords is not None:
-            surface_zones(self.all_maps, coords, radius)
+        from .mask_handler import ZoneMask
+        for s in self.all_surfaces:
+            asm = s.auto_remask_triangles
+            if asm is None:
+                ZoneMask(s, self._zone_mgr, None)
+            else:
+                asm()
 
     def delete(self):
         self._stop_spotlight_mode()

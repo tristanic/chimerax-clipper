@@ -2,7 +2,7 @@
 # @Date:   06-Mar-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 13-May-2019
+# @Last modified time: 24-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -140,7 +140,7 @@ class XmapSet(MapSet_Base):
             'maps recalculated',
         )
         for t in trigger_names:
-            self._triggers.add_trigger(t)
+            self.triggers.add_trigger(t)
 
         self._crystal_data = crystal_data
 

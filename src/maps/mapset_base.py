@@ -1,3 +1,13 @@
+# @Author: Tristan Croll <tic20>
+# @Date:   21-May-2019
+# @Email:  tic20@cam.ac.uk
+# @Last modified by:   tic20
+# @Last modified time: 24-May-2019
+# @License: Free for non-commercial use (see license.pdf)
+# @Copyright: 2017-2018 Tristan Croll
+
+
+
 import numpy
 from chimerax.core.models import Model
 
@@ -22,15 +32,15 @@ class MapSet_Base(Model):
         super().__init__(name, manager.session)
         self._mgr = manager
 
-        from chimerax.core.triggerset import TriggerSet
-        trig = self._triggers = TriggerSet()
+        # from chimerax.core.triggerset import TriggerSet
+        # trig = self._triggers = TriggerSet()
 
         trigger_names = (
             'map box changed',
             'map box moved',
         )
         for t in trigger_names:
-            trig.add_trigger(t)
+            self.triggers.add_trigger(t)
 
         mh = self._mgr_handlers = []
         mh.append((manager,
@@ -43,9 +53,9 @@ class MapSet_Base(Model):
             manager.triggers.add_handler('cover coords',
                 self._cover_coords_cb)))
 
-    @property
-    def triggers(self):
-        return self._triggers
+    # @property
+    # def triggers(self):
+    #     return self._triggers
 
     @property
     def master_map_mgr(self):
