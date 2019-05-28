@@ -2,7 +2,7 @@
 # @Date:   22-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 24-May-2019
+# @Last modified time: 28-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -96,8 +96,10 @@ class Zone_Mgr:
         return self._mask
 
     def _update_mask(self):
+        update_origin = (len(self.coords) == 1)
         self.mask.generate_mask(self.coords, self.radius,
-        reuse_existing=not self._resize_box, step=self.grid_step, pad=self.pad)
+            reuse_existing=not self._resize_box, update_origin=update_origin,
+            step=self.grid_step, pad=self.pad)
         self._update_needed = False
         self._resize_box = False
 
@@ -139,17 +141,19 @@ class VolumeMask(Volume):
         darray = ArrayGridData(data.transpose(), origin=mincoor, step=step)
         return darray
 
-    def generate_mask(self, coords, radius, clear=True, reuse_existing=True, step=None, pad=0):
+    def generate_mask(self, coords, radius, clear=True, reuse_existing=True, update_origin=False, step=None, pad=0):
         from chimerax.clipper import _map_mask
         if step is None:
             step = self.data.step
         if not reuse_existing:
             clear=False
             self.replace_data(self._generate_data_array(coords, step, radius, pad=pad))
+        elif update_origin:
+            self.data.set_origin(coords.min(axis=0)-radius-pad)
         if clear:
             self.clear()
         origin, step = self.data_origin_and_step()
-        _map_mask.generate_mask(self._data_fill_target, self.data.origin, step,
+        _map_mask.generate_mask(self._data_fill_target, origin, step,
             self._data_fill_target.shape, self.data.ijk_to_xyz_transform.matrix,
             self.data.xyz_to_ijk_transform.matrix, coords, len(coords), radius)
         self.data.values_changed()
