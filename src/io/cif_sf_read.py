@@ -1,3 +1,12 @@
+# @Author: Tristan Croll <tic20>
+# @Date:   21-May-2019
+# @Email:  tic20@cam.ac.uk
+# @Last modified by:   tic20
+# @Last modified time: 28-May-2019
+# @License: Free for non-commercial use (see license.pdf)
+# @Copyright: 2017-2018 Tristan Croll
+
+
 
 _cif_sf_table_names = (
     'audit',                        # General information about file
@@ -135,13 +144,25 @@ def load_cif_sf(filename):
     hkl_info = HKL_info(spacegroup, cell, resolution, True)
 
     # OK, now we have all our vital information. Time to find all the data
-    data = _parse_status(refln_table, hkl_info, cell, hkls)
+    data = _parse_status(refln_table, hkl_info, hkls)
+    exp_names = []
+    exp_data = []
+    calc_names = []
+    calc_data = []
     for column_names, type_spec in _data_columns_to_data_types.items():
-        result = _cif_columns_to_clipper(refln_table, hkl_info, cell, hkls, column_names, type_spec)
+        result = _cif_columns_to_clipper(refln_table, hkl_info, hkls, column_names, type_spec)
         if result is not None:
-            data[column_names] = result
+            if isinstance(result, HKL_data_F_phi):
+                calc_names.append(', '.join(column_names))
+                calc_data.append(result)
+            else:
+                exp_names.append(', '.join(column_names))
+                exp_data.append(result)
+            # data[column_names] = result
 
-    return cell, spacegroup, resolution, hkl_info, data
+    return hkl_info, ('Free flags', data['Free set']), (exp_names, exp_data), (calc_names, calc_data)
+
+    # return cell, spacegroup, resolution, hkl_info, data
 
 
 def _get_miller_indices(table):
@@ -151,7 +172,7 @@ def _get_miller_indices(table):
                         dtype=numpy.int32)
     return hkls
 
-def _cif_columns_to_clipper(table, hkl_info, cell, hkls, field_names, type_spec):
+def _cif_columns_to_clipper(table, hkl_info, hkls, field_names, type_spec):
     import numpy
     for field in field_names:
         if not table.has_field(field):
@@ -174,7 +195,7 @@ def _cif_columns_to_clipper(table, hkl_info, cell, hkls, field_names, type_spec)
         padded_data[:,:4] = data
         padded_data[:,4] = 0
         data = padded_data
-    clipper_data = array_type(hkl_info, cell)
+    clipper_data = array_type(hkl_info)
     try:
         clipper_data.set_data(hkls, data)
     except RuntimeError as e:
@@ -196,7 +217,7 @@ _refln_status_flags = {
 
 
 
-def _parse_status(table, hkl_info, cell, hkls):
+def _parse_status(table, hkl_info, hkls):
     import numpy
     status = table.fields(('status',))
     n = len(hkls)
@@ -215,9 +236,9 @@ def _parse_status(table, hkl_info, cell, hkls):
             free[i] = 1
         elif s == 'x':
             unreliable[i] = 1
-    c_free = HKL_data_Flag(hkl_info, cell)
-    c_unreliable = HKL_data_Flag_bool(hkl_info, cell)
-    c_systematic_absences = HKL_data_Flag_bool(hkl_info, cell)
+    c_free = HKL_data_Flag(hkl_info)
+    c_unreliable = HKL_data_Flag_bool(hkl_info)
+    c_systematic_absences = HKL_data_Flag_bool(hkl_info)
     c_free.set_data(hkls, free)
     c_unreliable.set_data(hkls, unreliable)
     c_systematic_absences.set_data(hkls, systematic_absences)

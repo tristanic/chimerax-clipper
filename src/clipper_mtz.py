@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-Apr-2018
+# @Last modified time: 28-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -315,122 +315,130 @@ def load_hkl_data(session, filename, free_flag_label = None):
         return
 
     if extension == '.mtz':
-        from . import CCP4MTZfile, HKL_info
-        mtzin = CCP4MTZfile()
-        hkl = HKL_info()
-        mtzin.open_read(filename)
-        mtzin.import_hkl_info(hkl)
-        # Get all the column names and types
-        column_labels = mtzin.column_paths
-        # Sort the columns into groups, and organise into a temporary tree
-        from .data_tree import DataTree
-        temp_tree = DataTree()['Experiment']
-        i = 0
-        for l in column_labels:
-            thisname, thistype = l.__str__().split(' ')
-            crystal, dataset, name = thisname.split('/')[1:]
-            # The h, k, l indices are already captured in self.hklinfo
-            if thistype != 'H':
-                temp_tree[crystal][dataset][thistype][name] = i
-                i += 1
+        return load_mtz_data(session, hklfile, free_flag_label = free_flag_label)
 
-        # FIXME: will need checking here to see if the crystal name already
-        # exists, and offer options to replace, rename or append
-
-        # FIXME: ultimately we want to be able to handle any legal MTZ file,
-        #        but for now we'll balk if we find more than one crystal
-        if len(temp_tree.keys()) != 1:
-            errstring =\
-            '''
-            At present ChimeraX-Clipper cannot handle MTZ files containing
-            data from more than one crystal. We hope to fix this in a future
-            release, but for now you can split your MTZ file using tools
-            available in the Phenix or CCP4 suites. Note that you *can*
-            load multiple MTZ files into the one Clipper_MTZ datastructure
-            if you wish, using repeat calls to load_hkl_data. However, they
-            will all be treated as having the same unit cell parameters. If
-            in doubt, create a new Xtal_Project object for each file.
-            '''
-            raise RuntimeError(errstring)
-
-        # Find experimental data sets
-        experimental_sets = []
-        experimental_set_names = []
+    else:
+        from .io.cif_sf_read import load_cif_sf
+        return load_cif_sf(hklfile)
 
 
-        # Find I/sigI pairs and pull them in as
-        # Clipper HKL_data_I_sigI objects
-        from . import HKL_data_I_sigI
-        from . import HKL_data_F_sigF
-        from . import HKL_data_F_phi
-        isigi, isigi_names = find_data_pairs(
-            mtzin, temp_tree, 'J', 'Q', HKL_data_I_sigI)
-        experimental_sets.extend(isigi)
-        experimental_set_names.extend(isigi_names)
+def load_mtz_data(session, filename, free_flag_label = None):
+    from . import CCP4MTZfile, HKL_info
+    mtzin = CCP4MTZfile()
+    hkl = HKL_info()
+    mtzin.open_read(filename)
+    mtzin.import_hkl_info(hkl)
+    # Get all the column names and types
+    column_labels = mtzin.column_paths
+    # Sort the columns into groups, and organise into a temporary tree
+    from .data_tree import DataTree
+    temp_tree = DataTree()['Experiment']
+    i = 0
+    for l in column_labels:
+        thisname, thistype = l.__str__().split(' ')
+        crystal, dataset, name = thisname.split('/')[1:]
+        # The h, k, l indices are already captured in self.hklinfo
+        if thistype != 'H':
+            temp_tree[crystal][dataset][thistype][name] = i
+            i += 1
+
+    # FIXME: will need checking here to see if the crystal name already
+    # exists, and offer options to replace, rename or append
+
+    # FIXME: ultimately we want to be able to handle any legal MTZ file,
+    #        but for now we'll balk if we find more than one crystal
+    if len(temp_tree.keys()) != 1:
+        errstring =\
+        '''
+        At present ChimeraX-Clipper cannot handle MTZ files containing
+        data from more than one crystal. We hope to fix this in a future
+        release, but for now you can split your MTZ file using tools
+        available in the Phenix or CCP4 suites. Note that you *can*
+        load multiple MTZ files into the one Clipper_MTZ datastructure
+        if you wish, using repeat calls to load_hkl_data. However, they
+        will all be treated as having the same unit cell parameters. If
+        in doubt, create a new Xtal_Project object for each file.
+        '''
+        raise RuntimeError(errstring)
+
+    # Find experimental data sets
+    experimental_sets = []
+    experimental_set_names = []
 
 
-        # Find F/sigF pairs and pull them in as
-        # Clipper HKL_data_F_sigF objects
-        fsigf, fsigf_names = find_data_pairs(
-            mtzin, temp_tree, 'F', 'Q', HKL_data_F_sigF)
-        experimental_sets.extend(fsigf)
-        experimental_set_names.extend(fsigf_names)
+    # Find I/sigI pairs and pull them in as
+    # Clipper HKL_data_I_sigI objects
+    from . import HKL_data_I_sigI
+    from . import HKL_data_F_sigF
+    from . import HKL_data_F_phi
+    isigi, isigi_names = find_data_pairs(
+        mtzin, temp_tree, 'J', 'Q', HKL_data_I_sigI)
+    experimental_sets.extend(isigi)
+    experimental_set_names.extend(isigi_names)
 
-        calculated_sets = []
-        calculated_set_names = []
 
-        # Find amplitude/phase pairs and pull them in as
-        # Clipper HKL_data_F_phi objects
-        fphi, fphi_names = find_data_pairs(
-            mtzin, temp_tree, 'F', 'P', HKL_data_F_phi)
-        calculated_sets.extend(fphi)
-        calculated_set_names.extend(fphi_names)
+    # Find F/sigF pairs and pull them in as
+    # Clipper HKL_data_F_sigF objects
+    fsigf, fsigf_names = find_data_pairs(
+        mtzin, temp_tree, 'F', 'Q', HKL_data_F_sigF)
+    experimental_sets.extend(fsigf)
+    experimental_set_names.extend(fsigf_names)
 
-        free_flags = None
+    calculated_sets = []
+    calculated_set_names = []
+
+    # Find amplitude/phase pairs and pull them in as
+    # Clipper HKL_data_F_phi objects
+    fphi, fphi_names = find_data_pairs(
+        mtzin, temp_tree, 'F', 'P', HKL_data_F_phi)
+    calculated_sets.extend(fphi)
+    calculated_set_names.extend(fphi_names)
+
+    free_flags = None
+    free_flags_name = None
+
+    possible_free_flag_names = []
+    all_integer_column_names = []
+    for crystal in temp_tree.keys():
+        for dataset in temp_tree[crystal].keys():
+            for iname in temp_tree[crystal][dataset]['I'].keys():
+                if 'free' in iname.lower():
+                    possible_free_flag_names.append(iname)
+                all_integer_column_names.append(iname)
+
+    # possible_free_flags, possible_free_flag_names = find_free_set(
+    #     mtzin, temp_tree, free_flag_label)
+
+    if (len(possible_free_flag_names) == 0 and len(experimental_sets)):
+        all_integer_column_names = temp_tree[crystal][dataset]['I'].keys()
+        if not len(all_integer_column_names) and free_flag_label !=-1:
+            err_string = 'This MTZ file does not appear to contain any '\
+            + 'columns suitable for use as a free set. Please generate '\
+            + 'a suitable set of free flags using your favourite '\
+            + 'package (I recommend PHENIX) and try again.'
+            raise RuntimeError(err_string)
+        else:
+            possible_free_flag_names = all_integer_column_names
+            if len(possible_free_flag_names) == 1:
+                session.logger.info('WARNING: assuming column with label {}'
+                + ' defines the free set.'.format(possible_free_flag_names[0]))
+                #possible_freefrom ._flags = [temp_tree[crystal][dataset]['I'][possible_free_flag_names[0]]]
+    if not possible_free_flag_names:
         free_flags_name = None
+    elif len(possible_free_flag_names) > 1:
+        free_flags_name = _r_free_chooser(session, possible_free_flag_names)
+        if free_flags_name is None:
+            if free_flag_label != -1:
+                raise RuntimeError('No free flags chosen. Bailing out.')
+    else:
+        free_flags_name = possible_free_flag_names[0]
 
-        possible_free_flag_names = []
-        all_integer_column_names = []
-        for crystal in temp_tree.keys():
-            for dataset in temp_tree[crystal].keys():
-                for iname in temp_tree[crystal][dataset]['I'].keys():
-                    if 'free' in iname.lower():
-                        possible_free_flag_names.append(iname)
-                    all_integer_column_names.append(iname)
+    if free_flags_name:
+        free_flags = find_free_set(mtzin, temp_tree, label=free_flags_name)[0][0]
+    else:
+        free_flags = None
 
-        # possible_free_flags, possible_free_flag_names = find_free_set(
-        #     mtzin, temp_tree, free_flag_label)
-
-        if (len(possible_free_flag_names) == 0 and len(experimental_sets)):
-            all_integer_column_names = temp_tree[crystal][dataset]['I'].keys()
-            if not len(all_integer_column_names) and free_flag_label !=-1:
-                err_string = 'This MTZ file does not appear to contain any '\
-                + 'columns suitable for use as a free set. Please generate '\
-                + 'a suitable set of free flags using your favourite '\
-                + 'package (I recommend PHENIX) and try again.'
-                raise RuntimeError(err_string)
-            else:
-                possible_free_flag_names = all_integer_column_names
-                if len(possible_free_flag_names) == 1:
-                    session.logger.info('WARNING: assuming column with label {}'
-                    + ' defines the free set.'.format(possible_free_flag_names[0]))
-                    #possible_freefrom ._flags = [temp_tree[crystal][dataset]['I'][possible_free_flag_names[0]]]
-        if not possible_free_flag_names:
-            free_flags_name = None
-        elif len(possible_free_flag_names) > 1:
-            free_flags_name = _r_free_chooser(session, possible_free_flag_names)
-            if free_flags_name is None:
-                if free_flag_label != -1:
-                    raise RuntimeError('No free flags chosen. Bailing out.')
-        else:
-            free_flags_name = possible_free_flag_names[0]
-
-        if free_flags_name:
-            free_flags = find_free_set(mtzin, temp_tree, label=free_flags_name)[0][0]
-        else:
-            free_flags = None
-
-        mtzin.close_read()
+    mtzin.close_read()
 
     return ( hkl,
             (free_flags_name, free_flags),
