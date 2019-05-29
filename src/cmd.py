@@ -1,5 +1,14 @@
+# @Author: Tristan Croll <tic20>
+# @Date:   21-May-2019
+# @Email:  tic20@cam.ac.uk
+# @Last modified by:   tic20
+# @Last modified time: 29-May-2019
+# @License: Free for non-commercial use (see license.pdf)
+# @Copyright: 2017-2018 Tristan Croll
 
-def open_mtz(session, path, structure_model = None,
+
+
+def open_structure_factors(session, path, structure_model = None,
         over_sampling=1.5, always_raise_errors=False):
     if structure_model is None:
         if always_raise_errors:
@@ -8,6 +17,7 @@ def open_mtz(session, path, structure_model = None,
         else:
             session.logger.warning('structureModel argument is required when '
                 'opening a reflection data file!')
+        return
     from .symmetry import get_map_mgr
     mmgr = get_map_mgr(structure_model, create=True)
     try:
@@ -30,7 +40,9 @@ def open_mtz(session, path, structure_model = None,
             raise e
         else:
             session.logger.warning(str(e))
-            return None, None
+            return None, None            
+
+
 
 def spotlight(session, models=None, enable=True, radius=None):
     from chimerax.clipper.symmetry import get_symmetry_handler
@@ -100,9 +112,22 @@ class VolumesArg(AtomSpecArg):
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
-        BoolArg, FloatArg
+        BoolArg, FloatArg,
+        OpenFileNameArg
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
+
+    open_desc = CmdDesc(
+        required=[
+            ('path', OpenFileNameArg),
+        ],
+        keyword=[
+            ('structure_model', StructureArg),
+            ('over_sampling', FloatArg)
+        ],
+        synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
+    )
+    register('clipper open', open_desc, open_structure_factors, logger=logger)
 
     spot_desc = CmdDesc(
         optional=[

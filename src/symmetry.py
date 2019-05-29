@@ -2,7 +2,7 @@
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 28-May-2019
+# @Last modified time: 29-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -464,7 +464,7 @@ class Symmetry_Manager(Model):
         session.models.add([self])
         apply_scene_positions(model)
         self.initialized=True
-        if len(id) == 1:
+        if id is not None and len(id) == 1:
             session.models.assign_id(self, id)
 
     @property
@@ -480,6 +480,9 @@ class Symmetry_Manager(Model):
         apply_scene_positions(self.structure)
 
     def _transplant_model(self, model):
+        if model.id is None:
+            self.add([model])
+            return
         mlist = model.all_models()
         mlist.sort(key=lambda m: len(m.id), reverse=True)
         from collections import defaultdict

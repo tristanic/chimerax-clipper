@@ -3,7 +3,7 @@
 @Date:   26-Feb-2018
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 22-May-2019
+@Last modified time: 29-May-2019
 @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 @Copyright: Copyright 2017-2018 Tristan Croll
 -->
@@ -413,8 +413,10 @@
     <PythonClassifier>Development Status :: 2 - Pre-Alpha</PythonClassifier>
     <PythonClassifier>License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)</PythonClassifier>
 ]
-    <ChimeraXClassifier>ChimeraX :: DataFormat :: MTZ reflection file :: mtz :: Reflection data :: .mtz :: :: :: :: :: Crystallographic reflection file</ChimeraXClassifier>
-    <ChimeraXClassifier>ChimeraX :: Open :: MTZ reflection file :: mtz :: true :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor MTZ :: mtz :: Reflection data :: .mtz :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Open :: Structure factor MTZ :: mtz :: true :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier>
+    <!-- <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor CIF :: sfcif :: Reflection data :: .cif :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Open :: Structure factor CIF :: sfcif :: false :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier> -->
     <ChimeraXClassifier>ChimeraX :: Command :: clipper :: General :: Command-line control of Clipper plugin for symmetry and map visualisation</ChimeraXClassifier>
 ]
   </Classifiers>

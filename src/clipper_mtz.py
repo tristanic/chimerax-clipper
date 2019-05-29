@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 28-May-2019
+# @Last modified time: 29-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -317,9 +317,13 @@ def load_hkl_data(session, filename, free_flag_label = None):
     if extension == '.mtz':
         return load_mtz_data(session, hklfile, free_flag_label = free_flag_label)
 
-    else:
+    elif extension in ('.cif', '.ent'):
         from .io.cif_sf_read import load_cif_sf
         return load_cif_sf(hklfile)
+
+    else:
+        from chimerax.core.errors import UserError
+        raise UserError('Unrecognised structure factor file format!')
 
 
 def load_mtz_data(session, filename, free_flag_label = None):

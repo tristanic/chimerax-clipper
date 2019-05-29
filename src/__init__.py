@@ -1,8 +1,8 @@
 # @Author: Tristan Croll
 # @Date:   09-Apr-2018
 # @Email:  tic20@cam.ac.uk
-# @Last modified by:   Tristan Croll
-# @Last modified time: 18-Apr-2018
+# @Last modified by:   tic20
+# @Last modified time: 29-May-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -68,10 +68,30 @@ from chimerax.core.toolshed import BundleAPI
 class _ClipperBundle(BundleAPI):
     from chimerax.core.commands import FloatArg
     from chimerax.atomic import StructureArg
+
     @staticmethod
     def initialize(session, bundle_info):
         from chimerax.clipper import cmd
         # cmd.register_mtz_file_format(session)
+
+    # @staticmethod
+    # def fetch_from_database(session, identifier, ignore_cache=False,
+    #         database_name=None, format_name=None, **kw):
+    #     from .io import fetch_cif
+    #     fetchers = {
+    #         'pdb':  fetch_cif.fetch_structure_factors,
+    #         'pdbe': fetch_cif.fetch_structure_factors_pdbe,
+    #         'pdbe_updated': fetch_cif.fetch_structure_factors_pdbe,
+    #         'pdbj': fetch_cif.fetch_structure_factors_pdbj,
+    #     }
+    #     try:
+    #         fetcher = fetchers[database_name]
+    #     except KeyError:
+    #         from chimerax.core.errors import UserError
+    #         raise UserError("Unknown database for fetching structure factors: {} Known databases are: {}".format(
+    #             database_name, ', '.join(fetchers.keys())
+    #         ))
+    #     return fetcher(session, identifier, ignore_cache=ignore_cache, **kw)
 
     @staticmethod
     def register_command(command_name, logger):
@@ -83,12 +103,12 @@ class _ClipperBundle(BundleAPI):
     @staticmethod
     def open_file(session, path, format_name, structure_model=None,
             over_sampling=1.5):
-        if structure_model is None:
-            from chimerax.core.errors import UserError
-            raise UserError('Must specify a structure model to associate with crystallographic data')
-        if format_name == 'mtz':
-            from .cmd import open_mtz
-            return open_mtz(session, path, structure_model=structure_model,
+        if format_name in ('mtz', 'sfcif'):
+            if structure_model is None:
+                from chimerax.core.errors import UserError
+                raise UserError('Must specify a structure model to associate with crystallographic data')
+            from .cmd import open_structure_factors
+            return open_structure_factors(session, path, structure_model=structure_model,
                 over_sampling=over_sampling)
 
 bundle_api = _ClipperBundle()
