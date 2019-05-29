@@ -128,7 +128,7 @@ class VolumeMask(Volume):
             step = min(step)
 
         step = max((step, radius/4))
-        step = min(step, 3)
+        step = min(step, 1.5)
         step = numpy.ones(3) * step
         cmin = coords.min(axis=0)
         cmax = coords.max(axis=0)
