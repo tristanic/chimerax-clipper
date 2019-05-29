@@ -2,7 +2,7 @@
 # @Date:   22-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 28-May-2019
+# @Last modified time: 29-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -184,6 +184,7 @@ class ZoneMask(State):
         surface = self.surface
         v, t = surface.vertices, surface.triangles
         if t is None:
+            surface.auto_remask_triangles = self
             return
 
         import numpy
@@ -198,8 +199,8 @@ class ZoneMask(State):
         if self.max_components is not None:
             from chimerax.surface import dust
             dust.show_only_largest_blobs(surface, True, self.max_components)
-
         surface.auto_remask_triangles = self
+
 
     def take_snapshot(self, session, flags):
         data = {

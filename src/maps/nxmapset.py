@@ -2,7 +2,7 @@
 # @Date:   15-Jan-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 08-May-2019
+# @Last modified time: 29-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -31,6 +31,7 @@ class NXmapSet(MapSet_Base):
             is_difference_map=is_difference_map,
             color=color, style=style, contour=contour
         )
+        self._mgr.rezone_needed()
 
 
     def add_nxmap_handler_from_volume(self, volume,
@@ -44,7 +45,7 @@ class NXmapSet(MapSet_Base):
         self.add([h])
         self.set_nxmap_display_style(h)
         self.crystal_mgr.normalize_scene_positions()
-        self.master_map_mgr._reapply_zone()
+        self._mgr.rezone_needed()
         return h
 
     def set_nxmap_display_style(self, nxmap_handler, is_difference_map=False,
