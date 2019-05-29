@@ -69,8 +69,7 @@ def fetch_structure_factors_pdbj(session, pdb_id, **kw):
 def fetch_wrapper(fetch_func):
     def _fetch(session, pdb_id, fetch_source='rcsb', ignore_cache=False,
             structure_factors=False, over_sampling=2.0, **kw):
-        models, status = fetch_func(session, pdb_id, fetch_source=fetch_source,
-            ignore_cache=ignore_cache, **kw)
+        models, status = fetch_func(session, pdb_id, ignore_cache=ignore_cache, **kw)
         if structure_factors:
             if len(models) != 1:
                 raise UserError('Structure factors can only be used with a single model!')
