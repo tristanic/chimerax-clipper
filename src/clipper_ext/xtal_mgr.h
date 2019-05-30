@@ -3,7 +3,7 @@
  * @Date:   21-Sep-2018
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 16-May-2019
+ * @Last modified time: 30-May-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -118,6 +118,17 @@ public:
     //Xtal_mgr_base() {} // default constructor
     Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs);
+
+    Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_anom);
+
+
+    Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs);
+
+    Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom);
+
 
     inline bool fcalc_initialized() const { return fcalc_initialized_; }
     inline bool coeffs_initialized() const { return coeffs_initialized_; }
@@ -246,6 +257,11 @@ protected:
     bool coeffs_initialized_=false;
 
 private:
+    //! Common portion of all constructors
+    Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling);
+
+
     // constants
     //static constexpr ftype ONE_1_ON_4_PI_SQUARED = 1/(4*M_PI*M_PI);
     int freeflag_ = 0;
@@ -314,6 +330,19 @@ public:
     Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs,
         const size_t num_threads = 1);
+
+    Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_ano,
+        const size_t num_threads = 1);
+
+    Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs,
+        const size_t num_threads = 1);
+
+    Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+        const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom,
+        const size_t num_threads = 1);
+
 
     inline size_t num_threads() const { return num_threads_; }
     inline void set_num_threads(size_t n)

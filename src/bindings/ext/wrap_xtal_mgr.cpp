@@ -3,7 +3,7 @@
  * @Date:   14-Sep-2018
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 16-May-2019
+ * @Last modified time: 30-May-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -85,6 +85,18 @@ void declare_xtal_thread_mgr(py::module& m)
             const HKL_data<F_sigF<ftype32>>&, const size_t>(),
             py::arg("hkl_info"), py::arg("free_flags"), py::arg("grid_sampling"),
             py::arg("f_obs"), py::arg("num_threads") = 1)
+        .def(py::init<const HKL_info&, const HKL_data<Flag>&, const Grid_sampling&,
+            const HKL_data<F_sigF_ano<ftype32>>&, const size_t>(),
+            py::arg("hkl_info"), py::arg("free_flags"), py::arg("grid_sampling"),
+            py::arg("f_obs_anom"), py::arg("num_threads") = 1)
+        .def(py::init<const HKL_info&, const HKL_data<Flag>&, const Grid_sampling&,
+            const HKL_data<I_sigI<ftype32>>&, const size_t>(),
+            py::arg("hkl_info"), py::arg("free_flags"), py::arg("grid_sampling"),
+            py::arg("i_obs"), py::arg("num_threads") = 1)
+        .def(py::init<const HKL_info&, const HKL_data<Flag>&, const Grid_sampling&,
+            const HKL_data<I_sigI_ano<ftype32>>&, const size_t>(),
+            py::arg("hkl_info"), py::arg("free_flags"), py::arg("grid_sampling"),
+            py::arg("i_obs_anom"), py::arg("num_threads") = 1)
         .def("init", &Class::init)
         .def_property("num_threads", &Class::num_threads, &Class::set_num_threads)
         .def_property_readonly("thread_running", &Class::thread_running)

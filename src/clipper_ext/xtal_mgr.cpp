@@ -3,7 +3,7 @@
  * @Date:   28-Jan-2019
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 20-May-2019
+ * @Last modified time: 30-May-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -11,6 +11,7 @@
 
 
 #include "xtal_mgr.h"
+#include "french_wilson.h"
 
 #include <set>
 #include <memory>
@@ -29,25 +30,66 @@ Xmap_details::Xmap_details(const Xmap_details& other)
       exclude_missing_(other.exclude_missing()),
       exclude_freer_(other.exclude_free_reflections()),
       fill_(other.fill_with_fcalc())
-      {
-          xmap_ = std::unique_ptr<Xmap<ftype32>>(new Xmap<ftype32>(other.xmap()));
-          coeffs_ = std::unique_ptr<HKL_data<F_phi<ftype32>>>( new HKL_data<F_phi<ftype32>>(other.coeffs()) );
-      }
+{
+    xmap_ = std::unique_ptr<Xmap<ftype32>>(new Xmap<ftype32>(other.xmap()));
+    coeffs_ = std::unique_ptr<HKL_data<F_phi<ftype32>>>( new HKL_data<F_phi<ftype32>>(other.coeffs()) );
+}
 
 
 Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
-    const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs)
-    : hklinfo_(hklinfo), free_flags_(free_flags), grid_sampling_(grid_sampling), fobs_(fobs)
+    const Grid_sampling& grid_sampling)
+    : hklinfo_(hklinfo), free_flags_(free_flags), grid_sampling_(grid_sampling)
 {
-    cell_ = fobs.cell();
+    cell_ = hklinfo.cell();
     fcalc_ = HKL_data<F_phi<ftype32>>(hklinfo_);
     base_2fofc_ = HKL_data<F_phi<ftype32>>(hklinfo_);
     base_fofc_ = HKL_data<F_phi<ftype32>>(hklinfo_);
     phi_fom_ = HKL_data<Phi_fom<ftype32>>(hklinfo_);
     usage_ = HKL_data<Flag>(hklinfo_);
 
-    set_freeflag(guess_free_flag_value(free_flags));
 } // Xtal_mgr_base
+
+
+Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs)
+    : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
+{
+    fobs_ = fobs;
+    set_freeflag(guess_free_flag_value(free_flags_));
+} // Xtal_mgr_base
+
+Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_anom)
+    : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
+{
+    fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
+    for (auto ih = fobs_anom.first(); !ih.last(); ih.next())
+    {
+        fobs_[ih].f() = fobs_anom[ih].f();
+        fobs_[ih].sigf() = fobs_anom[ih].sigf();
+    }
+    set_freeflag(guess_free_flag_value(free_flags_));
+}
+
+Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs)
+    : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
+{
+    fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
+    french_wilson::french_wilson(iobs, fobs_);
+    set_freeflag(guess_free_flag_value(free_flags_));
+}
+
+Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_ano)
+    : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
+{
+    fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
+    french_wilson::french_wilson(iobs_ano, fobs_);
+    set_freeflag(guess_free_flag_value(free_flags_));
+}
+
+
 
 
 int
@@ -409,6 +451,31 @@ Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& 
     {
         mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
     }
+
+Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_anom,
+    const size_t num_threads)
+    : mgr_(hklinfo, free_flags, grid_sampling, fobs_anom), num_threads_(num_threads)
+    {
+        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+    }
+
+Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs,
+    const size_t num_threads)
+    : mgr_(hklinfo, free_flags, grid_sampling, iobs), num_threads_(num_threads)
+    {
+        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+    }
+
+Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
+    const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom,
+    const size_t num_threads)
+    : mgr_(hklinfo, free_flags, grid_sampling, iobs_anom), num_threads_(num_threads)
+    {
+        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+    }
+
 
 void
 // Xtal_thread_mgr::recalculate_all(const Atom_list& atoms)

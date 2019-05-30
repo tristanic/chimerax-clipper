@@ -2,7 +2,7 @@
 # @Date:   06-Mar-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 24-May-2019
+# @Last modified time: 30-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -11,11 +11,14 @@
 import numpy
 from .mapset_base import MapSet_Base
 
+
+
 class XmapSet_Box_Params:
     def __init__(self, origin_xyz=None, origin_grid=None, dim=None):
         self.origin_grid = origin_grid
         self.origin_xyz = origin_xyz
         self.dim = dim
+
 
     @property
     def origin_xyz(self):
@@ -136,6 +139,15 @@ class XmapSet(MapSet_Base):
         super().__init__(manager, 'Crystallographic maps ({})'.format(
             crystal_data.filename))
 
+        from .. import (
+            HKL_data_F_sigF, HKL_data_F_sigF_ano,
+            HKL_data_I_sigI, HKL_data_I_sigI_ano
+        )
+        self._known_experimental_datatypes = (
+            HKL_data_F_sigF, HKL_data_F_sigF_ano,
+            HKL_data_I_sigI, HKL_data_I_sigI_ano
+        )
+
         trigger_names = (
             'maps recalculated',
         )
@@ -176,7 +188,7 @@ class XmapSet(MapSet_Base):
                     fsigf_name = None
 
             if fsigf_name is None:
-                choice = self._choose_fsigf(crystal_data)
+                choice = self._choose_reflection_data(crystal_data)
                 if choice is not None:
                     fsigf_name, fsigf = choice
                 else:
@@ -452,22 +464,23 @@ class XmapSet(MapSet_Base):
         else:
             new_handler.display=False
 
-    def _choose_fsigf(self, crystal_data):
+    def _choose_reflection_data(self, crystal_data):
         from .. import HKL_data_F_sigF
         exp_data = crystal_data.experimental_data
-        fsigfs = {key: data for key, data in exp_data.datasets.items() if data.dtype==HKL_data_F_sigF}
-        if not len(fsigfs):
+        reflections = {key: data for key, data in exp_data.datasets.items() if data.dtype in self._known_experimental_datatypes}
+        # fsigfs = {key: data for key, data in exp_data.datasets.items() if data.dtype==HKL_data_F_sigF}
+        if not len(reflections):
             return None
-        elif len(fsigfs) == 1:
-            ret = list(fsigfs.items())[0]
+        elif len(reflections) == 1:
+            ret = list(reflections.items())[0]
             return ret
         else:
-            choice = self._f_sigf_chooser(list(fsigfs.keys()))
+            choice = self._reflection_data_chooser(list(reflections.keys()))
             if choice is None:
                 return None
-            return (choice, fsigfs[choice])
+            return (choice, reflections[choice])
 
-    def _f_sigf_chooser(self, possible_names,
+    def _reflection_data_chooser(self, possible_names,
         title = 'Choose the dataset to use for map calculations'):
         from PyQt5.QtWidgets import QInputDialog
         choice, ok_pressed = QInputDialog.getItem(self.session.ui.main_window,
