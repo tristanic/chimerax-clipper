@@ -2,7 +2,7 @@
 # @Date:   29-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 31-May-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -79,5 +79,6 @@ def fetch_wrapper(fetch_func):
             from chimerax.clipper.symmetry import get_map_mgr
             mmgr = get_map_mgr(m, create=True)
             mmgr.add_xmapset_from_mtz(sf_file, oversampling_rate = over_sampling)
-        return [mmgr.crystal_mgr], status
+            return [mmgr.crystal_mgr], status
+        return models, status
     return _fetch
