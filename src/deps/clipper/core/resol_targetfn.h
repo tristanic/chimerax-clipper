@@ -74,6 +74,27 @@ namespace clipper {
     const HKL_data<T>* hkl_data;
   };
 
+  //! simple mean |I|<sup>n</sup> target
+  /*! This class implements the target function for calculating mean
+    |I|<sup>n</sup> as a function of position in reciprocal space. It
+    includes the appropriate multiplicity correction, and so can be
+    applied to any type with an 'I' member with the same dimensions as
+    an |I|). */
+  template<class T> class TargetFn_meanInth : public TargetFn_base
+  {
+  public:
+    //! constructor: takes the datalist against which to calc target, and power
+    TargetFn_meanInth( const HKL_data<T>& hkl_data_, const ftype& n );
+    //! return the value and derivatives of the target function
+    Rderiv rderiv( const HKL_info::HKL_reference_index& ih, const ftype& fh ) const;
+    //! the type of the function: optionally used to improve convergence
+    FNtype type() const { return QUADRATIC; }
+  private:
+    ftype power;
+    const HKL_data<T>* hkl_data;
+  };
+
+
 
   //! simple mean |E|<sup>n</sup> target
   /*! This class implements the target function for calculating mean
@@ -298,6 +319,32 @@ namespace clipper {
     }
     return result;
   }
+
+  // mean I^nth
+
+  template<class T> TargetFn_meanInth<T>::TargetFn_meanInth( const HKL_data<T>& hkl_data_, const ftype& n )
+  {
+    power = n;
+    hkl_data = &hkl_data_;
+  }
+
+  template<class T> TargetFn_base::Rderiv TargetFn_meanInth<T>::rderiv( const HKL_info::HKL_reference_index& ih, const ftype& fh ) const
+  {
+    Rderiv result;
+    const HKL_data<T>& data = *hkl_data;
+    if ( !data[ih].missing() ) {
+      ftype d = fh - pow( ftype(data[ih].I()) / ih.hkl_class().epsilon(),
+              power );
+      result.r = d * d;
+      result.dr = 2.0 * d;
+      result.dr2 = 2.0;
+    } else {
+      result.r = result.dr = result.dr2 = 0.0;
+    }
+    return result;
+  }
+
+
 
   // mean E^nth
 

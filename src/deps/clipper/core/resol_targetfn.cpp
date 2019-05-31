@@ -44,26 +44,35 @@
 
 namespace clipper {
 
-template class TargetFn_meanFnth<data32::F_sigF>;
-template class TargetFn_meanFnth<data32::F_phi>;
-template class TargetFn_scaleF1F2<data32::F_sigF,data32::F_sigF>;
-template class TargetFn_scaleLogF1F2<data32::F_sigF,data32::F_sigF>;
-template class TargetFn_scaleI1I2<data32::I_sigI,data32::I_sigI>;
-template class TargetFn_scaleLogI1I2<data32::I_sigI,data32::I_sigI>;
-template class TargetFn_meanEnth<data32::E_sigE>;
-template class TargetFn_scaleEsq<data32::E_sigE>;
-template class TargetFn_sigmaa_omegaa<data32::E_sigE>;
-template class TargetFn_sigmaa<data32::E_sigE>;
+template class CLIPPER_IMEX TargetFn_meanFnth<data32::F_sigF>;
+template class CLIPPER_IMEX TargetFn_meanFnth<data32::F_sigF_ano>;
+template class CLIPPER_IMEX TargetFn_meanFnth<data32::F_phi>;
+template class CLIPPER_IMEX TargetFn_meanInth<data32::I_sigI>;
+template class CLIPPER_IMEX TargetFn_meanInth<data32::I_sigI_ano>;
 
-template class TargetFn_meanFnth<data64::F_sigF>;
-template class TargetFn_meanFnth<data64::F_phi>;
-template class TargetFn_scaleF1F2<data64::F_sigF,data64::F_sigF>;
-template class TargetFn_scaleLogF1F2<data64::F_sigF,data64::F_sigF>;
-template class TargetFn_scaleI1I2<data64::I_sigI,data64::I_sigI>;
-template class TargetFn_scaleLogI1I2<data64::I_sigI,data64::I_sigI>;
-template class TargetFn_meanEnth<data64::E_sigE>;
-template class TargetFn_scaleEsq<data64::E_sigE>;
-template class TargetFn_sigmaa_omegaa<data64::E_sigE>;
-template class TargetFn_sigmaa<data64::E_sigE>;
+
+template class CLIPPER_IMEX TargetFn_scaleF1F2<data32::F_sigF,data32::F_sigF>;
+template class CLIPPER_IMEX TargetFn_scaleLogF1F2<data32::F_sigF,data32::F_sigF>;
+template class CLIPPER_IMEX TargetFn_scaleI1I2<data32::I_sigI,data32::I_sigI>;
+template class CLIPPER_IMEX TargetFn_scaleLogI1I2<data32::I_sigI,data32::I_sigI>;
+template class CLIPPER_IMEX TargetFn_meanEnth<data32::E_sigE>;
+template class CLIPPER_IMEX TargetFn_scaleEsq<data32::E_sigE>;
+template class CLIPPER_IMEX TargetFn_sigmaa_omegaa<data32::E_sigE>;
+template class CLIPPER_IMEX TargetFn_sigmaa<data32::E_sigE>;
+
+template class CLIPPER_IMEX TargetFn_meanFnth<data64::F_sigF>;
+template class CLIPPER_IMEX TargetFn_meanFnth<data64::F_sigF_ano>;
+template class CLIPPER_IMEX TargetFn_meanFnth<data64::F_phi>;
+template class CLIPPER_IMEX TargetFn_meanInth<data64::I_sigI>;
+template class CLIPPER_IMEX TargetFn_meanInth<data64::I_sigI_ano>;
+
+template class CLIPPER_IMEX TargetFn_scaleF1F2<data64::F_sigF,data64::F_sigF>;
+template class CLIPPER_IMEX TargetFn_scaleLogF1F2<data64::F_sigF,data64::F_sigF>;
+template class CLIPPER_IMEX TargetFn_scaleI1I2<data64::I_sigI,data64::I_sigI>;
+template class CLIPPER_IMEX TargetFn_scaleLogI1I2<data64::I_sigI,data64::I_sigI>;
+template class CLIPPER_IMEX TargetFn_meanEnth<data64::E_sigE>;
+template class CLIPPER_IMEX TargetFn_scaleEsq<data64::E_sigE>;
+template class CLIPPER_IMEX TargetFn_sigmaa_omegaa<data64::E_sigE>;
+template class CLIPPER_IMEX TargetFn_sigmaa<data64::E_sigE>;
 
 } // namespace clipper
