@@ -3,7 +3,7 @@
 @Date:   26-Feb-2018
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 29-May-2019
+@Last modified time: 31-May-2019
 @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 @Copyright: Copyright 2017-2018 Tristan Croll
 -->
@@ -317,6 +317,7 @@
       <!-- <Library>stdc++</Library> -->
       <!-- <CompileArgument>-Os</CompileArgument> -->
 
+      <SourceFile>src/bindings/wrap_resol_fns.cpp</SourceFile>
       <SourceFile>src/bindings/ext/wrap_xtal_mgr.cpp</SourceFile>
 
       <SourceFile>src/bindings/contrib/wrap_skeleton.cpp</SourceFile>
@@ -376,7 +377,7 @@
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" version="==0.9"/>
+    <Dependency name="ChimeraX-Core" version="==0.91"/>
     <Dependency name="ChimeraX-Atomic" version=">=1.0"/>
     <!-- <Dependency name="Clipper-Python" version=">=0.1.1"/> -->
   </Dependencies>

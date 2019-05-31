@@ -1,3 +1,14 @@
+/**
+ * @Author: Tristan Croll <tic20>
+ * @Date:   21-May-2019
+ * @Email:  tic20@cam.ac.uk
+ * @Last modified by:   tic20
+ * @Last modified time: 31-May-2019
+ * @License: Free for non-commercial use (see license.pdf)
+ * @Copyright: 2017-2018 Tristan Croll
+ */
+
+
 
 #if defined(_MSC_VER) && _MSC_VER >= 1600
 #include <string>
@@ -37,6 +48,7 @@ void init_nx_operator(py::module& m);
 void init_map_utils(py::module& m);
 void init_clipper_util(py::module& m);
 void init_atomsf(py::module& m);
+void init_resol_fn(py::module& m);
 
 // ccp4
 void init_ccp4_mtz_io(py::module& m);
@@ -90,6 +102,7 @@ PYBIND11_MODULE(clipper_python, m) {
     init_unit_cell(m);
     init_spacegroup(m);
     init_clipper_stats(m);
+    init_resol_fn(m);
 
     init_nxmap(m);
     init_xmap(m);
