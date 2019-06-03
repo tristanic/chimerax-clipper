@@ -2,7 +2,7 @@
 # @Date:   22-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 03-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -252,8 +252,11 @@ class Map_Mgr(Model):
             self._reapply_zone()
 
     def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=1.5):
+        return self.add_xmapset_from_file(mtzfile, oversampling_rate)
+
+    def add_xmapset_from_file(self, sffile, oversampling_rate=1.5):
         from ..clipper_mtz import ReflectionDataContainer
-        mtzdata = ReflectionDataContainer(self.session, mtzfile,
+        mtzdata = ReflectionDataContainer(self.session, sffile,
             shannon_rate = oversampling_rate)
         cm = self.crystal_mgr
         if not cm.has_symmetry:
