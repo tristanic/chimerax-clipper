@@ -97,7 +97,7 @@ py::class_<HKL_data<C>> declare_HKL_data(py::module &m, const std::string &class
         .def("__setitem__", [](Class& self, const HKL_info::HKL_reference_coord& ih, const C& data) {
             if (!self.set_data(ih, data))
                 throw std::out_of_range("No equivalent HKL has been indexed for this dataset!");
-        }, py::is_operator())
+        })
         .def("__getitem__", [](const Class& self, const int& index) {catch_null(self); return self[index];}, py::is_operator())
         .def("__getitem__", [](const Class& self, const HKL& hkl) {
             catch_null(self);
