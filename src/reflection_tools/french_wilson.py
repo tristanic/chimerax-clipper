@@ -2,7 +2,7 @@
 # @Date:   31-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 03-Jun-2019
+# @Last modified time: 04-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -87,11 +87,11 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
         else:
             e_xpct = _expected_E_FW_acen(eobs_sq, sig_eobs_sq)
             esq_xpct = _expected_Esq_FW_acen(eobs_sq, sig_eobs_sq)
-        var_e = esq_xpct - e_xpct**2
+        sig_e = sqrt(esq_xpct - e_xpct**2)
 
         sqrt_eps = sqrt(eps)
         s_isigi_data.i = e_xpct**2 * eps
-        s_isigi_data.sigi = var_e * eps
+        s_isigi_data.sigi = sig_e * eps * e_xpct
         scaled_is[ih.hkl] = s_isigi_data
 
         ih.next()
