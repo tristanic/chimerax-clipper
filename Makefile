@@ -1,3 +1,13 @@
+# @Author: Tristan Croll <tic20>
+# @Date:   21-May-2019
+# @Email:  tic20@cam.ac.uk
+# @Last modified by:   tic20
+# @Last modified time: 04-Jun-2019
+# @License: Free for non-commercial use (see license.pdf)
+# @Copyright: 2017-2018 Tristan Croll
+
+
+
 # The "make" targets are:
 # 	wheel: build a Python wheel in "dist" directory.
 # 	app-install: build wheel (if needed) and install in ChimeraX.
@@ -32,8 +42,8 @@ ifeq ($(OS),Darwin)
 CHIMERAX_APP = /Applications/ChimeraX.app
 endif
 ifeq ($(OS),Linux)
-CHIMERAX_APP = /opt/UCSF/ChimeraX-daily
-#CHIMERAX_APP = /opt/UCSF/ChimeraX
+# CHIMERAX_APP = /opt/UCSF/ChimeraX-daily
+CHIMERAX_APP = /opt/UCSF/ChimeraX
 endif
 
 # ==================================================================
