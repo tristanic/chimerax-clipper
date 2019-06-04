@@ -36,12 +36,17 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
         ResolutionFn
     )
     from math import sqrt
-    if isinstance (i_sigi, HKL_data_I_sigI):
-        targetfn = TargetFn_meanInth_I_sigI_float
-    elif isinstance (i_sigi, HKL_data_I_sigI_ano):
-        targetfn = TargetFn_meanInth_I_sigI_ano_float
-    else:
-        raise TypeError('Unknown data type for i_sigi!')
+
+    hkls = i_sigi.base_hkl_info
+
+    if isinstance(i_sigi, HKL_data_I_sigI_ano):
+        i_sigi_merged = HKL_data_I_sigI(hkls)
+        ih = i_sigi.first_data
+        while not ih.last():
+            isigi_data = i_sigi[ih]
+            i_sigi_merged[ih.hkl] = I_sigI(isigi_data.i, isigi_data.sigi)
+            i_sigi.next_data(ih)
+        i_sigi = i_sigi_merged
 
     hkls = i_sigi.base_hkl_info
     n_reflections = hkls.num_reflections
@@ -57,7 +62,7 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
     import numpy
     params = [1.0]*n_bins #    numpy.ones(n_bins, numpy.float32)
     basisfn = BasisFn_spline(hkls, n_bins, 1.0)
-    target = targetfn(i_sigi, 1.0)
+    target = TargetFn_meanInth_I_sigI_float(i_sigi, 1.0)
     rfn = ResolutionFn(hkls, basisfn, target, params)
 
     scaled_is = HKL_data_I_sigI(hkls)
