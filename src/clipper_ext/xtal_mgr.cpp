@@ -3,7 +3,7 @@
  * @Date:   28-Jan-2019
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 30-May-2019
+ * @Last modified time: 04-Jun-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -357,7 +357,8 @@ Xtal_mgr_base::recalculate_map(Xmap_details& xmd, size_t num_threads)
     if (xmd.b_sharp() != 0.0)
         apply_b_factor_sharpening(xmd.coeffs(), xmd.b_sharp());
     xmd.xmap().fft_from(xmd.coeffs(), num_threads);
-    xmd.map_stats() = Map_stats(xmd.xmap());
+    // xmd.map_stats() = Map_stats(xmd.xmap());
+    xmd.update_map_stats();
 } // recalculate_map
 
 void
@@ -555,6 +556,7 @@ Xtal_thread_mgr::apply_new_maps()
         auto& target = mgr_.maps_.at(it.first);
         source.coeffs_.swap(target.coeffs_);
         source.xmap_.swap(target.xmap_);
+        source.map_stats_.swap(target.map_stats_);
     }
     // for (const auto& it: xmap_thread_results_)
     //     mgr_.maps_.at(it.first).xmap() = it.second.xmap();

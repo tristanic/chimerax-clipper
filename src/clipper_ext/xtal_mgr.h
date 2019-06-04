@@ -3,7 +3,7 @@
  * @Date:   21-Sep-2018
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 30-May-2019
+ * @Last modified time: 04-Jun-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -64,8 +64,9 @@ public:
     inline const HKL_info& hkl_info() const { return hkl_info_; }
     inline const Xmap<ftype32>& xmap() const { return *xmap_; }
     inline Xmap<ftype32>& xmap() { return *xmap_; }
-    inline const Map_stats& map_stats() const { return map_stats_; }
-    inline Map_stats& map_stats() { return map_stats_; }
+    inline const Map_stats& map_stats() const { return *map_stats_; }
+    // inline Map_stats& map_stats() { return map_stats_; }
+    void update_map_stats() { map_stats_ = std::unique_ptr<Map_stats> (new Map_stats(*xmap_)); }
     inline const HKL_data<F_phi<ftype32>>& coeffs() const { return *coeffs_; }
     inline HKL_data<F_phi<ftype32>>& coeffs() { return *coeffs_; }
     inline const HKL_data<F_phi<ftype32>>& base_coeffs() const { return *base_coeffs_; }
@@ -103,7 +104,8 @@ private:
     // Xmap<ftype32> xmap_;
 
     // max, min, mean, std_dev, range
-    Map_stats map_stats_;
+    std::unique_ptr<Map_stats> map_stats_;
+    // Map_stats map_stats_;
 
 }; // class Xmap_details
 
