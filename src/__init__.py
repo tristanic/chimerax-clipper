@@ -2,7 +2,7 @@
 # @Date:   09-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 04-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -40,6 +40,7 @@ from .clipper_python import (
 from .clipper_python import Flag, Flag_bool
 from .clipper_python.data32 import (
     ABCD_float as ABCD,
+    D_sigD_float as D_sigD,
     E_sigE_float as E_sigE,
     F_phi_float as F_phi,
     F_sigF_float as F_sigF,
@@ -53,6 +54,7 @@ from .clipper_python.data32 import (
 from .clipper_python import HKL_data_Flag, HKL_data_Flag_bool
 from .clipper_python.data32 import (
     HKL_data_ABCD_float as HKL_data_ABCD,
+    HKL_data_D_sigD_float as HKL_data_D_sigD,
     HKL_data_E_sigE_float as HKL_data_E_sigE,
     HKL_data_F_phi_float as HKL_data_F_phi,
     HKL_data_F_sigF_float as HKL_data_F_sigF,

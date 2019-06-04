@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 28-May-2019
+# @Last modified time: 04-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -38,6 +38,7 @@ _space_group_identifiers = (
 
 from .. import (
     HKL_data_ABCD,
+    HKL_data_D_sigD,
     HKL_data_E_sigE,
     HKL_data_F_phi,
     HKL_data_F_sigF,
@@ -56,9 +57,9 @@ _data_columns_to_data_types = {
      'pdbx_F_plus_sigma', 'pdbx_F_minus_sigma'):        (float, HKL_data_F_sigF_ano),
 
     ('pdbx_anom_difference',
-     'pdbx_anom_difference_sigma'):                     (float, HKL_data_F_sigF),
+     'pdbx_anom_difference_sigma'):                     (float, HKL_data_D_sigD),
     ('pdbx_anomalous_diff',
-     'pdbx_anomalous_diff_sigma'):                      (float, HKL_data_F_sigF),
+     'pdbx_anomalous_diff_sigma'):                      (float, HKL_data_D_sigD),
 
     ('intensity_meas', 'intensity_sigma'):              (float, HKL_data_I_sigI),
 
