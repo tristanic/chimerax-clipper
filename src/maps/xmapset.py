@@ -2,7 +2,7 @@
 # @Date:   06-Mar-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 30-May-2019
+# @Last modified time: 04-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -139,6 +139,8 @@ class XmapSet(MapSet_Base):
         super().__init__(manager, 'Crystallographic maps ({})'.format(
             crystal_data.filename))
 
+        session = self.session
+
         from .. import (
             HKL_data_F_sigF, HKL_data_F_sigF_ano,
             HKL_data_I_sigI, HKL_data_I_sigI_ano
@@ -183,7 +185,7 @@ class XmapSet(MapSet_Base):
             if fsigf_name is not None:
                 fsigf = crystal_data.experimental_data.datasets.get(fsigf_name, None)
                 if fsigf is None:
-                    session.logger.info('WARNING: no F/sigF data found with the '
+                    session.logger.info('WARNING: no experimental reflection data found with the '
                         'given label {}! Launching chooser dialog...'.format(fsigf_name))
                     fsigf_name = None
 
@@ -195,7 +197,15 @@ class XmapSet(MapSet_Base):
                     fsigf_name = fsigf = None
 
             if fsigf is not None:
-                self._launch_live_xmap_mgr(crystal_data, fsigf)
+                if fsigf.dtype in (HKL_data_I_sigI, HKL_data_I_sigI_ano):
+                    session.logger.info('Reflection data provided as intensities. '
+                        'Performing French & Wilson scaling to convert to amplitudes...')
+                    from chimerax.clipper.reflection_tools import french_wilson_analytical
+                    fsigf_data = french_wilson_analytical(fsigf.data)
+                else:
+                    fsigf_data = fsigf.data
+
+                self._launch_live_xmap_mgr(crystal_data, fsigf_data)
                 if bsharp_vals is None:
                     bsharp_vals = [viewing_recommended_bsharp(self.resolution)]
                 if bsharp_vals:
@@ -330,13 +340,12 @@ class XmapSet(MapSet_Base):
     def unit_cell(self):
         return self._unit_cell
 
-
     def _launch_live_xmap_mgr(self, crystal_data, f_sigf):
         from ..util import available_cores
         # The master C++ manager for handling all map operations
         from ..clipper_python.ext import Xtal_thread_mgr
         xm = self._live_xmap_mgr = Xtal_thread_mgr(self.hklinfo,
-            crystal_data.free_flags.data, self.grid, f_sigf.data,
+            crystal_data.free_flags.data, self.grid, f_sigf,
             num_threads=available_cores())
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
