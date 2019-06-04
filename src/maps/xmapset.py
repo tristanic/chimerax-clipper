@@ -157,6 +157,7 @@ class XmapSet(MapSet_Base):
             self.triggers.add_trigger(t)
 
         self._crystal_data = crystal_data
+        self.add([crystal_data])
 
 
         # Since the Unit_Cell class does much of its work in grid coordinates,
@@ -250,7 +251,6 @@ class XmapSet(MapSet_Base):
         manager.add([self])
 
 
-
     @property
     def box_params(self):
         return self._box_params
@@ -266,6 +266,10 @@ class XmapSet(MapSet_Base):
     @property
     def static_xmaps(self):
         return [m for m in self.child_models if isinstance(m, XmapHandler_Static)]
+
+    @property
+    def free_flags(self):
+        return self._crystal_data.free_flags
 
     @property
     def show_r_factors(self):
@@ -472,6 +476,23 @@ class XmapSet(MapSet_Base):
             self.master_map_mgr.rezone_needed()
         else:
             new_handler.display=False
+
+    def save_mtz(self, filename, save_input_data=True, save_output_fobs=True,
+            save_map_coeffs=False):
+        from chimerax.clipper.io import mtz_write
+        data = {}
+        if save_output_fobs or save_map_coeffs:
+            data['out'] = {}
+        if save_input_data:
+            data['in'] = {dname: d.data for dname, d in self.experimental_data.items()}
+        if save_output_fobs:
+            data['out']['[FOBS, SIGFOBS]'] = self.live_xmap_mgr.f_obs
+        if save_map_coeffs:
+            out = data['out']
+            out['[FCALC, PHFCALC]'] = self.live_xmap_mgr.f_calc
+            out['[2FOFC, PH2FOFC]'] = self.live_xmap_mgr.base_2fofc
+            out['[FOFC, PHFOFC]'] = self.live_xmap_mgr.base_fofc
+        mtz_write.write_mtz(filename, self.hklinfo, self.free_flags.data, data)
 
     def _choose_reflection_data(self, crystal_data):
         from .. import HKL_data_F_sigF

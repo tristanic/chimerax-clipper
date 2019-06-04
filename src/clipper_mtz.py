@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 04-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -101,10 +101,6 @@ class ReflectionDataContainer(Model):
             self._grid_sampling = Grid_sampling(
                 self.spacegroup, self.cell, self.resolution, self.shannon_rate)
         return self._grid_sampling
-
-
-
-
 
 class ReflectionData_Node(Model):
     '''
