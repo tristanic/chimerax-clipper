@@ -1,8 +1,8 @@
 # @Author: Tristan Croll
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
-# @Last modified by:   Tristan Croll
-# @Last modified time: 18-Apr-2018
+# @Last modified by:   tic20
+# @Last modified time: 05-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -22,7 +22,7 @@ is ordered like:
     /crystal/dataset/FOFCWT F
     /crystal/dataset/PHFOFCWT P
 
-... where the final digit defines the data type, and the leading
+... where the final character defines the data type, and the leading
 path allows the file to hold data from multiple experiments/crystals.
 The HKL coordinate arrays (type 'H') are first split off into a
 HKL_info object, and the remaining data is ordered first by the two

@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Jun-2019
+# @Last modified time: 05-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -323,6 +323,90 @@ def load_hkl_data(session, filename, free_flag_label = None):
 
 
 def load_mtz_data(session, filename, free_flag_label = None):
+    from chimerax.clipper import HKL_data_Flag, HKL_data_F_phi
+    from .io import mtz_read
+    hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename)
+    if len(crystal_dict) == 2:
+        crystal_dict = _merge_if_mini_mtz_format(crystal_dict)
+    if len(crystal_dict) > 1:
+        warn_str = ('WARNING: This MTZ file contains data from multiple crystals. '
+            'Only the data from the first crystal will be used. If you wish to '
+            'use the other data, please split your MTZ file into individual '
+            'datasets (you can do this using tools from the PHENIX or CCP suites).'
+        )
+        session.logger.warning(warn_str)
+
+    for crystal, datasets in crystal_dict.items():
+        break
+    all_flag_arrays = {}
+    all_exp_data_arrays = {}
+    all_calc_data_arrays = {}
+    for dataset_name, dataset in datasets.items():
+        for data_name, data_array in dataset.items():
+            dname_ext = '({}) '.format(dataset_name) + data_name
+            if isinstance(data_array, HKL_data_Flag):
+                all_flag_arrays[dname_ext] = data_array
+            elif isinstance(data_array, HKL_data_F_phi):
+                all_calc_data_arrays[dname_ext] = data_array
+            else:
+                all_exp_data_arrays[dname_ext] = data_array
+    flag_names, flag_arrays = (list(all_flag_arrays.keys()), list(all_flag_arrays.values()))
+    if len(flag_names) == 1:
+        free_flag_name = flag_names[0]
+        free_flags = flag_arrays[0]
+    else:
+        free_flag_name = _r_free_chooser(session, flag_names)
+        if free_flag_name is None:
+            raise RuntimeError('No free flags chosen. Bailing out.')
+        index = flag_names.index(free_flag_name)
+        free_flags = flag_arrays[index]
+    exp_data_names, exp_data = (list(all_exp_data_arrays.keys()), list(all_exp_data_arrays.values()))
+    calc_data_names, calc_data = (list(all_calc_data_arrays.keys()), list(all_calc_data_arrays.values()))
+    return (
+        hklinfo,
+        (free_flag_name, free_flags),
+        (exp_data_names, exp_data),
+        (calc_data_names, calc_data)
+    )
+
+
+
+
+def _merge_if_mini_mtz_format(crystal_dict):
+    '''
+    The CCP4-7.0 "mini-MTZ" format is designed such that each MTZ file holds
+    only a single data type. That's quite sensible in many respects, but the
+    somewhat annoying aspect to its design is that the actual data is placed
+    in a different "crystal" path compared to the HKL indices. So we need to
+    do a little checking to work out if that's the case here.
+    '''
+    print('MTZ file either contains multiple crystal datasets or is a mini-MTZ file. Checking...')
+    new_dict = {'crystal': {'dataset': {}}}
+    inner_dict = new_dict['crystal']['dataset']
+    hklbase = crystal_dict.get('HKL_base', None)
+    if hklbase is None:
+        return crystal_dict
+    base_datasets = hklbase.get('HKL_base', None)
+    if base_datasets is None:
+        return crystal_dict
+    # A mini-MTZ will contain only the free set here
+    if len(base_datasets) == 1:
+        for key, dat in base_datasets.items():
+            inner_dict[key] = dat
+        cryst_datasets = crystal_dict[list(crystal_dict.keys())[1]]
+        if len(cryst_datasets) != 1:
+            return crystal_dict
+        for dkey, dataset in cryst_datasets.items():
+            if len(dataset) != 1:
+                return crystal_dict
+            for key, data in dataset.items():
+                inner_dict[key] = data
+        return new_dict
+    return crystal_dict
+
+
+
+def load_mtz_data_old(session, filename, free_flag_label = None):
     from . import CCP4MTZfile, HKL_info
     mtzin = CCP4MTZfile()
     hkl = HKL_info()
@@ -337,7 +421,7 @@ def load_mtz_data(session, filename, free_flag_label = None):
     for l in column_labels:
         thisname, thistype = l.__str__().split(' ')
         crystal, dataset, name = thisname.split('/')[1:]
-        # The h, k, l indices are already captured in self.hklinfo
+        # The h, k, l indices are already captured in hklinfo
         if thistype != 'H':
             temp_tree[crystal][dataset][thistype][name] = i
             i += 1
