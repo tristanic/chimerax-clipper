@@ -104,7 +104,7 @@ TargetFn_base::Rderiv TargetFn_meanI<T>::rderiv(const HKL_info::HKL_reference_in
 
 template<typename T, template<typename TT> class Itype>
 void french_wilson_acentric(const Itype<T>& isigi, F_sigF<T>& fsigf,
-    const ftype& imean, const T rejection_cutoff=-4.0)
+    const ftype& imean, const T rejection_cutoff)
 {
     const auto& i = isigi.I();
     const auto& sigi = isigi.sigI();
@@ -138,7 +138,7 @@ void french_wilson_acentric(const Itype<T>& isigi, F_sigF<T>& fsigf,
 
 template<typename T, template<typename TT> class Itype>
 void french_wilson_centric(const Itype<T>& isigi, F_sigF<T>& fsigf,
-    const ftype& imean, const T rejection_cutoff=-4.0)
+    const ftype& imean, const T rejection_cutoff)
 {
     const auto& i = isigi.I();
     const auto& sigi = isigi.sigI();
@@ -179,7 +179,7 @@ void french_wilson_centric(const Itype<T>& isigi, F_sigF<T>& fsigf,
 
 template<typename T, template<typename TT> class Itype>
 void french_wilson(const HKL_data<Itype<T>>& isigi, HKL_data<F_sigF<T>>& fsigf,
-    const T rejection_cutoff=-4.0, const int max_bins=60)
+    const T rejection_cutoff, const int max_bins)
 {
     const HKL_info& hkls = isigi.base_hkl_info();
 
