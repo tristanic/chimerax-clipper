@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Jun-2019
+# @Last modified time: 05-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -99,7 +99,9 @@ def load_cif_sf(filename):
     '''
     from chimerax.atomic.mmcif import get_cif_tables
     table_list = get_cif_tables(filename, _cif_sf_table_names)
+    return _parse_tables(table_list)
 
+def _parse_tables(table_list):
     tables = dict(zip(_cif_sf_table_names, table_list))
     metadata = {l: tables[l] for l in _metadata_tables}
     cell_info = tables['cell']
