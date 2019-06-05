@@ -276,6 +276,7 @@
       <LibraryDir>src</LibraryDir>
       <Library>clipper</Library>
       <Library>atomstruct</Library>
+      <Library>element</Library>
       <!-- <Library>stdc++</Library> -->
       <SourceFile>src/clipper_ext/xtal_mgr.cpp</SourceFile>
       <SourceFile>src/clipper_ext/edcalc_ext.cpp</SourceFile>
@@ -311,6 +312,8 @@
       <LibraryDir>src</LibraryDir>
       <Library>clipper</Library>
       <Library>clipper_cx</Library>
+      <Library>atomstruct</Library>
+      <Library>element</Library>
 
       <Define platform="windows">NOMINMAX</Define>
       <LinkArgument platform="windows">/FORCE:MULTIPLE</LinkArgument>
