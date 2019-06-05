@@ -1,8 +1,8 @@
 # @Author: Tristan Croll
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
-# @Last modified by:   Tristan Croll
-# @Last modified time: 18-Apr-2018
+# @Last modified by:   tic20
+# @Last modified time: 05-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -298,7 +298,8 @@ class CrystalStructure(Model):
         Named triggers to simplify handling of changes on key events (e.g. live
         updating of maps/symmetry).
         '''
-        self.triggers = TriggerSet()
+        if not hasattr(self, 'triggers'):
+            self.triggers = TriggerSet()
         trigger_names = (
             'map box changed',  # Changed shape of box for map viewing
             'map box moved',    # Changed location of box for map viewing
@@ -1014,9 +1015,10 @@ class XmapSet(Model):
             ''')
         Model.__init__(self, 'Real-space maps', session)
         self.crystal = crystal
-        from chimerax.core.triggerset import TriggerSet
-        trig = self.triggers = TriggerSet()
-
+        if not hasattr(self, 'triggers'):
+            from chimerax.core.triggerset import TriggerSet
+            self.triggers = TriggerSet()
+        trig = self.triggers
         trigger_names = (
             'map box changed',  # Changed shape of box for map viewing
             'map box moved',    # Just changed the centre of the box

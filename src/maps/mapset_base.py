@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 24-May-2019
+# @Last modified time: 05-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -32,8 +32,9 @@ class MapSet_Base(Model):
         super().__init__(name, manager.session)
         self._mgr = manager
 
-        # from chimerax.core.triggerset import TriggerSet
-        # trig = self._triggers = TriggerSet()
+        if not hasattr(self, 'triggers'):
+            from chimerax.core.triggerset import TriggerSet
+            self.triggers = TriggerSet()
 
         trigger_names = (
             'map box changed',
