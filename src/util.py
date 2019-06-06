@@ -81,7 +81,7 @@ def guess_suitable_contour(volume, model, mask_radius=3, atom_radius_scale = 0.5
     from .symmetry import is_crystal_map
     is_xmap = is_crystal_map(volume)
     if is_xmap:
-        sh = volume.manager.crystal
+        sh = volume.manager.crystal_mgr
 
         spotlight_mode = sh.spotlight_mode
         # Expand the map to cover the whole model
