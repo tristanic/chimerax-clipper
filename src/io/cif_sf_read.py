@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -30,10 +30,13 @@ _required_columns = {
     'refln':      ('index_h', 'index_k', 'index_l')
 }
 
-_space_group_identifiers = (
-    'space_group_name_H-M',
-    'Int_Tables_number'
-)
+def _space_group_identifiers():
+    from chimerax.clipper.clipper_python import Spgr_descr
+    return (
+        ('Int_Tables_number', Spgr_descr.TYPE.Number),
+        ('space_group_name_H-M', Spgr_descr.TYPE.HM),
+        ('space_group_name_Hall', Spgr_descr.TYPE.Hall)
+    )
 
 
 from .. import (
@@ -110,9 +113,10 @@ def _parse_tables(table_list):
     except:
         raise TypeError('Could not read cell information from file!')
     symm = tables['symmetry']
-    for id in _space_group_identifiers:
+    for id, dtype in _space_group_identifiers():
         if symm.has_field(id):
             spgr_descriptor = symm.fields((id,))[0][0]
+            spgr_dtype = dtype
             break
     else:
         raise TypeError('Could not read spacegroup information from file!')
@@ -125,7 +129,7 @@ def _parse_tables(table_list):
         Spacegroup, Resolution, Grid_sampling
     )
     cell = Cell(Cell_descr(*cell_dim))
-    spacegroup = Spacegroup(Spgr_descr(spgr_descriptor))
+    spacegroup = Spacegroup(Spgr_descr(spgr_descriptor, spgr_dtype))
 
     refln_info = tables['reflns']
     # Resolution information is explicitly given in the 'reflns' table in a

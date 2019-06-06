@@ -180,7 +180,7 @@ def simple_p1_box(model, resolution=3):
     from .clipper_python import (Cell_descr, Cell, Spgr_descr, Spacegroup,
         Resolution, Grid_sampling)
     cell = Cell(Cell_descr(*abc, *angles))
-    spacegroup = Spacegroup(Spgr_descr(sym_str))
+    spacegroup = Spacegroup(Spgr_descr(sym_str, Spgr_descr.TYPE.HM))
     res = Resolution(resolution)
     grid_sampling=Grid_sampling(spacegroup, cell, res)
     return cell, spacegroup, grid_sampling, False
@@ -232,21 +232,28 @@ def symmetry_from_model_metadata_mmcif(model):
     except:
         raise TypeError('No space group headers in metadata!')
 
+    from .clipper_python import Cell_descr, Cell, Spgr_descr, Spacegroup, Resolution, Grid_sampling
+
     spgr_dict = dict((key.lower(), data.lower()) for (key, data) in zip(spgr_headers, spgr_data))
     spgr_str = spgr_dict['int_tables_number']
-    if spgr_str == '?':
+    if spgr_str != '?':
+        spgr_dtype = Spgr_descr.TYPE.Number
+    else:
         spgr_str = spgr_dict['space_group_name_h-m'].upper()
-    if spgr_str == '?':
-        spgr_str = spgr_dict['space_group_name_hall'].upper()
-    if spgr_str == '?':
-        raise TypeError('No space group information available!')
+        if spgr_str != '?':
+            spgr_dtype = Spgr_descr.TYPE.HM
+        else:
+            spgr_str = spgr_dict['space_group_name_hall'].upper()
+            if spgr_str != '?':
+                spgr_dtype = Spgr_descr.TYPE.Hall
+            else:
+                raise TypeError('No space group information available!')
 
 
-    from .clipper_python import Cell_descr, Cell, Spgr_descr, Spacegroup, Resolution, Grid_sampling
     cell_descr = Cell_descr(*abc, *angles)
     cell = Cell(cell_descr)
     try:
-        spgr_descr = Spgr_descr(spgr_str)
+        spgr_descr = Spgr_descr(spgr_str, spgr_dtype)
     except RuntimeError:
         raise RuntimeError('No spacegroup of name {}!'.format(spgr_str))
     spacegroup = Spacegroup(spgr_descr)
@@ -322,7 +329,7 @@ def symmetry_from_model_metadata_pdb(model):
 
     cell_descr = Cell_descr(*abc, *angles)
     cell = Cell(cell_descr)
-    spgr_descr = Spgr_descr(symstr)
+    spgr_descr = Spgr_descr(symstr, Spgr_descr.TYPE.HM)
     spacegroup = Spacegroup(spgr_descr)
     resolution = Resolution(float(res))
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
