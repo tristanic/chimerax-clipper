@@ -2,7 +2,7 @@
 # @Date:   18-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -235,9 +235,9 @@ def symmetry_from_model_metadata_mmcif(model):
     spgr_dict = dict((key.lower(), data.lower()) for (key, data) in zip(spgr_headers, spgr_data))
     spgr_str = spgr_dict['int_tables_number']
     if spgr_str == '?':
-        spgr_str = spgr_dict['space_group_name_h-m']
+        spgr_str = spgr_dict['space_group_name_h-m'].upper()
     if spgr_str == '?':
-        spgr_str = spgr_dict['space_group_name_hall']
+        spgr_str = spgr_dict['space_group_name_hall'].upper()
     if spgr_str == '?':
         raise TypeError('No space group information available!')
 
@@ -265,7 +265,7 @@ def symmetry_from_model_metadata_pdb(model):
         cryst1 = model.metadata['CRYST1'][0]
         abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
         angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
-        symstr = cryst1[55:67]
+        symstr = cryst1[55:67].upper()
     except:
         logger.warning('Missing or corrupted CRYST1 card found in the PDB file. '
             'This model will be treated as a cryo-EM model until associated '
