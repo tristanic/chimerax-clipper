@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -311,15 +311,41 @@ def load_hkl_data(session, filename, free_flag_label = None):
         return
 
     if extension == '.mtz':
-        return load_mtz_data(session, hklfile, free_flag_label = free_flag_label)
+        (hklinfo, free, expt, calc) = load_mtz_data(
+            session, hklfile, free_flag_label = free_flag_label)
 
     elif extension in ('.cif', '.ent'):
         from .io.cif_sf_read import load_cif_sf
-        return load_cif_sf(hklfile)
+        (hklinfo, free, expt, calc) = load_cif_sf(hklfile)
 
     else:
         from chimerax.core.errors import UserError
         raise UserError('Unrecognised structure factor file format!')
+
+    if free[1] is None:
+        from chimerax.clipper import HKL_data_Flag
+        free = ('R-free-flags', HKL_data_Flag(hklinfo))
+
+    if len(expt):
+        _regenerate_free_set_if_necessary(session, free[1], expt[1][0])
+
+    return (hklinfo, free, expt, calc)
+
+def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac=0.05, max_free = 2000):
+    unique_vals = set()
+    ih = data_array.first_data
+    while not ih.last():
+        unique_vals.add(flag_array[ih].data[0])
+        data_array.next_data(ih)
+    if len(unique_vals)==1:
+        import numpy
+        from chimerax.clipper.reflection_tools.r_free import generate_free_set
+        num_free = generate_free_set(flag_array, data_array, free_frac, max_free)
+        warn_str = ('No free flags detected in this dataset! '
+            'Automatically generated a new random set with {} free from {} '
+            'observed reflections. You should save your data to a new MTZ file '
+            'and use this for any future rebuilding/refinement.')
+        session.logger.warning(warn_str.format(num_free, data_array.num_obs))
 
 
 def load_mtz_data(session, filename, free_flag_label = None):
@@ -357,9 +383,10 @@ def load_mtz_data(session, filename, free_flag_label = None):
     else:
         free_flag_name = _r_free_chooser(session, flag_names)
         if free_flag_name is None:
-            raise RuntimeError('No free flags chosen. Bailing out.')
-        index = flag_names.index(free_flag_name)
-        free_flags = flag_arrays[index]
+            free_flags = None
+        else:
+            index = flag_names.index(free_flag_name)
+            free_flags = flag_arrays[index]
     exp_data_names, exp_data = (list(all_exp_data_arrays.keys()), list(all_exp_data_arrays.values()))
     calc_data_names, calc_data = (list(all_calc_data_arrays.keys()), list(all_calc_data_arrays.values()))
     return (
