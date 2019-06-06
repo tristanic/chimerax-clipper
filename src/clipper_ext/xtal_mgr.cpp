@@ -3,7 +3,7 @@
  * @Date:   28-Jan-2019
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 04-Jun-2019
+ * @Last modified time: 06-Jun-2019
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -107,6 +107,14 @@ Xtal_mgr_base::guess_free_flag_value(const HKL_data<Flag>& flags)
             else if (f.flag() > f_max) f_max = f.flag();
             flag_vals.insert(f.flag());
         }
+    }
+    if (flag_vals.size() == 1)
+    {
+        std::ostringstream err_str;
+        err_str << "ERROR: all flags in the given free flags array have a " <<
+            "single value (" << *(flag_vals.begin()) << "). Please retry " <<
+            "with a reflection file containing a valid free set.";
+        throw std::runtime_error(err_str.str());
     }
     if (f_max > 1) /* assume CCP4 */ return 0;
     if (f_min == -1 && flag_vals.size()==2) /* assume SHELX */ return -1;
