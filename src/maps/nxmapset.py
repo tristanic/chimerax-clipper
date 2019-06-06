@@ -2,7 +2,7 @@
 # @Date:   15-Jan-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -70,7 +70,7 @@ class NXmapSet(MapSet_Base):
             from ..util import guess_suitable_contour
             if is_difference_map:
                 pcontour = guess_suitable_contour(nxmap_handler, self.structure,
-                    atom_radius_scale = 0.8)
+                    atom_radius_scale = 0.05)
                 contour = numpy.array([-pcontour, pcontour])
             else:
                 contour = numpy.array([guess_suitable_contour(nxmap_handler, self.structure)])

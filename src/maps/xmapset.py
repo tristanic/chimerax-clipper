@@ -2,7 +2,7 @@
 # @Date:   06-Mar-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -75,6 +75,11 @@ class XmapSet(MapSet_Base):
     Furthermore, live map recalculation requires a single Fobs/sigFobs dataset -
     if more than one is found, the user will be asked to choose.
     '''
+
+    STANDARD_HIGH_CONTOUR=0.5
+    STANDARD_LOW_CONTOUR = 0.65
+
+
     _default_live_xmap_params = {
         '2mFo-DFc': {'b_sharp': 0, 'is_difference_map': False, 'display': True},
         'mFo-DFc': {'b_sharp': 0, 'is_difference_map': True, 'display': True},
@@ -223,16 +228,21 @@ class XmapSet(MapSet_Base):
                 self._prepare_standard_live_maps(exclude_free_reflections,
                     fill_with_fcalc, exclude_missing_reflections,
                     map_params)
+                from math import sqrt
                 for b in bsharp_vals:
                     style = 'mesh'
                     transparency = 0.0
                     if b<0:
                         name_str = "2mFo-DFc_smooth_{:.0f}".format(-b)
+                        contour = sqrt(self.resolution) / 3
+                        #contour = self.STANDARD_LOW_CONTOUR
                     else:
                         name_str = "2mFo-DFc_sharp_{:.0f}".format(b)
                         if b == max(bsharp_vals):
                             style = 'surface'
                             transparency = 0.6
+                            contour = sqrt(self.resolution) / 4
+                            #contour = self.STANDARD_HIGH_CONTOUR
                     self.add_live_xmap(name_str,
                         b_sharp=b,
                         is_difference_map=False,
@@ -240,7 +250,8 @@ class XmapSet(MapSet_Base):
                         fill_with_fcalc=fill_with_fcalc,
                         exclude_missing_reflections=exclude_missing_reflections,
                         style=style,
-                        transparency=transparency
+                        transparency=transparency,
+                        contour=contour
                         )
         if self.live_xmap_mgr is not None:
             self.live_update=True
@@ -391,12 +402,17 @@ class XmapSet(MapSet_Base):
             if is_difference_map:
                 contour = self.STANDARD_DIFFERENCE_MAP_CONTOURS
             else:
-                contour = self.STANDARD_LOW_CONTOUR
-        elif not hasattr(contour, '__len__'):
-                contour = numpy.array([contour])
+                from math import sqrt
+                contour = sqrt(self.resolution) / 3
+                # contour = self.STANDARD_LOW_CONTOUR
+
+
+        if is_difference_map:
+            contour = numpy.array(contour) * xmap_handler.sigma
         else:
-            contour = numpy.array(contour)
-        contour = contour * xmap_handler.sigma
+            from ..util import guess_suitable_contour
+            contour = [guess_suitable_contour(xmap_handler, self.structure, atom_radius_scale = contour)]
+
         xmap_handler.set_parameters(**{'cap_faces': False,
                                   'surface_levels': contour,
                                   'show_outline_box': False,
