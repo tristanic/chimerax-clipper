@@ -2,7 +2,7 @@
 # @Date:   05-Jun-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -82,7 +82,7 @@ def load_mtz_data(session, filename):
             continue
         array_type = first_column_type.get(dtype, None)
         if array_type is None:
-            print('Discarding {}'.format(current_path))
+            session.logger.info('Discarding unrecognised/unsupported data array {}'.format(current_path))
             i += 1
             continue
 
@@ -135,7 +135,7 @@ def load_mtz_data(session, filename):
                 next_found_names = next_found_names[:-1]
                 next_found_dtypes = next_found_dtypes[:-1]
                 break
-            print('Found {} dtype {}'.format(nname, ndtype))
+            # print('Found {} dtype {}'.format(nname, ndtype))
         if len(next_found_names) == len(next_expected):
             import_path = '/'.join([crystal, dataset])
             import_names = [name] + next_found_names
