@@ -2,7 +2,7 @@
 # @Date:   22-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -113,8 +113,12 @@ class Map_Mgr(Model):
             self._spotlight_mode_changed_cb)))
 
 
-        self.session.triggers.add_handler('frame drawn', self._first_init_cb)
+        # self.session.triggers.add_handler('frame drawn', self._first_init_cb)
         cm.add([self])
+
+    def added_to_session(self, session):
+        super().added_to_session(session)
+        session.triggers.add_handler('frame drawn', self._first_init_cb)
 
     def _initialize_zone_mgr(self):
         if self._zone_mgr is None:

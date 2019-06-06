@@ -342,7 +342,8 @@ def apply_scene_positions(model):
     '''
     p = model.scene_position
     if not p.is_identity():
-        model.atoms.coords = p*model.atoms.coords
+        model.atoms.transform(p)
+        # model.atoms.coords = p*model.atoms.coords
         from chimerax.core.geometry import Place
         model.position = Place()
         if isinstance(model.parent, Symmetry_Manager):
@@ -460,20 +461,26 @@ class Symmetry_Manager(Model):
 
         self._update_handler = session.triggers.add_handler('new frame',
             self.update)
-        self.set_default_atom_display(mode=hydrogens)
 
-        from .mousemodes import initialize_clipper_mouse_modes
-        initialize_clipper_mouse_modes(session)
+        self._hydrogen_mode = hydrogens
+
         id = model.id
         #session.models.remove([model])
         self.initialized=False
+        apply_scene_positions(model)
         self._transplant_model(model)
         #self.add([model])
-        session.models.add([self])
-        apply_scene_positions(model)
+        # session.models.add([self])
         self.initialized=True
-        if id is not None and len(id) == 1:
-            session.models.assign_id(self, id)
+        # if id is not None and len(id) == 1:
+        #     session.models.assign_id(self, id)
+
+    def added_to_session(self, session):
+        super().added_to_session(session)
+        self.set_default_atom_display(mode=self._hydrogen_mode)
+        from .mousemodes import initialize_clipper_mouse_modes
+        initialize_clipper_mouse_modes(session)
+
 
     @property
     def position(self):
@@ -897,9 +904,13 @@ class AtomicSymmetryModel(Model):
         self._model_changes_handler = atomic_structure.triggers.add_handler(
                                         'changes', self._model_changed_cb)
         self.live_scrolling = live
+
+    def added_to_session(self, session):
+        super().added_to_session(session)
         # Have to delay setting the drawing settings until after the frame is
         # drawn, otherwise they get overridden by ChimeraX
-        self.session.triggers.add_handler('frame drawn', self._set_default_cartoon_cb)
+        session.triggers.add_handler('frame drawn', self._set_default_cartoon_cb)
+
 
     def _set_default_cartoon_cb(self, *_):
         from .util import set_to_default_cartoon

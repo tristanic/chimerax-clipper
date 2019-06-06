@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 29-May-2019
+# @Last modified time: 06-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -40,9 +40,13 @@ def open_structure_factors(session, path, structure_model = None,
             raise e
         else:
             session.logger.warning(str(e))
-            return None, None            
+            return None, None
 
-
+def open_structure_factors_and_add_to_session(session, path, structure_model=None,
+        over_sampling=1.5, always_raise_errors=False):
+    models, log_str = open_structure_factors(session, path, structure_model,
+        over_sampling, always_raise_errors)
+    session.models.add(models)
 
 def spotlight(session, models=None, enable=True, radius=None):
     from chimerax.clipper.symmetry import get_symmetry_handler
@@ -127,7 +131,7 @@ def register_clipper_cmd(logger):
         ],
         synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
     )
-    register('clipper open', open_desc, open_structure_factors, logger=logger)
+    register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
 
     spot_desc = CmdDesc(
         optional=[
