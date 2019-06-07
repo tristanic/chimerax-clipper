@@ -2,7 +2,7 @@
 # @Date:   06-Mar-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 06-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -300,7 +300,7 @@ class XmapSet(MapSet_Base):
             return
         if flag:
             if self.live_xmap_mgr is None:
-                self.session.logger.status('Map set {} has no experimental '
+                self.session.logger.warning('Map set {} has no experimental '
                     'data! Live map recalculation is not possible.'.format(self.name))
             else:
                 if self._model_changes_handler is None:
@@ -608,11 +608,8 @@ class XmapSet(MapSet_Base):
         xm = self.live_xmap_mgr
         xm.apply_new_maps()
         if self.show_r_factors:
-            self.session.logger.status(
-                'R-work: {:0.4f}  Rfree: {:0.4f}'.format(
-                    xm.rwork, xm.rfree
-                )
-            )
+            rfactor_string = 'R-work: {:0.4f}  Rfree: {:0.4f}'.format(xm.rwork, xm.rfree)
+            self.session.logger.status(rfactor_string, secondary=True)
         self.triggers.activate_trigger('maps recalculated', None)
 
     def delete(self):
