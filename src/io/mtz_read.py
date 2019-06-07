@@ -2,7 +2,7 @@
 # @Date:   05-Jun-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 06-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -94,7 +94,7 @@ def load_mtz_data(session, filename):
                 'data types ({}), but the following column type "{}" does not '
                 'match any of the expected types ({}). Importing of this '
                 'column has been skipped.')
-                warn_str.format(current_path,
+                warn_str = warn_str.format(current_path,
                     ', '.join([atype.__name__ for atype in array_type.values()]),
                     ndtype, ', '.join(array_type.keys()))
                 session.logger.warning(warn_str)
