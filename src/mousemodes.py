@@ -2,7 +2,7 @@
 # @Date:   22-Mar-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 08-May-2019
+# @Last modified time: 07-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -18,16 +18,17 @@ def initialize_clipper_mouse_modes(session):
 def initialize_zoom_mouse_modes(session):
     z = ZoomMouseMode(session)
     c = ClipPlaneAdjuster(session, z)
-    session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z)
+    # session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z)
+    session.ui.mouse_modes.bind_mouse_mode('wheel',[], z)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['shift'], c)
 
 def initialize_map_contour_mouse_modes(session):
     #z = ZoomMouseMode(session)
     s = SelectVolumeToContour(session)
     v = ContourSelectedVolume(session, s, True)
-    #session.ui.mouse_modes.bind_mouse_mode('right',[],z)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['control'], s)
-    session.ui.mouse_modes.bind_mouse_mode('wheel',[], v)
+    # session.ui.mouse_modes.bind_mouse_mode('wheel',[], v)
+    session.ui.mouse_modes.bind_mouse_mode('wheel',['alt'], v)
 
 class ClipPlaneAdjuster(MouseMode):
     def __init__(self, session, zoom_mode):
