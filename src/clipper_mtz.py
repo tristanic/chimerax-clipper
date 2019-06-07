@@ -2,7 +2,7 @@
 # @Date:   28-Feb-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 06-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -281,7 +281,8 @@ def find_free_set(mtzin, temp_tree, label = None):
     return (possible_free_flags, possible_free_flags_names)
 
 
-def load_hkl_data(session, filename, free_flag_label = None):
+def load_hkl_data(session, filename, free_flag_label = None,
+        auto_choose_rfree=True, auto_choose_reflection_data=True):
     '''
     Load in an mtz file, create Clipper objects from the data, and
     return the tuple:
@@ -294,10 +295,7 @@ def load_hkl_data(session, filename, free_flag_label = None):
     experimental_sets and calculated_sets are arrays of Clipper objects.
 
     If free_flag_label is a string, the column with that name will be assigned
-    as the free flags. If free_flag_label is -1, we will continue even if
-    no free set is found. If multiple possible free sets are found, or
-    no free sets are found and free_flag_label != -1, an error will be
-    raised.
+    as the free flags.
     '''
     import os
     if os.path.isfile(filename):
@@ -326,10 +324,37 @@ def load_hkl_data(session, filename, free_flag_label = None):
         from chimerax.clipper import HKL_data_Flag
         free = ('R-free-flags', HKL_data_Flag(hklinfo))
 
+    if len(expt[0]) > 1:
+        if auto_choose_reflection_data:
+            choice = _auto_choose_reflections(*expt)
+            warn_str = ('WARNING: multiple experimental reflection datasets '
+                'found:\n {} \n'
+                'Automatically choosing "{}".')
+            session.logger.warning(warn_str.format(',\n'.join(expt[0]), choice[0][0]))
+            expt = choice
+
     if len(expt):
         _regenerate_free_set_if_necessary(session, free[1], expt[1][0])
 
     return (hklinfo, free, expt, calc)
+
+def _auto_choose_reflections(names, datasets):
+    '''
+    Attempt to automatically choose the best experimental reflection dataset
+    from a loaded file to use for generating maps. The logic at present is very
+    simple: if a non-anomalous intensity dataset is present, use that. Otherwise,
+    if a non-anomalous amplitude dataset is present, use that. Otherwise, move
+    on to anomalous intensities, followed by anomalous amplitudes.
+    '''
+    from chimerax.clipper import (HKL_data_F_sigF, HKL_data_I_sigI,
+        HKL_data_F_sigF_ano, HKL_data_I_sigI_ano)
+    for dtype in (HKL_data_I_sigI, HKL_data_F_sigF, HKL_data_I_sigI_ano,
+        HKL_data_F_sigF_ano):
+        for name, dataset in zip(names, datasets):
+            if type(dataset) == dtype:
+                return ([name], [dataset])
+    raise RuntimeError('No suitable experimental data found!')
+
 
 def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac=0.05, max_free = 2000):
     unique_vals = set()
@@ -348,7 +373,7 @@ def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac
         session.logger.warning(warn_str.format(num_free, data_array.num_obs))
 
 
-def load_mtz_data(session, filename, free_flag_label = None):
+def load_mtz_data(session, filename, free_flag_label = None, auto_choose_rfree=True):
     from chimerax.clipper import HKL_data_Flag, HKL_data_F_phi
     from .io import mtz_read
     hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename)
@@ -377,11 +402,35 @@ def load_mtz_data(session, filename, free_flag_label = None):
             else:
                 all_exp_data_arrays[dname_ext] = data_array
     flag_names, flag_arrays = (list(all_flag_arrays.keys()), list(all_flag_arrays.values()))
-    if len(flag_names) == 1:
-        free_flag_name = flag_names[0]
-        free_flags = flag_arrays[0]
-    else:
-        free_flag_name = _r_free_chooser(session, flag_names)
+    free_flag_name = None
+    if free_flag_label is not None:
+        try:
+            name_index = [name.lower() for name in flag_names].index(free_flag_label.lower())
+            free_flag_name = flag_names[name_index]
+        except ValueError:
+            from chimerax.core.errors import UserError
+            err_str = ('The specified free flag label {} was not found in this '
+                'file. Possible names are:\n{}')
+            raise UserError(err_str.format(free_flag_label, ',\n'.join(flag_names)))
+    if free_flag_name is None:
+        if len(flag_names) == 1:
+            free_flag_name = flag_names[0]
+            free_flags = flag_arrays[0]
+        else:
+            if auto_choose_rfree:
+                for i, name in enumerate(flag_names):
+                    if 'free' in name.lower():
+                        break
+                else:
+                    name = flag_names[0]
+                warn_str = ('WARNING: found multiple possible R-free arrays: \n {} \n'
+                    'Automatically choosing "{}". If this is incorrect, please either '
+                    'provide a file with a single flag array, or load the file '
+                    'again using the free_flag_label argument.')
+                session.logger.warning(warn_str.format(',\n'.join(flag_names), name))
+                free_flag_name = name
+            else:
+                free_flag_name = _r_free_chooser(session, flag_names)
         if free_flag_name is None:
             free_flags = None
         else:
