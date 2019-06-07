@@ -10,7 +10,7 @@
 
 
 
-<BundleInfo name="ChimeraX-Clipper" version="0.9" package="chimerax.clipper"
+<BundleInfo name="ChimeraX-Clipper" version="0.9.1" package="chimerax.clipper"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
@@ -37,7 +37,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
@@ -54,11 +54,11 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
-    <IncludeDir platform="windows">C:\include</IncludeDir>
+      <IncludeDir platform="windows">C:\include</IncludeDir>
       <!-- <LinkArgument>-s</LinkArgument> -->
         <!-- <Library>stdc++</Library> -->
 
@@ -77,7 +77,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
@@ -125,7 +125,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
@@ -163,7 +163,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
@@ -266,7 +266,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
@@ -299,7 +299,7 @@
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
       <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
       <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
-      <!-- <LinkArgument platform="linux">-s</LinkArgument> -->
+      <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
