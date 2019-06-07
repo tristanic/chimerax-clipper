@@ -801,15 +801,20 @@ def map_potential_recommended_bsharp(resolution):
     bsharp_base = 30
     return bsharp_base*resolution-2.5*bsharp_base
 
-def viewing_recommended_bsharp(resolution):
+def viewing_recommended_bsharp(resolution, crossover=2.5, low_res_base=45,
+        high_res_base=25):
     '''
     For viewing purposes it is also often useful to have a smoothed or
     sharpened visualisation of your map, but the optimal degree of sharpening
     for visualisation is not necessarily the same as that for MDFF.
     '''
     # smooth by 50 A**2 at 1.5A res; sharpen by 50 A**2 at 3.5A res, 0 at 2.5A res
-    bsharp_base = 50
-    return bsharp_base*resolution-2.5*bsharp_base
+    from math import sqrt
+    if resolution < crossover:
+        return -high_res_base*sqrt(crossover-resolution) + 5
+    else:
+        return low_res_base*sqrt(resolution-crossover) - 5
+
 
 
 def _calculate_grid_padding(radius, grid, cell):
