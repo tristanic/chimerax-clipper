@@ -18,7 +18,7 @@ def initialize_clipper_mouse_modes(session):
 def initialize_zoom_mouse_modes(session):
     z = ZoomMouseMode(session)
     c = ClipPlaneAdjuster(session, z)
-    # session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z)
+    session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z) # Legacy mode
     session.ui.mouse_modes.bind_mouse_mode('wheel',[], z)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['shift'], c)
 
