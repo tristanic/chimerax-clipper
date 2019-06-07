@@ -258,7 +258,9 @@ class XmapSet(MapSet_Base):
         if use_static_maps:
             cdata = crystal_data.calculated_data
             for dataset in cdata:
-                self.add_static_xmap(dataset)
+                xmap = self.add_static_xmap(dataset)
+                if xmap.is_probably_fcalc_map():
+                    xmap.display = False
         manager.add([self])
 
 
@@ -460,6 +462,7 @@ class XmapSet(MapSet_Base):
             self.master_map_mgr.rezone_needed()
         else:
             new_handler.display=False
+        return new_handler
 
     def add_static_xmap(self, dataset,
         is_difference_map=None,
@@ -492,6 +495,7 @@ class XmapSet(MapSet_Base):
             self.master_map_mgr.rezone_needed()
         else:
             new_handler.display=False
+        return new_handler
 
     def save_mtz(self, filename, save_input_data=True, save_output_fobs=True,
             save_map_coeffs=False):
@@ -716,6 +720,21 @@ class XmapHandler_Static(XmapHandler_Base):
             all = self._all_stats = Map_stats(self._xmap)
             self._stats = (all.mean, all.std_dev, all.std_dev)
         return self._stats
+
+    def is_probably_fcalc_map(self):
+        '''
+        Attempt to guess if a map loaded from a file is Fcalc (that is, simply
+        calculated from the atomic coordinates and properties). All we can really go
+        on here is some simple heuristics.
+        '''
+        name = self.name.upper()
+        if name.startswith('FC'):
+            return True
+        if 'CALC' in name:
+            return True
+        return False
+
+
 
 class XmapHandler_Live(XmapHandler_Base):
     '''
