@@ -54,8 +54,8 @@ def _parse_column_path(cpath):
     crystal, dataset, name = path.split('/')[1:]
     return (crystal, dataset, name, dtype)
 
-def load_mtz_data(session, filename):
-    from chimerax.clipper import CCP4MTZfile, HKL_info
+def load_mtz_data(session, filename, load_map_coeffs=True):
+    from chimerax.clipper import CCP4MTZfile, HKL_info, HKL_data_F_phi
 
     mtzin = CCP4MTZfile()
     hklinfo = HKL_info()
@@ -100,6 +100,10 @@ def load_mtz_data(session, filename):
                 session.logger.warning(warn_str)
                 i += 1
                 continue
+            elif real_array_type == HKL_data_F_phi and not load_map_coeffs:
+                i += 2
+                continue
+
             next_expected = [ndtype]
             array_type = real_array_type
         # print('Path {} looks like {}. Trying...'.format(current_path, array_type.__name__))

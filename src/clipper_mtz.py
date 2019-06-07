@@ -282,7 +282,8 @@ def find_free_set(mtzin, temp_tree, label = None):
 
 
 def load_hkl_data(session, filename, free_flag_label = None,
-        auto_choose_rfree=True, auto_choose_reflection_data=True):
+        auto_choose_rfree=True, auto_choose_reflection_data=True,
+        load_map_coeffs=True):
     '''
     Load in an mtz file, create Clipper objects from the data, and
     return the tuple:
@@ -310,11 +311,13 @@ def load_hkl_data(session, filename, free_flag_label = None,
 
     if extension == '.mtz':
         (hklinfo, free, expt, calc) = load_mtz_data(
-            session, hklfile, free_flag_label = free_flag_label)
+            session, hklfile, free_flag_label = free_flag_label,
+            load_map_coeffs = load_map_coeffs)
 
     elif extension in ('.cif', '.ent'):
         from .io.cif_sf_read import load_cif_sf
-        (hklinfo, free, expt, calc) = load_cif_sf(hklfile)
+        (hklinfo, free, expt, calc) = load_cif_sf(hklfile,
+            load_map_coeffs = load_map_coeffs)
 
     else:
         from chimerax.core.errors import UserError
@@ -333,7 +336,7 @@ def load_hkl_data(session, filename, free_flag_label = None,
             session.logger.warning(warn_str.format(',\n'.join(expt[0]), choice[0][0]))
             expt = choice
 
-    if len(expt):
+    if len(expt[0]):
         _regenerate_free_set_if_necessary(session, free[1], expt[1][0])
 
     return (hklinfo, free, expt, calc)
@@ -373,10 +376,11 @@ def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac
         session.logger.warning(warn_str.format(num_free, data_array.num_obs))
 
 
-def load_mtz_data(session, filename, free_flag_label = None, auto_choose_rfree=True):
+def load_mtz_data(session, filename, free_flag_label = None,
+        auto_choose_rfree=True, load_map_coeffs=True):
     from chimerax.clipper import HKL_data_Flag, HKL_data_F_phi
     from .io import mtz_read
-    hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename)
+    hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename, load_map_coeffs=load_map_coeffs)
     if len(crystal_dict) == 2:
         crystal_dict = _merge_if_mini_mtz_format(crystal_dict)
     if len(crystal_dict) > 1:

@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 06-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -96,15 +96,15 @@ _anomalous_data_columns = (
 )
 
 
-def load_cif_sf(filename):
+def load_cif_sf(filename, load_map_coeffs=True):
     '''
     Load a set of structure factors from a .cif file.
     '''
     from chimerax.atomic.mmcif import get_cif_tables
     table_list = get_cif_tables(filename, _cif_sf_table_names)
-    return _parse_tables(table_list)
+    return _parse_tables(table_list, load_map_coeffs=load_map_coeffs)
 
-def _parse_tables(table_list):
+def _parse_tables(table_list, load_map_coeffs=True):
     tables = dict(zip(_cif_sf_table_names, table_list))
     metadata = {l: tables[l] for l in _metadata_tables}
     cell_info = tables['cell']
@@ -159,7 +159,7 @@ def _parse_tables(table_list):
     for column_names, type_spec in _data_columns_to_data_types.items():
         result = _cif_columns_to_clipper(refln_table, hkl_info, hkls, column_names, type_spec)
         if result is not None:
-            if isinstance(result, HKL_data_F_phi):
+            if isinstance(result, HKL_data_F_phi) and load_map_coeffs:
                 calc_names.append(', '.join(column_names))
                 calc_data.append(result)
             else:
