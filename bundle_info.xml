@@ -3,7 +3,7 @@
 @Date:   26-Feb-2018
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 04-Jun-2019
+@Last modified time: 07-Jun-2019
 @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 @Copyright: Copyright 2017-2018 Tristan Croll
 -->
@@ -419,6 +419,7 @@
 ]
     <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor MTZ :: mtz :: Reflection data :: .mtz :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Open :: Structure factor MTZ :: mtz :: true :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Save :: Structure factor MTZ :: mtz :: true :: preserve_input:Bool, save_map_coeffs:Bool</ChimeraXClassifier>
     <!-- <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor CIF :: sfcif :: Reflection data :: .cif :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Open :: Structure factor CIF :: sfcif :: false :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier> -->
     <ChimeraXClassifier>ChimeraX :: Command :: clipper :: General :: Command-line control of Clipper plugin for symmetry and map visualisation</ChimeraXClassifier>

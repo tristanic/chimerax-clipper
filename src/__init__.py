@@ -2,7 +2,7 @@
 # @Date:   09-Apr-2018
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -68,6 +68,7 @@ from .clipper_mtz import ReflectionDataContainer
 
 from .symmetry import get_symmetry_handler, get_map_mgr
 
+
 from chimerax.core.toolshed import BundleAPI
 class _ClipperBundle(BundleAPI):
     from chimerax.core.commands import FloatArg
@@ -114,5 +115,12 @@ class _ClipperBundle(BundleAPI):
             from .cmd import open_structure_factors
             return open_structure_factors(session, path, structure_model=structure_model,
                 over_sampling=over_sampling)
+
+    @staticmethod
+    def save_file(session, path, *, models=None, preserve_input=False,
+            save_map_coeffs=False):
+        from .cmd import save_structure_factors
+        return save_structure_factors(session, path, models=models,
+            preserve_input=preserve_input, save_map_coeffs=save_map_coeffs)
 
 bundle_api = _ClipperBundle()

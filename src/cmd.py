@@ -2,22 +2,17 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 06-Jun-2019
+# @Last modified time: 07-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
-
+from chimerax.core.errors import UserError
 
 def open_structure_factors(session, path, structure_model = None,
-        over_sampling=1.5, always_raise_errors=False):
+        over_sampling=1.5):
     if structure_model is None:
-        if always_raise_errors:
-            raise TypeError('Reflection data must be associated with an atomic '
-                'structure, provided via the structure_model argument.')
-        else:
-            session.logger.warning('structureModel argument is required when '
-                'opening a reflection data file!')
-        return
+        raise UserError('Reflection data must be associated with an atomic '
+            'structure, provided via the structure_model argument.')
     from .symmetry import get_map_mgr
     mmgr = get_map_mgr(structure_model, create=True)
     try:
@@ -47,6 +42,30 @@ def open_structure_factors_and_add_to_session(session, path, structure_model=Non
     models, log_str = open_structure_factors(session, path, structure_model,
         over_sampling, always_raise_errors)
     session.models.add(models)
+
+def save_structure_factors(session, path, models=None, preserve_input=False,
+        save_map_coeffs=False):
+    from .maps import XmapSet
+    xmapsets = [m for m in models if isinstance(m, XmapSet)]
+    if not xmapsets:
+        raise UserError('You need to specify at least one crystallographic map set to save!')
+    suffix=''
+    import os
+    fname, ext = os.path.splitext(path)
+    if ext.lower() != '.mtz':
+        if len(ext)<=1:
+            ext='.mtz'
+        else:
+            ext += '.mtz'
+    for i, xmapset in enumerate(xmapsets):
+        if i > 0:
+            suffix = '-{}'.format(i)
+        save_path = fname+suffix+ext
+        xmapset.save_mtz(save_path, save_input_data=preserve_input,
+            save_output_fobs=True, save_map_coeffs=save_map_coeffs)
+
+
+
 
 def spotlight(session, models=None, enable=True, radius=None):
     from chimerax.clipper.symmetry import get_symmetry_handler
@@ -111,6 +130,20 @@ class VolumesArg(AtomSpecArg):
         models = aspec.evaluate(session).models
         volumes = [m for m in models if type(m) == Volume]
         return volumes, text, rest
+
+class XmapSetsArg(AtomSpecArg):
+    name = "a models specifier"
+
+    @classmethod
+    def parse(cls, text, session):
+        '''
+        Returns any XmapSet objects found in the selection
+        '''
+        from .maps import XmapSet
+        aspec, text, rest = super().parse(text, session)
+        models = aspec.evaluate(session).models
+        xmapsets = [m for m in models if type(m) == XmapSet]
+        return xmapsets, text, rest
 
 
 def register_clipper_cmd(logger):
