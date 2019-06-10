@@ -23,7 +23,8 @@ __pycache__/
 !libfftw_mkl_core.so
 # Private ChimeraX source
 src/contour/
-
+# Precompiled contouring binary
+!contour_thread.cpython-37m*
 
 # Distribution / packaging
 bin/

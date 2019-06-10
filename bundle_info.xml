@@ -47,7 +47,10 @@
   </CModule>
 
 
-  <CModule name="contour_thread" usesNumpy="true">
+<!-- This module currently uses some private ChimeraX code, so is not provided
+     on the GitHub repository. Instead, precompiled modules for Linux, Mac and
+     Windows are provided. -->
+  <!-- <CModule name="contour_thread" usesNumpy="true">
       <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
@@ -59,12 +62,11 @@
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
       <IncludeDir platform="windows">C:\include</IncludeDir>
-      <!-- <LinkArgument>-s</LinkArgument> -->
-        <!-- <Library>stdc++</Library> -->
-
         <SourceFile>src/contour/contour_threaded.cpp</SourceFile>
         <SourceFile>src/contour/contourdata.cpp</SourceFile>
-  </CModule>
+  </CModule> -->
+
+
 
   <!-- Compiled modules in bundle
        CModule gives the name of the module
@@ -407,6 +409,7 @@
          <DataFile platform="mac">libfftw2xc.dylib</DataFile>
          <DataFile platform="mac">mkl_custom.dylib</DataFile>
          <DataFile platform="windows">mkl_fftw2.dll</DataFile>
+         <DataFile platform="linux">contour_thread.cpython-37m-x86_64-linux-gnu.so</DataFile>
      </DataFiles>
 
   <!-- <DataFiles>
