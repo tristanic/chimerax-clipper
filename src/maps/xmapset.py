@@ -809,8 +809,8 @@ def map_potential_recommended_bsharp(resolution):
     below, sharpening above). Improved methods will be developed over time.
     '''
     # smooth by 30 A**2 at 1.5A res; sharpen by 30A**2 at 3.5A res; 0 at 2.5A res
-    bsharp_base = 30
-    return bsharp_base*resolution-2.5*bsharp_base
+    return viewing_recommended_bsharp(resolution, crossover=2.5, low_res_base=35,
+        high_res_base=20)
 
 def viewing_recommended_bsharp(resolution, crossover=2.5, low_res_base=45,
         high_res_base=25):
@@ -822,9 +822,9 @@ def viewing_recommended_bsharp(resolution, crossover=2.5, low_res_base=45,
     # smooth by 50 A**2 at 1.5A res; sharpen by 50 A**2 at 3.5A res, 0 at 2.5A res
     from math import sqrt
     if resolution < crossover:
-        return -high_res_base*sqrt(crossover-resolution) + 5
+        return -high_res_base*sqrt(crossover-resolution) + 2.5
     else:
-        return low_res_base*sqrt(resolution-crossover) - 5
+        return low_res_base*sqrt(resolution-crossover) - 2.5
 
 
 
