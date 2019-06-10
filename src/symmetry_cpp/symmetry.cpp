@@ -503,7 +503,8 @@ atom_and_bond_sym_transforms_from_sym_atoms(void *atoms, uint8_t *sym_indices,
             {
                 current_sym = *asym;
                 std::unordered_map<Atom*, double*> amap;
-                while (count < natoms && *(asym++) == current_sym) {
+                while (count < natoms && *(asym) == current_sym) {
+                    asym++;
                     amap[*aa++] = coords;
                     coords += 3;
                     count++;
