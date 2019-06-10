@@ -161,16 +161,32 @@ class SelectVolumeToContour(MouseMode):
     has never been set or has been deleted, picked_volume defaults to
     the first Volume object in session.models.list().
     '''
-    def __init__(self, session):
+    def __init__(self, session, cooldown_time = 0.15):
         super().__init__(session)
         self._last_picked_index = 0
         self._picked_volume = None
         self._deselect_handler = None
+        from time import time
+        self._last_event_time = time()
+        self._cooldown_time = cooldown_time
         self._time_until_deselect = 5 # seconds
         self._deselect_start_time = 0
     def wheel(self, event):
         '''Select the next visible volume.'''
-        d = int(event.wheel_value())
+        # Simply acting on every event works well on a mouse, but horribly on
+        # a trackpad - presumably because swiping on the trackpad generates a
+        # much longer string of events with finer-grained fractional values:
+        # either nothing happens, or a large number happen all at once, making
+        # it nearly impossible to control exactly which map ends up selected.
+        # Instead, we'll change the index by only +/- 1 per event, and impose
+        # a cooldown period during which further events will be ignored.
+        from time import time
+        if time() - self._last_event_time < self._cooldown_time:
+            return
+        self._last_event_time = time()
+        from math import copysign
+        d = int(copysign(1, event.wheel_value()))
+        # d = int(event.wheel_value())
         vol_list = self._get_vol_list()
         for v in vol_list:
             v.selected = False
