@@ -988,9 +988,9 @@ class AtomicSymmetryModel(Model):
 
     def sym_select_within(self, atoms, cutoff, coords=None, whole_residues = True):
         '''
-        Given a set of atoms, return a (atoms, symops, sym_indices) tuple
-        giving all atoms and their symmetry operators within the given cutoff
-        distance from any atom in the primary set.
+        Given a set of atoms, return a (atoms, symmetry matrices, sym_indices,
+        symops) tuple giving all atoms and their symmetry operators within the
+        given cutoff distance from any atom in the primary set.
         Args:
             atoms:
                 The core set of atoms to be surrounded by the new selection.
