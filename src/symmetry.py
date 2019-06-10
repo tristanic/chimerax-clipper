@@ -147,8 +147,14 @@ def symmetry_coords(atoms, sym_matrices, sym_indices):
 
 from chimerax.core.models import Model, Drawing
 
-def get_symmetry_handler(structure, create=False):
+def get_symmetry_handler(structure, create=False, auto_add_to_session=False):
+    sh = _get_symmetry_handler(structure, create)
+    if auto_add_to_session and sh is not None:
+        if sh not in structure.session.models.list():
+            structure.session.models.add([sh])
+    return sh
 
+def _get_symmetry_handler(structure, create=False):
     p = structure.parent
     if isinstance(p, Symmetry_Manager):
             return p
@@ -156,8 +162,8 @@ def get_symmetry_handler(structure, create=False):
         return Symmetry_Manager(structure)
     return None
 
-def get_map_mgr(structure, create=False):
-    sh = get_symmetry_handler(structure, create=create)
+def get_map_mgr(structure, create=False, auto_add_to_session=False):
+    sh = get_symmetry_handler(structure, create=create, auto_add_to_session=auto_add_to_session)
     if sh is not None:
         return sh.map_mgr
     return None
