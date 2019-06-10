@@ -1,5 +1,5 @@
 /*! \file lib/resol_basisfn.h
-    Header file for resolution basis function 
+    Header file for resolution basis function
 */
 //C Copyright (C) 2000-2006 Kevin Cowtan and University of York
 //L
@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_RESOL_BASISFN
 #define CLIPPER_RESOL_BASISFN

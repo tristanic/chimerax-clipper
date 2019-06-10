@@ -18,10 +18,3 @@
 // Note that this software makes use of modified versions of the Clipper, LibCCP4
 // and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 // of these is redistributed under its own license terms.
-
-
-namespace clipper_cx {
-
-typedef float ftype;
-
-}

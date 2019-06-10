@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -33,9 +33,9 @@
 </ul>
  *
  *  @section csym_overview Overview
- 
+
 The CSYM library is centred around a data file <tt>syminfo.lib</tt> which is
-auto-generated from sgtbx (the Space Group Toolbox of 
+auto-generated from sgtbx (the Space Group Toolbox of
 <a href="http://cctbx.sourceforge.net/">cctbx</a>). A description of
 the contents of this file is given in the <a href="../symlib.html">
 documentation</a> of the Fortran API.
@@ -43,9 +43,9 @@ documentation</a> of the Fortran API.
 <p>A particular spacegroup in a particular setting
 is loaded into an in-memory data structure by requesting a particular
 spacegroup name, number, or set of operators. See the functions
-<tt>ccp4spg_load_by_standard_num</tt>, <tt>ccp4spg_load_by_ccp4_num</tt>, 
+<tt>ccp4spg_load_by_standard_num</tt>, <tt>ccp4spg_load_by_ccp4_num</tt>,
 <tt>ccp4spg_load_by_spgname</tt>,  <tt>ccp4spg_load_by_ccp4_spgname</tt>
-and <tt>ccp4_spgrp_reverse_lookup</tt>. Information on the in-memory 
+and <tt>ccp4_spgrp_reverse_lookup</tt>. Information on the in-memory
 data structure is given in ccp4_spg.h The memory can be freed by the
 function <tt>ccp4spg_free</tt>.
 
@@ -53,8 +53,8 @@ function <tt>ccp4spg_free</tt>.
 <ul>
 <li>Query the data structure, e.g. <tt>ccp4spg_symbol_Hall</tt>, etc. (members
 of the structure can of course be obtained directly)
-<li>Check reciprocal space indices for a particular spacegroup, 
-e.g. <tt>ccp4spg_is_in_asu</tt>, <tt>ccp4spg_is_centric</tt>, 
+<li>Check reciprocal space indices for a particular spacegroup,
+e.g. <tt>ccp4spg_is_in_asu</tt>, <tt>ccp4spg_is_centric</tt>,
 <tt>ccp4spg_get_multiplicity</tt>, <tt>ccp4spg_is_sysabs</tt>, etc.
 <li>Set appropriate grids for FFT, e.g. <tt>set_fft_grid</tt>
 </ul>
@@ -70,7 +70,7 @@ corner and the translation vector is in elements [*][3]. Element [3][3] is
 set to 1.0
 <li>As a string, such as "-x+1/2,-y,z+1/2"
 </ul>
-Check the function description for which form is expected. Often, there 
+Check the function description for which form is expected. Often, there
 are alternative functions if you wish to supply the operators in a
 different form. There are also the following conversion functions:
 <ul>
@@ -99,8 +99,14 @@ See examples on <a href="ftp://ftp.ccp4.ac.uk/mdw/csym">ftp area</a>
  *  Functions defining the C-level API for accessing spacegroup properties.
  *  The primary spacegroup information comes from the data file syminfo.lib
  *
- *  @author Martyn Winn 
+ *  @author Martyn Winn
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
+
 
 #ifndef __CSymLib__
 #define __CSymLib__
@@ -163,7 +169,7 @@ CCP4_IMEX CCP4SPG * ccp4_spgrp_reverse_lookup(const int nsym1, const ccp4_symop 
 
 /** Look up spacegroup from SYMOP.
  *  This would not normally be called directly, but via one of
- *  the wrapping functions. 
+ *  the wrapping functions.
  *  Allocates memory for the spacegroup structure. This can be freed
  *  later by ccp4spg_free().
  * @param numspg spacegroup number
@@ -175,8 +181,8 @@ CCP4_IMEX CCP4SPG * ccp4_spgrp_reverse_lookup(const int nsym1, const ccp4_symop 
  * @return pointer to spacegroup
  */
 CCP4_IMEX CCP4SPG *ccp4spg_load_spacegroup(const int numspg, const int ccp4numspg,
-        const char *spgname, const char *ccp4spgname, 
-        const int nsym1, const ccp4_symop *op1); 
+        const char *spgname, const char *ccp4spgname,
+        const int nsym1, const ccp4_symop *op1);
 
 /** Free all memory malloc'd from static pointers.
  * To be called before program exit. The function can be
@@ -310,9 +316,9 @@ CCP4_IMEX ccp4_symop ccp4_symop_invert( const ccp4_symop op1 );
 */
 CCP4_IMEX int ccp4spg_name_equal(const char *spgname1, const char *spgname2);
 
-/** Try to match a spacegroup name to one from SYMINFO. Blanks are 
+/** Try to match a spacegroup name to one from SYMINFO. Blanks are
  * removed when making the comparison. Strings are converted to upper
- * case before making the comparison. If spgname_lib has " 1 " and 
+ * case before making the comparison. If spgname_lib has " 1 " and
  * spgname_match doesn't, then strip out " 1" to do "short" comparison.
  * @param spgname1 First spacegroup name, assumed to be a standard one
  *  obtained at some point from SYMINFO
@@ -360,7 +366,7 @@ CCP4_IMEX ccp4_symop *ccp4spg_norm_trans(ccp4_symop *op);
  * Kevin's code. The lists are coded as ints, which are then sorted and compared.
  * Note that no changes are made to the input operators, so that operators
  * differing by an integral number of unit cell translations are considered
- * unequal. If this is not what you want, normalise the operators with 
+ * unequal. If this is not what you want, normalise the operators with
  * ccp4spg_norm_trans first.
  * @param nsym1 number of symmetry operators in first list
  * @param op1 first list of symmetry operators
@@ -424,9 +430,9 @@ CCP4_IMEX int ccp4spg_is_in_asu(const CCP4SPG* sp, const int h, const int k, con
  * @param hout output reflection index
  * @param kout output reflection index
  * @param lout output reflection index
- * @return "isym" if successful, 0 otherwise. "isym" = 2*isymop - 1 for 
+ * @return "isym" if successful, 0 otherwise. "isym" = 2*isymop - 1 for
  * reflections placed in the positive asu, i.e. I+ of a Friedel pair, and
- * "isym" = 2*isymop for reflections placed in the negative asu, i.e. I- of 
+ * "isym" = 2*isymop for reflections placed in the negative asu, i.e. I- of
  * a Friedel pair. Here "isymop" is the number of the symmetry operator used.
  */
 CCP4_IMEX int ccp4spg_put_in_asu(const CCP4SPG* sp, const int hin, const int kin, const int lin,
@@ -448,7 +454,7 @@ CCP4_IMEX void ccp4spg_generate_indices(const CCP4SPG* sp, const int isym,
                   const int hin, const int kin, const int lin,
 			      int *hout, int *kout, int *lout );
 
-/** Shift phase value associated with hin,kin,lin according to translation 
+/** Shift phase value associated with hin,kin,lin according to translation
 and optional sign change. Return in range 0,360.
  * @param hin reflection index
  * @param kin reflection index
@@ -637,7 +643,7 @@ CCP4_IMEX int get_grid_sample(const int minsmp, const int nmul, const float samp
  * @param nsym No. of symmetry operators.
  * @param rsym Symmetry operators.
  * @param cell Cell dimensions.
- * @return 1 if they are consistent, 0 if there is a problem. 
+ * @return 1 if they are consistent, 0 if there is a problem.
  */
 CCP4_IMEX int ccp4spg_check_symm_cell(int nsym, float rsym[][4][4], float cell[6]);
 

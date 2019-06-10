@@ -1,15 +1,3 @@
-/**
- * @Author: Tristan Croll <tic20>
- * @Date:   14-May-2019
- * @Email:  tic20@cam.ac.uk
- * @Last modified by:   tic20
- * @Last modified time: 17-May-2019
- * @License: Free for non-commercial use (see license.pdf)
- * @Copyright: 2017-2018 Tristan Croll
- */
-
-
-
 /*! \file lib/fftmap_sparse.h
     Header file for P1 fft map
 */
@@ -53,6 +41,14 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ * - Parallelisation/thread-safety for most key steps:
+ *   - map_uv() and map_kl() made thread-safe for parallel filling of data from
+ *     Xmap
+ *   - Parallelised FFTs along each axis
+ */
 
 #ifndef CLIPPER_FFTMAP_SPARSE
 #define CLIPPER_FFTMAP_SPARSE
@@ -200,9 +196,6 @@ private:
     void transform_along_hu_(void* planu_ptr, const int& start, const int& end, const int& nmax);
     std::unique_ptr<std::atomic_bool[]> lw_checkpoints;
     std::unique_ptr<std::atomic_bool[]> kv_checkpoints;
-
-    // std::vector<bool> lw_checkpoints;
-    // std::vector<bool> kv_checkpoints;
 
     std::vector<bool> map_l;
     std::vector<bool> row_u;

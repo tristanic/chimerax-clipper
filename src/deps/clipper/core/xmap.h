@@ -1,15 +1,3 @@
-/**
- * @Author: Tristan Croll <tic20>
- * @Date:   20-Jul-2018
- * @Email:  tic20@cam.ac.uk
- * @Last modified by:   tic20
- * @Last modified time: 21-May-2019
- * @License: Free for non-commercial use (see license.pdf)
- * @Copyright: 2017-2018 Tristan Croll
- */
-
-
-
 /*! \file lib/xmap.h
     Header file for crystal maps
 */
@@ -53,6 +41,20 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ * - Parallelised time-consuming step in generation of Xmap_cacheobj (mapping
+ *   out symmetry over all grid points)
+ * - Added special position mapping {grid index : multiplicity} to Xmap_cacheobj
+ *   and updated Xmap::multiplicity to use this. Avoids recalculating
+ *   multiplicity on each call, and allows looping over *only* special positions
+ *   rather than all grid points when accounting for symmetry during FFT
+ * - Added num_unique and asu_indices properties to Xmap_cacheobj to enable
+ *   subdivision of the ASU for threaded tasks, and direct creation of a
+ *   Xmap_reference_index pointing to a specific point in the ASU
+ * - Parallelised/optimised fft_to() and fft_from() tasks when using FFTmap_sparse
+ */
 
 #ifndef CLIPPER_XMAP
 #define CLIPPER_XMAP
@@ -185,7 +187,7 @@ private:
     const std::map<int, int>& special_positions() const { return cacheref.data().spos; }
 
     inline const int& unique_points() const { return cacheref.data().num_unique; }
-    
+
     //! Map reference base class
     /*! This is a reference to an Map. It forms a base class for
       index-like and coordinate-like Map references. If you write a

@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_CIF_IO
 #define CLIPPER_CIF_IO
@@ -54,7 +58,7 @@ namespace clipper
   //! CIF import/export parent class for clipper objects
   /*! This is the import class which can be linked to an cif data
     file and be used to transfer data into a Clipper
-    data structure. 
+    data structure.
     It is currently a read-only class.
   */
   class CLIPPER_IMEX CIFfile
@@ -86,7 +90,7 @@ namespace clipper
     //! mark a hkl_data for import from PHS file
     void import_hkl_data( HKL_data_base& cdata );
     //! contains phases predicate
-    bool contains_phases_p() const; 
+    bool contains_phases_p() const;
 
 
   private:
@@ -107,27 +111,25 @@ namespace clipper
     const HKL_data_base* phi_wt_o;       //!< output HKL_data object
     //! object which supplies the hkl list (write mode only)
     const HKL_info* hkl_ptr;
-    
+
     Spacegroup space_group;
-    Cell cell_; 
-    Resolution resolution_; 
+    Cell cell_;
+    Resolution resolution_;
     HKL_sampling hkl_sampling_;
-    int set_cell_symm_reso(std::string cif_file_name); 
-    int set_cell_symm_reso_by_cif(std::string cif_file_name); 
-    int set_cell_symm_reso_by_kludge(std::string cif_file_name); 
+    int set_cell_symm_reso(std::string cif_file_name);
+    int set_cell_symm_reso_by_cif(std::string cif_file_name);
+    int set_cell_symm_reso_by_kludge(std::string cif_file_name);
 
     // internal variables, due to the strange and variable nature of
     // mmCIF files, sometime these things are in the file, sometimes
     // not...
-    // 
-    short int clipper_cell_set_flag; 
-    short int clipper_reso_set_flag; 
-    short int clipper_symm_set_flag; 
+    //
+    short int clipper_cell_set_flag;
+    short int clipper_reso_set_flag;
+    short int clipper_symm_set_flag;
 
   };
 
 } // namespace clipper
 
 #endif // CLIPPER_CIF_IO
-
-

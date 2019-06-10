@@ -39,6 +39,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #include "ccp4_map_io.h"
 
@@ -251,7 +255,7 @@ template<class T> void CCP4MAPfile::import_xmap( Xmap<T>& xmap ) const
 }
 
 
-/*! 
+/*!
   \param xmap The Xmap to be exported.
 */
 template<class T> void CCP4MAPfile::export_xmap( const Xmap<T>& xmap )
@@ -331,7 +335,7 @@ template<class T> void CCP4MAPfile::export_xmap( const Xmap<T>& xmap )
   CMap_io::ccp4_cmap_close( file );
 }
 
-/*! 
+/*!
   \param nxmap The NXmap to be imported.
 */
 template<class T> void CCP4MAPfile::import_nxmap( NXmap<T>& nxmap ) const

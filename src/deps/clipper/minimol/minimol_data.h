@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_MINIMOL_DATA
 #define CLIPPER_MINIMOL_DATA
@@ -72,4 +76,3 @@ namespace clipper {
 } // namespace clipper
 
 #endif
-

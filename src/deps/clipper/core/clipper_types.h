@@ -1,15 +1,3 @@
-/**
- * @Author: Tristan Croll <tic20>
- * @Date:   21-Sep-2018
- * @Email:  tic20@cam.ac.uk
- * @Last modified by:   tic20
- * @Last modified time: 17-May-2019
- * @License: Free for non-commercial use (see license.pdf)
- * @Copyright: 2017-2018 Tristan Croll
- */
-
-
-
 /*! \file lib/clipper_types.h
     Header file for clipper basic types
 */
@@ -53,6 +41,11 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ * - Thread-safe Array2d subclass (Array2d_threadsafe) with per-element locking 
+ */
 
 #ifndef CLIPPER_TYPES
 #define CLIPPER_TYPES

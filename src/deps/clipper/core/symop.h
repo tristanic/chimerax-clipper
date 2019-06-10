@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_SYMOP
 #define CLIPPER_SYMOP
@@ -145,7 +149,7 @@ namespace clipper
     Symop_code code_trn() const;  //!< return code for translation part
     Symop symop() const;          //!< convert to symop
     Isymop isymop() const;        //!< convert to integerised symop
-    static Symop_code identity() { return Symop_code(0); } //!< identity code 
+    static Symop_code identity() { return Symop_code(0); } //!< identity code
     //! convert to integer
     inline operator int() const { return code_; }
   private:

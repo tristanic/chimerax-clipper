@@ -1,12 +1,23 @@
-# @Author: Tristan Croll
-# @Date:   18-Apr-2018
-# @Email:  tic20@cam.ac.uk
-# @Last modified by:   tic20
-# @Last modified time: 05-Jun-2019
-# @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
-# @Copyright: Copyright 2017-2018 Tristan Croll
+# Clipper plugin to UCSF ChimeraX
+# Copyright (C) 2016-2019 Tristan Croll, University of Cambridge
 
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 3 of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with this program; if not, write to the Free Software Foundation,
+# Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+# Note that this software makes use of modified versions of the Clipper, LibCCP4
+# and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
+# of these is redistributed under its own license terms.
 
 import numpy
 import copy

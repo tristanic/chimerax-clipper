@@ -38,6 +38,11 @@
 //  =================================================================
 //
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
+
 #ifndef __MMDB_CoorMngr__
 #define __MMDB_CoorMngr__
 
@@ -785,7 +790,7 @@ namespace mmdb  {
                                      // combination of BRICK_ON_1 or
                                      // BRICK_ON_2 with BRICK_READY
                          );
-      
+
       //  Simplified optimized for speed and convenience version:
       //    - bricking is pre-done
       //    - contacting set of atoms is given as a bare vect3 (xyz)
@@ -798,7 +803,7 @@ namespace mmdb  {
       void  SeekContacts (
                vect3    * xyz,       //  2nd atom index [0..ilen2-1] to
                                      // check for contact with 1st index
-                                     // which was used for bricking 
+                                     // which was used for bricking
                int        nxyz,      //  length of 2nd index
                realtype   contDist,  //  maximal contact distance
                PContact   contact,   //  indices of contacting atoms
@@ -810,7 +815,7 @@ namespace mmdb  {
                                      // one. Must be pre-allocated
                int &      ncontacts  //  number of contacts found
                          );
-      
+
       void  SeekContacts (
              PPAtom        AIndex1,  //  1st atom index [0..ilen1-1]
              int           ilen1,    //  length of 1st index
@@ -982,4 +987,3 @@ namespace mmdb  {
 }  // namespace mmdb
 
 #endif
-

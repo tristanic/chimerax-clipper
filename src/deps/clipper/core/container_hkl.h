@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_CONTAINER_HKL
 #define CLIPPER_CONTAINER_HKL
@@ -78,7 +82,7 @@ namespace clipper
 	       const Resolution& resolution, const bool& generate = false );
 
     //! synthesize hkl list and update children
-    void generate_hkl_list();    
+    void generate_hkl_list();
     //! hierarchical update
     void update();
   private:

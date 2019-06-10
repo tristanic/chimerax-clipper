@@ -41,6 +41,11 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ * - Added TargetFn_meanInth
+ */
 
 #ifndef CLIPPER_RESOL_TARGETFN
 #define CLIPPER_RESOL_TARGETFN
@@ -515,7 +520,7 @@ namespace clipper {
   template<class T> TargetFn_base::Rderiv TargetFn_sigmaa_omegaa<T>::rderiv( const HKL_info::HKL_reference_index& ih, const ftype& omegaa ) const
   {
     Rderiv result;
-    
+
     const HKL_data<T>& eodata = *eo_data;
     const HKL_data<T>& ecdata = *ec_data;
     if ( eodata[ih].missing() || ecdata[ih].missing()  ) {
@@ -561,7 +566,7 @@ namespace clipper {
   template<class T> TargetFn_base::Rderiv TargetFn_sigmaa<T>::rderiv( const HKL_info::HKL_reference_index& ih, const ftype& sigmaa0 ) const
   {
     Rderiv result;
-    
+
     const HKL_data<T>& eodata = *eo_data;
     const HKL_data<T>& ecdata = *ec_data;
     if ( eodata[ih].missing() || ecdata[ih].missing()  ) {
@@ -569,7 +574,7 @@ namespace clipper {
     } else {
       ftype eo = eodata[ih].E();
       ftype ec = ecdata[ih].E();
-      ftype sigmaa = (sigmaa0>0.99)?(0.99):((sigmaa0<0.01)?0.01:sigmaa0); 
+      ftype sigmaa = (sigmaa0>0.99)?(0.99):((sigmaa0<0.01)?0.01:sigmaa0);
       ftype dx = 2.0 * eo * ec;
       ftype x = dx * sigmaa/(1-sigmaa*sigmaa);
       ftype t0 = 1.0/(1-sigmaa*sigmaa) + 0.5*log((1-sigmaa*sigmaa));

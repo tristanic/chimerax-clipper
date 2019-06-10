@@ -42,6 +42,10 @@
 //L  MA 02111-1307 USA
 /* some code & data converted from CCP4 library symlib.f (various authors) */
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_SPACEGROUP
 #define CLIPPER_SPACEGROUP

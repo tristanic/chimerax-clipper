@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_MINIMOL_IO
 #define CLIPPER_MINIMOL_IO
@@ -77,9 +81,9 @@ namespace clipper {
   public:
     //! load SEQ data from file
     void read_file( const String& file );
-    //! read a single sequence from the SEQ file 
+    //! read a single sequence from the SEQ file
     void import_polymer_sequence( MPolymerSequence& target );
-    //! read a molecule from the SEQ file 
+    //! read a molecule from the SEQ file
     void import_molecule_sequence( MMoleculeSequence& target );
   private:
     String contents;
@@ -89,4 +93,3 @@ namespace clipper {
 } // namespace clipper
 
 #endif
-

@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -29,7 +29,7 @@
 </ul>
 
  *  @section utilities_overview Overview
- 
+
 The CCP4 C-library provides many utility functions which either give
 specific CCP4 functionality (e.g. traditional keyword parsing) or
 are just generally useful (platform independent date).
@@ -40,6 +40,11 @@ are just generally useful (platform independent date).
  *  @brief   Utility functions.
  *  @author  Charles Ballard
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 #include "ccp4_sysdep.h"
 #include <time.h>
@@ -53,16 +58,16 @@ are just generally useful (platform independent date).
 #include <io.h>
 #endif
 
-#define CCP4_ERRNO(y) (CCP4_ERR_UTILS | (y))          
-                                       
+#define CCP4_ERRNO(y) (CCP4_ERR_UTILS | (y))
+
 /* rcsid[] = "$Id$" */
 
 /* static uint16 nativeIT = NATIVEIT; */ /* machine integer type - currently unused here */
 static uint16 nativeFT = NATIVEFT; /* machine float type */
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_translate_mode_float(float *out, const void *buffer, int dim, int mode)
 {
@@ -104,12 +109,12 @@ int ccp4_utils_translate_mode_float(float *out, const void *buffer, int dim, int
   default:
     break;
   }
-  
+
   return (ctr);
 }
 
 /** Gets the length of a Fortran string with trailing blanks removed.
- * 
+ *
  * @return length of string
  */
 size_t ccp4_utils_flength (char *s, int len)
@@ -121,8 +126,8 @@ size_t ccp4_utils_flength (char *s, int len)
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 void ccp4_utils_print (const char *message)
 {
@@ -131,8 +136,8 @@ void ccp4_utils_print (const char *message)
 
 #if ! defined (VMS)
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_setenv (char *str)
 {
@@ -172,8 +177,8 @@ int ccp4_utils_setenv (char *str)
 
 #if ! defined (VMS)
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_outbuf(void)
 {
@@ -196,8 +201,8 @@ int ccp4_utils_outbuf(void)
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_noinpbuf(void)
 {
@@ -230,8 +235,8 @@ union float_uint_uchar ccp4_nan ()
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_isnan (const union float_uint_uchar *realnum)
 {
@@ -240,7 +245,7 @@ int ccp4_utils_isnan (const union float_uint_uchar *realnum)
     case DFNTF_LEIEEE :
       return ((realnum->i & 0x7f800000) == 0x7f800000); /* exponent all 1s */
     case DFNTF_CONVEXNATIVE :
-      return ((realnum->i & 0xff800000) == 0x80000000);      
+      return ((realnum->i & 0xff800000) == 0x80000000);
     case DFNTF_VAX :
       return ((realnum->i & 0x0000ff80) == 0x00008000);
     default :
@@ -251,8 +256,8 @@ int ccp4_utils_isnan (const union float_uint_uchar *realnum)
 
 #define MDFBIG -1.0E10          /* BIOMOL absence flag value */
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 void ccp4_utils_bml (int ncols, union float_uint_uchar cols[])
 {
@@ -263,8 +268,8 @@ void ccp4_utils_bml (int ncols, union float_uint_uchar cols[])
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 void ccp4_utils_wrg (int ncols, union float_uint_uchar cols[], float wminmax[])
 {
@@ -277,8 +282,8 @@ void ccp4_utils_wrg (int ncols, union float_uint_uchar cols[], float wminmax[])
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 void ccp4_utils_hgetlimits (int *IValueNotDet, float *ValueNotDet)
 {
@@ -302,8 +307,8 @@ static unsigned parse_mode(const char *cmode)
     break;
   case 3:
     mode |= (*cmode & TBM) << 6 ;
-    mode |= (*(cmode+1) & TBM) << 3 ; 
-    mode |= (*(cmode+2) & TBM) ;      
+    mode |= (*(cmode+1) & TBM) << 3 ;
+    mode |= (*(cmode+2) & TBM) ;
     break;
   case 2:
     mode |= (*cmode & TBM) << 3 ;
@@ -326,8 +331,8 @@ static unsigned parse_mode(const char *cmode)
 #endif
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_mkdir (const char *path, const char *cmode)
 {
@@ -348,8 +353,8 @@ int ccp4_utils_mkdir (const char *path, const char *cmode)
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 int ccp4_utils_chmod (const char *path, const char *cmode)
 {
@@ -363,12 +368,12 @@ int ccp4_utils_chmod (const char *path, const char *cmode)
 
 /** This is a wrapper for the malloc function, which adds some
  * error trapping.
- * 
+ *
  * @return void
  */
 void *ccp4_utils_malloc(size_t size)
 
-{ void *val; 
+{ void *val;
 
   val = malloc (size);
   if (!val && size)
@@ -380,11 +385,11 @@ void *ccp4_utils_malloc(size_t size)
 
 /** This is a wrapper for the realloc function, which adds some
  * error trapping.
- * 
- * @return 
+ *
+ * @return
  */
 void *ccp4_utils_realloc(void *ptr, size_t size)
-{ void *val; 
+{ void *val;
 
   val = realloc (ptr, size);
   if (!val && size)
@@ -396,11 +401,11 @@ void *ccp4_utils_realloc(void *ptr, size_t size)
 
 /** This is a wrapper for the calloc function, which adds some
  * error trapping.
- * 
- * @return 
+ *
+ * @return
  */
 void *ccp4_utils_calloc(size_t nelem , size_t elsize)
-{ void *val; 
+{ void *val;
 
   val = calloc (nelem, elsize);
   if (!val && elsize)
@@ -453,7 +458,7 @@ char *ccp4_utils_basename(const char *filename)
 
   for ( i = strlen(filename)-1; i >= 0; i-- ) {
     if (is_sep(filename[i])) {
-      indx1 = i; 
+      indx1 = i;
       break;
     }
   }
@@ -462,7 +467,7 @@ char *ccp4_utils_basename(const char *filename)
      in case filename has multiple extension separators */
   for ( i = strlen(filename)-1; i >= (indx1 < 0 ? 0 : indx1) ; i-- ) {
     if (filename[i] == EXT_SEPARATOR) {
-      length = i - indx1; 
+      length = i - indx1;
       break;
     }
   }
@@ -484,7 +489,7 @@ char *ccp4_utils_pathname(const char *filename)
 
   for ( i = strlen(filename)-1; i >= 0; i-- ) {
     if (is_sep(filename[i])) {
-      indx1 = i; 
+      indx1 = i;
       break;
     }
   }
@@ -507,11 +512,11 @@ char *ccp4_utils_extension(const char *filename)
 
   for ( i = strlen(filename)-1; i >= 0; i-- ) {
     if (filename[i] == EXT_SEPARATOR) {
-      indx1 = i; 
+      indx1 = i;
       length = strlen(filename) - indx1;
       break;
     } else if (is_sep(filename[i])) {
-      indx1 = i; 
+      indx1 = i;
       length = 1;
       break;
     }
@@ -552,8 +557,8 @@ char *ccp4_utils_joinfilenames(const char *dir, const char *file)
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 void ccp4_utils_idate (int iarray[3])
 {
@@ -567,8 +572,8 @@ void ccp4_utils_idate (int iarray[3])
 }
 
 /** .
- * 
- * @return 
+ *
+ * @return
  */
 char *ccp4_utils_date(char *date)
 {
@@ -591,8 +596,8 @@ void ccp4_utils_itime (int iarray[3])
      time_t tim;
      tim = time(NULL);
      lt = localtime(&tim);
-     iarray[0] = lt->tm_hour; 
-     iarray[1] = lt->tm_min; 
+     iarray[0] = lt->tm_hour;
+     iarray[1] = lt->tm_min;
      iarray[2] = lt->tm_sec;
 }
 
@@ -655,18 +660,18 @@ float acosf(float x) {
   return (float) acos( (double) x);
 }
 
-float atanf(float x) {       
+float atanf(float x) {
   return (float) atan( (double) x);
 }
 
-float asinf(float x) {       
+float asinf(float x) {
   return (float) asin( (double) x);
 }
 
 #endif
 
 #  if (defined _MSC_VER) && _MSC_VER < 1300
-double rint(double x) { 
+double rint(double x) {
   if (x >= 0.) {
    return (double)(int)(x+.5);
   }

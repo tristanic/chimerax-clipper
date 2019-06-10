@@ -42,6 +42,10 @@
 //L  MA 02111-1307 USA
 /* This code is derived from the 'dm' source code */
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_CELL
 #define CLIPPER_CELL
@@ -161,7 +165,7 @@ namespace clipper
     inline const Mat33<>& matrix_frac() const { return fracmat; }
     //! return real space metric tensor
     inline const Metric_tensor& metric_real() const { return realmetric; }
-    //! return reciprocal space metric tensor		     
+    //! return reciprocal space metric tensor
     inline const Metric_tensor& metric_reci() const { return recimetric; }
 
     void debug() const;

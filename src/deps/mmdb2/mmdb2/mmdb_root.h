@@ -332,7 +332,7 @@ namespace mmdb  {
       bool GetNewChainID ( int modelNo, ChainID chID, int length=1 );
 
       //  ---------------  Enquiring -------------------------------
-      
+
       bool isCompactBinary();
 
       int   CrystReady();
@@ -640,4 +640,3 @@ namespace mmdb  {
 }  // namespace mmdb
 
 #endif
-

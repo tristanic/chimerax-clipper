@@ -36,6 +36,11 @@
 //  =================================================================
 //
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
+
 #ifndef __MMDB_IO_Stream__
 #define __MMDB_IO_Stream__
 

@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -32,7 +32,7 @@
 </ul>
 
  *  @section cparser_overview Overview
- 
+
 These functions do CCP4-style parsing, as used for processing keywords
 of CCP4 programs, MTZ header records, etc.
 
@@ -61,7 +61,7 @@ CCP4PARSERARRAY * parser;
 
       RC = 111;
 
-    } else {      
+    } else {
 
       if (ccp4_keymatch("MINDIST",key))  {
 	if (ntok != 2) {
@@ -95,6 +95,12 @@ See the distributed programs <a href="../ncont.html">NCONT</a> and
  *  @author Peter Briggs
  *  @date April 2001
  */
+
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 /*------------------------------------------------------------------*/
 
@@ -163,7 +169,7 @@ typedef struct {
   char   *comment;        /* List of comment characters */
   double max_exponent;    /* Largest allowed exponent for numerical tokens */
   double min_exponent;    /* Smallest allowed exponent for numerical tokens */
-} CCP4PARSERARRAY;     
+} CCP4PARSERARRAY;
 
 /*------------------------------------------------------------------*/
 
@@ -174,7 +180,7 @@ typedef struct {
 /* Core cparser functions */
 
 /** Initialise a CCP4PARSERARRAY to be used in subsequent calls to
- *  ccp4_parser routines. The calling function must supply the maximum 
+ *  ccp4_parser routines. The calling function must supply the maximum
  *  number of tokens on a line (including continuation lines).
  * @param maxtokens maximum number of tokens on a line
  * @return pointer to a new CCP4PARSERARRAY structure
@@ -205,8 +211,8 @@ CCP4_IMEX int ccp4_parse(const char *line, CCP4PARSERARRAY *parser);
 /** The main function for parsing lines, either supplied or read
  * from stdin.
  * @param line pointer to a null-terminated string of characters,
- * forming the input to be processed. On input can either be an empty 
- * string ("") which forces reading from stdin, or contain characters 
+ * forming the input to be processed. On input can either be an empty
+ * string ("") which forces reading from stdin, or contain characters
  * to be processed. On output "line" will be overwritten with the actual
  * input line.
  * @param n maximum number of characters that can be read into
@@ -214,7 +220,7 @@ CCP4_IMEX int ccp4_parse(const char *line, CCP4PARSERARRAY *parser);
  * @param parser pointer to a CCP4PARSERARRAY structure which will
  * be used to hold the results of processing the input line.
  * @param print flag controlling echoing of input lines to stdout.
- * print=0: suppress echoing of lines to stdout. Otherwise echoing is 
+ * print=0: suppress echoing of lines to stdout. Otherwise echoing is
  * turned on.
  * @return Number of tokens found.
  */
@@ -223,7 +229,7 @@ CCP4_IMEX int ccp4_parser(char *line, const int n, CCP4PARSERARRAY *parser,
 
 /* External utility functions */
 
-/** Test whether two keywords are identical. Keywords are identical if 
+/** Test whether two keywords are identical. Keywords are identical if
  * they are the same up to the first four characters, independent of case.
  * @param keyin1 keyword 1.
  * @param keyin2 keyword 2.

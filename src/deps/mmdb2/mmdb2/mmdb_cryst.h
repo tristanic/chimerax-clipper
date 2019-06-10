@@ -40,6 +40,11 @@
 //  =================================================================
 //
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
+
 #ifndef __MMDB_Cryst__
 #define __MMDB_Cryst__
 
@@ -456,4 +461,3 @@ extern void  TestCryst();  //  reads from 'in.cryst', writes into
 
 
 #endif
-

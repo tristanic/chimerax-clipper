@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_NXMAP
 #define CLIPPER_NXMAP
@@ -229,7 +233,7 @@ namespace clipper
 
     //! Null constructor, for later initialisation
     NXmap_base();
-    //! initialiser: takes grid and orthogonal->grid coordinate operator 
+    //! initialiser: takes grid and orthogonal->grid coordinate operator
     void init( const Grid& grid, const RTop<>& rt );
     //! initialiser: takes grid, cell, and fraction limits
     void init( const Cell& cell, const Grid_sampling& grid, const Grid_range& grid_extent );
@@ -266,7 +270,7 @@ namespace clipper
     NXmap( const Grid& grid, const RTop<>& rt );
     //! Constructor: takes grid, cell, and extent
     NXmap( const Cell& cell, const Grid_sampling& grid, const Grid_range& grid_extent );
-    //! initialiser: takes grid and orthogonal->grid coordinate operator 
+    //! initialiser: takes grid and orthogonal->grid coordinate operator
     void init( const Grid& grid, const RTop<>& rt );
     //! initialiser: takes grid, cell, and fraction limits
     void init( const Cell& cell, const Grid_sampling& grid, const Grid_range& grid_extent );

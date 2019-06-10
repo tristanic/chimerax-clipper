@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -29,16 +29,16 @@
 
 <ul>
 <li>cmaplib.h - contains details of the C/C++ API
-<li>cmap_data.h     
-<li>cmap_header.h   
-<li>cmap_skew.h     
-<li>cmap_errno.h    
-<li>cmap_labels.h   
-<li>cmap_stats.h    
+<li>cmap_data.h
+<li>cmap_header.h
+<li>cmap_skew.h
+<li>cmap_errno.h
+<li>cmap_labels.h
+<li>cmap_stats.h
 </ul>
 
  *  @section cmap_overview Overview
- 
+
   Functions defining the C-level API for accessing CCP4 map files.
 
  */
@@ -51,6 +51,11 @@
  *
  *  @author Charles Ballard
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 #ifndef __GUARD_MAPLIB
 #define __GUARD_MAPLIB

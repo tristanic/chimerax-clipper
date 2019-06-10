@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -23,6 +23,11 @@
  *
  *  @author Charles Ballard, based in part on earlier versions
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 #ifndef __CCP4_BITS
 #define __CCP4_BITS
@@ -86,7 +91,7 @@
 #ifndef NOUNISTD
 #  include <unistd.h>
 #else
-#  ifndef VMS 
+#  ifndef VMS
 #    ifndef _MSC_VER
 #      include <sys/file.h>     /* ESV, old Concentrix */ /* non-POSIX */
 #    endif
@@ -223,7 +228,7 @@
 #endif
 
 /* From time to time new architectures are added here, often because Linux
- * packagers want to build it on all platforms supported by their distro. 
+ * packagers want to build it on all platforms supported by their distro.
  * Here we try to catch machines not listed explicitely above, under
  * assumption that endianness is the same for floating point numbers
  * as for integers. Which is safe assumption on modern standard computers
@@ -232,7 +237,7 @@
  */
 
 
-#if !defined(NATIVEIT) && !defined(NATIVEFT) && defined(__BYTE_ORDER) 
+#if !defined(NATIVEIT) && !defined(NATIVEFT) && defined(__BYTE_ORDER)
 # if __BYTE_ORDER == __LITTLE_ENDIAN
 #  define NATIVEIT DFNTI_IBO
 #  define NATIVEFT DFNTF_LEIEEE

@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -33,17 +33,17 @@
 </ul>
 
  *  @section cmtz_overview Overview
- 
+
 The CMTZ library is centred around a data structure, defined in
 mtzdata.h Reading an MTZ file causes a data structure to be
-created and populated from the MTZ header. There are a variety of functions 
+created and populated from the MTZ header. There are a variety of functions
 for manipulating the data structure, for example adding crystals, datasets
 or columns. The data structure can be dumped to an output MTZ data file.
 <p>
 The library operates in two modes with respect to the reflection data.
-If <tt>mtz->refs_in_memory = 1</tt> (as set e.g. by the argument to 
+If <tt>mtz->refs_in_memory = 1</tt> (as set e.g. by the argument to
 <tt>MtzGet</tt>), then all reflection data is read into memory from
-the file, and can be manipulated in memory. Else if 
+the file, and can be manipulated in memory. Else if
 <tt>mtz->refs_in_memory = 0</tt> then explicit calls to <tt>ccp4_lrrefl</tt>,
 <tt>ccp4_lrreff</tt> and <tt>ccp4_lwrefl</tt> are required to read
 and write reflections from/to disk.
@@ -58,26 +58,26 @@ Start by looking at <tt>MtzGet</tt> and <tt>ccp4_lrrefl</tt> / <tt>ccp4_lrreff</
  *  @subsection cmtz_writing Writing MTZ files
 
 If you have a structure in memory already, use <tt>MtzPut</tt> followed
-by <tt>MtzFree</tt> to release the memory. 
+by <tt>MtzFree</tt> to release the memory.
 <p>
 If you need to create a structure from scratch (i.e. without reading
-from an input file) then use <tt>MtzMalloc</tt>, <tt>MtzOpenForWrite</tt>, 
-<tt>ccp4_lwsymm</tt>, <tt>MtzAddXtal</tt>, <tt>MtzAddDataset</tt>, 
+from an input file) then use <tt>MtzMalloc</tt>, <tt>MtzOpenForWrite</tt>,
+<tt>ccp4_lwsymm</tt>, <tt>MtzAddXtal</tt>, <tt>MtzAddDataset</tt>,
 <tt>MtzAddColumn</tt> and <tt>ccp4_lwrefl</tt>.
 
  * @section cmtz_symmetry Symmetry Information
 
 All reflection data in an MTZ file is assumed to belong to the same
 spacegroup. The spacegroup is identified in the MTZ file by SYMINF
-and SYMM records in the file header. This information is copied 
+and SYMM records in the file header. This information is copied
 into the in-memory data structure. The list of symmetry operators
 (copied from the SYMM header records) is taken to be the definitive
 indicator of the spacegroup.
 <p>
-The functions <tt>ccp4_lrsymi</tt>, <tt>ccp4_lrsymm</tt> and 
+The functions <tt>ccp4_lrsymi</tt>, <tt>ccp4_lrsymm</tt> and
 <tt>ccp4_lwsymm</tt> read from and write to the symmetry sections
 of the data structure. No symmetry manipulations are done within
-the CMTZ library itself. Within CCP4, the CSYM library provides 
+the CMTZ library itself. Within CCP4, the CSYM library provides
 appropriate functions, but other symmetry libraries could be used.
 
  *  @section cmtz_examples Examples
@@ -95,11 +95,16 @@ See examples on <a href="ftp://ftp.ccp4.ac.uk/mdw/cmtz">ftp area</a>
  *  structure defined in mtzdata.h  Other functions allow one
  *  to access data structure members, and to manipulate the structure
  *  and the values of structure members. Functions with names
- *  beginning <tt>ccp4_lr</tt> or <tt>ccp4_lw</tt> are primarily 
+ *  beginning <tt>ccp4_lr</tt> or <tt>ccp4_lw</tt> are primarily
  *  to support the Fortran API.
  *
- *  @author Martyn Winn 
+ *  @author Martyn Winn
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 #ifndef __CMTZLib__
 #define __CMTZLib__
@@ -203,7 +208,7 @@ CCP4_IMEX void MtzRewdInput(MTZ *mtz);
 /**** Memory allocation ****/
 
 /** Allocates memory for an MTZ header structure. The structure can
- * contain 0, 1 or more crystals, and for each crystal 0, 1 or more 
+ * contain 0, 1 or more crystals, and for each crystal 0, 1 or more
  * datasets. Crystals have a name based on the time "NULL_xnameHHMMSS"
  * to ensure uniqueness (compared to crystals defined elsewhere - all
  * new crystals created here will (probably) have the same name).
@@ -216,14 +221,14 @@ CCP4_IMEX void MtzRewdInput(MTZ *mtz);
 CCP4_IMEX MTZ *MtzMalloc(int nxtal, int nset[]);
 
 /** Frees the memory reserved for the MTZ header struct.
- * @param mtz pointer to MTZ header struct. 
+ * @param mtz pointer to MTZ header struct.
  * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int MtzFree(MTZ *mtz);
 
 /** Allocates memory for an MTZ column. Space is allocated for
  * the reflection data if and only if mtz->refs_in_memory is set.
- * @param mtz pointer to MTZ header struct. 
+ * @param mtz pointer to MTZ header struct.
  * @param nref number of reflections in column.
  * @return pointer to MTZ column.
  */
@@ -245,7 +250,7 @@ CCP4_IMEX MTZBAT *MtzMallocBatch(void);
  * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int MtzFreeBatch(MTZBAT *batch);
-  
+
 /** Allocates memory for the mtz history with 'nhist' lines.
  * @param nhist
  * @return pointer to history
@@ -266,7 +271,7 @@ CCP4_IMEX int MtzFreeHist(char *hist);
 CCP4_IMEX void MtzMemTidy(void);
 
 /**** Header operations ****/
-  
+
 /** Get the number of batches in the mtz.
  * @param mtz pointer to MTZ struct
  * @return Number of batches.
@@ -290,7 +295,7 @@ CCP4_IMEX int MtzSpacegroupNumber(const MTZ *mtz);
  * @param mtz pointer to MTZ struct
  * @param minres minimum resolution
  * @param maxres maximum resolution
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int MtzResLimits(const MTZ *mtz, float *minres, float *maxres);
 
@@ -314,14 +319,14 @@ CCP4_IMEX int MtzNumActiveXtal(const MTZ *mtz);
  */
 CCP4_IMEX MTZXTAL **MtzXtals(MTZ *mtz);
 
-/** Return pointer to the ixtal'th crystal. 
+/** Return pointer to the ixtal'th crystal.
  * @param mtz pointer to MTZ struct
- * @param ixtal number of the particular crystal (ixtal = 0 ... MtzNxtal(xtal) -1 
+ * @param ixtal number of the particular crystal (ixtal = 0 ... MtzNxtal(xtal) -1
  * @return pointer to the specified crystal
  */
 CCP4_IMEX MTZXTAL *MtzIxtal(const MTZ *mtz, const int ixtal);
 
-/** Return the full path name of a crystal as "/xname" 
+/** Return the full path name of a crystal as "/xname"
  * Memory for the path name is assigned with malloc, and can
  * be free'd by the calling function.
  * @param xtal pointer to the crystal struct
@@ -358,10 +363,10 @@ CCP4_IMEX int MtzNsetsInXtal(const MTZXTAL *xtal);
  */
 CCP4_IMEX int MtzNumActiveSetsInXtal(const MTZ *mtz, const MTZXTAL *xtal);
 
-/** For a given crystal, return array of pointers to datasets 
+/** For a given crystal, return array of pointers to datasets
  * in that crystal.
  * @param xtal pointer to the crystal struct
- * @return array of pointers to datasets 
+ * @return array of pointers to datasets
  */
 CCP4_IMEX MTZSET **MtzSetsInXtal(MTZXTAL *xtal);
 
@@ -387,8 +392,8 @@ CCP4_IMEX int MtzNset(const MTZ *mtz);
  */
 CCP4_IMEX int MtzNumActiveSet(const MTZ *mtz);
 
-/** Get the crystal associated with a dataset 
- * The pointer to MTZ is required to do reverse lookup of xname. 
+/** Get the crystal associated with a dataset
+ * The pointer to MTZ is required to do reverse lookup of xname.
  * @param mtz pointer to MTZ struct
  * @param set pointer to dataset
  * @return pointer to parent crystal, or NULL if "set" is
@@ -396,7 +401,7 @@ CCP4_IMEX int MtzNumActiveSet(const MTZ *mtz);
  */
 CCP4_IMEX MTZXTAL *MtzSetXtal(const MTZ *mtz, const MTZSET *set);
 
-/** Return the full path name of a dataset as "/xname/dname" 
+/** Return the full path name of a dataset as "/xname/dname"
  * The pointer to MTZ is required to do reverse lookup of xname.
  * Memory for the path name is assigned with malloc, and can
  * be free'd by the calling function.
@@ -452,17 +457,17 @@ CCP4_IMEX int MtzNumSourceColsInSet(const MTZSET *set);
  */
 CCP4_IMEX int MtzNbatchesInSet(const MTZ *mtz, const MTZSET *set);
 
-/** For a given dataset, return array of pointers to columns 
+/** For a given dataset, return array of pointers to columns
  * in that dataset.
  * @param set pointer to dataset
- * @return array of pointers to columns 
+ * @return array of pointers to columns
  */
 CCP4_IMEX MTZCOL **MtzColsInSet(MTZSET *set);
 
 /** For a given dataset, return pointer to the icol'th column
  * in that dataset.
  * @param set pointer to dataset
- * @param icol number of 
+ * @param icol number of
  * the particular column (icol = 0 ... MtzNcolsInSet(set) -1
  * @return pointer to specified column
  */
@@ -522,21 +527,21 @@ CCP4_IMEX MTZSET  *MtzColSet(const MTZ *mtz, const MTZCOL *col);
  * @return number of columns
  */
 CCP4_IMEX int MtzNcol(const MTZ *mtz);
-  
+
 /** Get the number of active columns in the MTZ data structure.
  * @param mtz pointer to MTZ struct
  * @return number of columns
  */
 CCP4_IMEX int MtzNumActiveCol(const MTZ *mtz);
-  
-/** Get the number of columns in the MTZ data structure which have 
+
+/** Get the number of columns in the MTZ data structure which have
  * a source in an input file (i.e. non-zero source attribute).
  * @param mtz pointer to MTZ struct
  * @return number of columns
  */
 CCP4_IMEX int MtzNumSourceCol(const MTZ *mtz);
 
-/** Return the full path name of a column as "/xname/dname/label" 
+/** Return the full path name of a column as "/xname/dname/label"
  * Memory for the path name is assigned with malloc, and can
  * be free'd by the calling function.
  * @param mtz pointer to MTZ struct
@@ -646,7 +651,7 @@ CCP4_IMEX int MtzBatchToArray(MTZBAT *batch, int *intbuf, float *fltbuf);
  * will usually be.
  * @param batch pointer to beginning of batch list
  * @param numbat number of batches to be sorted
- * @return Sorted list if batches sorted, original list if batches 
+ * @return Sorted list if batches sorted, original list if batches
  *  already in order
  */
 CCP4_IMEX MTZBAT *sort_batches(MTZBAT *batch, int numbat);
@@ -742,8 +747,8 @@ CCP4_IMEX int MtzParseLabin(char *labin_line, const char prog_labels[][31],
 
 /** Finds columns in an MTZ struct according to column labels. Column types
  *  are checked for agreement between requested type (in argument 'types')
- *  and file type. If requested type is blank, file type is returned in 
- *  argument 'types'. Note, this function is different from Fortranic LRASSN, 
+ *  and file type. If requested type is blank, file type is returned in
+ *  argument 'types'. Note, this function is different from Fortranic LRASSN,
  *  in that any conversion from program labels to user labels should have been done
  *  previously.
  * @param mtz Pointer to MTZ struct.
@@ -770,11 +775,11 @@ CCP4_IMEX MTZCOL **ccp4_lrassn(const MTZ *mtz, const char labels[][31], const in
  * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lridx(const MTZ *mtz, const MTZSET *set, char crystal_name[64],
-            char dataset_name[64], char project_name[64], int *isets, 
+            char dataset_name[64], char project_name[64], int *isets,
             float datcell[6], float *datwave);
 
 /** Returns iref'th reflection from file held in MTZ struct mtz. Returns
- * data for all columns held in input file, in the order that they are 
+ * data for all columns held in input file, in the order that they are
  * held in the source file. The value of col->source can be used to find
  * particular columns.
  * In "in-memory" mode, reflection data is taken from arrays held in
@@ -821,7 +826,7 @@ CCP4_IMEX int ccp4_ismnf(const MTZ *mtz, const float datum);
 /** Function to print header information in traditional format.
  * @param mtz Pointer to MTZ struct
  * @param iprint Print level
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lhprt(const MTZ *mtz, int iprint);
 
@@ -829,7 +834,7 @@ CCP4_IMEX int ccp4_lhprt(const MTZ *mtz, int iprint);
  * to data structure hierarchy.
  * @param mtz Pointer to MTZ struct
  * @param iprint Print level
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lhprt_adv(const MTZ *mtz, int iprint);
 
@@ -844,7 +849,7 @@ CCP4_IMEX int ccp4_lrbat(MTZBAT *batch, float *buf, char *charbuf, int iprint);
 
 /** Function to print batch header data for a specified batch to stdout.
  * @param batch Pointer to requested batch.
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int MtzPrintBatchHeader(const MTZBAT *batch);
 
@@ -853,7 +858,7 @@ CCP4_IMEX int MtzPrintBatchHeader(const MTZBAT *batch);
  * @param ftitle Title string.
  * @param flag If 0 overwrite existing title, else append to
  * existing title.
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lwtitl(MTZ *mtz, const char *ftitle, int flag);
 
@@ -877,7 +882,7 @@ CCP4_IMEX int MtzSetSortOrder(MTZ *mtz, MTZCOL *colsort[5]);
 CCP4_IMEX int MtzAddHistory(MTZ *mtz, const char history[][MTZRECORDLENGTH], const int nlines);
 
 /** Write or update symmetry information for MTZ header. This provides support
- * for the Fortran API, and is not particularly convenient for C programs. 
+ * for the Fortran API, and is not particularly convenient for C programs.
  * Note: ordering of matrices in rsymx was changed in November 2003.
  * @param mtz Pointer to MTZ struct
  * @param nsymx Number of symmetry operators. If zero, symmetry operations
@@ -889,7 +894,7 @@ CCP4_IMEX int MtzAddHistory(MTZ *mtz, const char history[][MTZRECORDLENGTH], con
  * @param nspgrx Spacegroup number. If zero, not updated.
  * @param spgrnx Spacegroup name. If blank, not updated.
  * @param pgnamx Point group name. If blank, not updated.
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lwsymm(MTZ *mtz, int nsymx, int nsympx, float rsymx[192][4][4],
 		char ltypex[], int nspgrx, char spgrnx[], char pgnamx[]);
@@ -909,21 +914,21 @@ CCP4_IMEX int ccp4_lwsymm(MTZ *mtz, int nsymx, int nsympx, float rsymx[192][4][4
  * @param spgrnx Spacegroup name. If blank, not updated.
  * @param pgnamx Point group name. If blank, not updated.
  * @param spgconf One-character flag indicating confidence in nominal spacegroup.
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lwsymm_c(MTZ *mtz, int nsymx, int nsympx, float rsymx[192][4][4],
-		  char ltypex[], int nspgrx, char spgrnx[], char pgnamx[], 
+		  char ltypex[], int nspgrx, char spgrnx[], char pgnamx[],
                   char spgconf[]);
 
 /** Write or update symmetry confidence information for MTZ header.
  * @param mtz Pointer to MTZ struct
  * @param spgconf One-character flag indicating confidence in nominal spacegroup.
- * @return 1 on success, 0 on failure 
+ * @return 1 on success, 0 on failure
  */
 CCP4_IMEX int ccp4_lwsymconf(MTZ *mtz, char spgconf[]);
 
 /* Assign columns for writing. Check to see if columns already exist,
- * else create them. New columns are assigned to the base dataset if it 
+ * else create them. New columns are assigned to the base dataset if it
  * exists, else the first dataset.
  * @param mtz pointer to MTZ struct
  * @param labels Input array of column labels to be assigned.
@@ -943,7 +948,7 @@ CCP4_IMEX MTZCOL **ccp4_lwassn(MTZ *mtz, const char labels[][31], const int nlab
  * the crystal are updated. The child dataset is then created if necessary
  * or an existing dataset updated.
  * Note that this function is used to update crystal parameters, as well
- * as add crystals. If a duplicate crystal name is used by mistake, then 
+ * as add crystals. If a duplicate crystal name is used by mistake, then
  * the old crystal parameters are lost.
  * @param mtz pointer to MTZ struct
  * @param crystal_name Crystal name
@@ -977,8 +982,8 @@ CCP4_IMEX int ccp4_lwidx(MTZ *mtz, const char crystal_name[],  const char datase
 CCP4_IMEX int ccp4_lwrefl(MTZ *mtz, const float adata[], MTZCOL *lookup[],
 		 const int ncol, const int iref);
 
-/** Write new batch information to 'batch' or if 'batch' is NULL create 
- * new batch header with batch number 'batno'. If you try to create more 
+/** Write new batch information to 'batch' or if 'batch' is NULL create
+ * new batch header with batch number 'batno'. If you try to create more
  * than one new batch header with the same batch number, the function will
  * complain and return. It is OK to create a new batch with the same
  * number as one read from file - this is the mechanism for changing
@@ -1011,7 +1016,7 @@ CCP4_IMEX int ccp4_lwbsetid(MTZ *mtz, MTZBAT *batch, const char xname[], const c
 /* Combines extra phase information for common reflections between 'frm'
    and 'to' into the phase information of 'to'. The phase probabilities
    are described by Hendrickson Lattman coefficients, with the identifiers
-   "HLA", "HLB", HLC", and "HLD", the indices are identified by "H", "K" 
+   "HLA", "HLB", HLC", and "HLD", the indices are identified by "H", "K"
    and "L". HL-coeffs from 'to' are scaled by 'toscale', the coeffs from
    'frm' are scaled by 'frmscale'. A pointer to `to` is returned. */
 
@@ -1039,7 +1044,7 @@ CCP4_IMEX int ccp4_lwbsetid(MTZ *mtz, MTZBAT *batch, const char xname[], const c
 
 /* int *MtzUnique(MTZ *mtz, char *ident); */
 /* Returns an array (k) of indices: k[j] returns the first occurrence of a set
-   of idents, eg. MtzUnique(mtz, "H K L") returns an array from which all the 
+   of idents, eg. MtzUnique(mtz, "H K L") returns an array from which all the
    unique reflections can be determined by indexing with k: k[i] is the index
    of the last relection of a set which all have the same hkl indices. It is
    assumed that `mtz` is sorted, using `ident` as keys. */

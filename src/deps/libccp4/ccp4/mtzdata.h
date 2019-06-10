@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -24,8 +24,13 @@
  *  The file defines a hierarchy of structs which hold the
  *  MTZ data structure.
  *
- *  @author Martyn Winn 
+ *  @author Martyn Winn
  */
+
+ /* Modifications by Tristan Croll, 2016-2019:
+  *
+  * - Native Windows compatibility
+  */
 
 #ifndef __CMTZData__
 #define __CMTZData__
@@ -35,7 +40,7 @@
 #define MTZVERSN "MTZ:V1.1"         /**< traditional version number! */
 #define MTZ_MAJOR_VERSN 1      /**< MTZ file major version - keep to single digit */
 #define MTZ_MINOR_VERSN 1      /**< MTZ file minor version - keep to single digit */
-#define CCP4_MTZDATA 20100630   /**< Date stamp for the cmtz data structure 
+#define CCP4_MTZDATA 20100630   /**< Date stamp for the cmtz data structure
                                  (update if there are changes to the structs in this file) */
 
 /** defines for sizes in MTZ structure */
@@ -93,20 +98,20 @@ typedef struct CCP4_IMEX { int xtalid;           /**< Crystal id */
 	       } MTZXTAL;
 
 /** MTZ batch struct. */
-typedef struct CCP4_IMEX bathead { 
+typedef struct CCP4_IMEX bathead {
 		 int num;              /**< batch number */
 		 char title[71];       /**< batch title */
 		 char gonlab[3][9];    /**< names of the three axes */
-                 int iortyp;           /**< type of orientation block (for 
+                 int iortyp;           /**< type of orientation block (for
                                           possible future use, now = 0) */
 		 int lbcell[6];        /**< refinement flags for cell */
 		 int misflg;           /**< number of phixyz used (0, 1, or 2) */
 		 int jumpax;           /**< reciprocal axis closest to rotation
 					  axis */
 		 int ncryst;           /**< crystal number */
-		 int lcrflg;           /**< mosaicity model: 0 = isotropic, 
+		 int lcrflg;           /**< mosaicity model: 0 = isotropic,
 					  1 = anisotropic */
-		 int ldtype;           /**< type of data: 2D (1), 3D (2), or 
+		 int ldtype;           /**< type of data: 2D (1), 3D (2), or
 					  Laue (3) */
 		 int jsaxs;            /**< goniostat scan axis number */
 		 int nbscal;           /**< number of batch scales & Bfactors
@@ -156,11 +161,11 @@ typedef struct CCP4_IMEX bathead {
 	       } MTZBAT;
 
 /** MTZ symmetry struct. */
-typedef struct CCP4_IMEX { 
+typedef struct CCP4_IMEX {
 	     int spcgrp;           /**< spacegroup number */
 		 char spcgrpname[MAXSPGNAMELENGTH+1];  /**< spacegroup name */
 		 int nsym;             /**< number of symmetry operations */
-		 float sym[192][4][4]; /**< symmetry operations 
+		 float sym[192][4][4]; /**< symmetry operations
                                           (translations in [*][3]) */
 		 int nsymp;            /**< number of primitive symmetry ops. */
 		 char symtyp;          /**< lattice type (P,A,B,C,I,F,R) */
@@ -172,13 +177,13 @@ typedef struct CCP4_IMEX {
                                             X => flag not set */
                } SYMGRP;
 
-typedef union CCP4_IMEX { 
+typedef union CCP4_IMEX {
 	            char amnf[4];
                 float fmnf;
               } MNF;
 
 /** Top level of MTZ struct. */
-typedef struct CCP4_IMEX { 
+typedef struct CCP4_IMEX {
 	     CCP4File *filein;     /**< file for reading */
          CCP4File *fileout;    /**< file for writing */
 		 char title[71];       /**< title of mtz structure */

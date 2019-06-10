@@ -55,6 +55,11 @@
 
 /* CCP4 library clones */
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <math.h>

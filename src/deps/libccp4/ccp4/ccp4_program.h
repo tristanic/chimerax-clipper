@@ -4,13 +4,13 @@
 
      This library is free software: you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public License
-     version 3, modified in accordance with the provisions of the 
+     version 3, modified in accordance with the provisions of the
      license to address the requirements of UK law.
- 
-     You should have received a copy of the modified GNU Lesser General 
-     Public License along with this library.  If not, copies may be 
+
+     You should have received a copy of the modified GNU Lesser General
+     Public License along with this library.  If not, copies may be
      downloaded from http://www.ccp4.ac.uk/ccp4license.php
- 
+
      This program is distributed in the hope that it will be useful,
      but WITHOUT ANY WARRANTY; without even the implied warranty of
      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -28,6 +28,11 @@
 /* Macro definitions */
 
 /*------------------------------------------------------------------*/
+
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef __CCP4Program__
 #define __CCP4Program__
@@ -84,7 +89,7 @@ CCP4_IMEX char *ccp4_vers_no(void);
 CCP4_IMEX char *ccp4ProgramName(const char *progname);
 
 /** Print program info for -i option.
- */ 
+ */
 CCP4_IMEX void ccp4_prog_info(void);
 
 /** Set or return program RCS date
@@ -124,10 +129,10 @@ CCP4_IMEX int ccp4Callback(CCP4INTFUNCPTR mycallback, char *mode, int ierr,
 
 /** Set a user-defined callback function
  * This is a wrapper to ccp4Callback - it stores a user-defined
- * callback function which must be of the form 
+ * callback function which must be of the form
  * "function(const int, const char *)"
  * @param mycallback Callback function
- * @return 1 (if the function is stored), 0 (if it is not) 
+ * @return 1 (if the function is stored), 0 (if it is not)
  */
 CCP4_IMEX int ccp4SetCallback(CCP4INTFUNCPTR mycallback);
 
@@ -145,7 +150,7 @@ CCP4_IMEX int ccp4InvokeCallback(int ierr, const char *message);
  * @param level Severity level supplied from ccperror
  * @param message Message text supplied from ccperror
  * @return Always returns 1
-*/      
+*/
 CCP4_IMEX int ccp4NullCallback(int level, const char *message);
 
 /** Check existence of licence agreement
@@ -167,8 +172,8 @@ CCP4_IMEX int html_log_output(int ihtml_in);
 CCP4_IMEX int summary_output(int isumm_in);
 
 #ifdef __cplusplus
-} 
-} 
+}
+}
 #endif
 
 #endif   /* __CCP4Program__ */

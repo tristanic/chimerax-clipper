@@ -41,6 +41,10 @@
 //  =================================================================
 //
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef __MMDB_MMCIF__
 #define __MMDB_MMCIF__
@@ -2143,5 +2147,3 @@ namespace mmdb  {
 
 
 #endif
-
-

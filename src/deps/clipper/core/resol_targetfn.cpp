@@ -40,6 +40,12 @@
 //L  MA 02111-1307 USA
 /* This code is derived from the 'dm' source code */
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ * - Added TargetFn_meanInth
+ */
+
 #include "resol_targetfn.h"
 
 namespace clipper {

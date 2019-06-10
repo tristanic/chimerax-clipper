@@ -41,6 +41,10 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef CLIPPER_COORDS
 #define CLIPPER_COORDS
@@ -323,7 +327,7 @@ namespace clipper
     //! Return length of vector between two coord orths
     static ftype length( const Coord_orth& x1, const Coord_orth& x2);
     //! Return angle between three coord orths
-    static ftype angle( const Coord_orth& x1, const Coord_orth& x2, 
+    static ftype angle( const Coord_orth& x1, const Coord_orth& x2,
 		        const Coord_orth& x3);
     //! Return torsion between four coord orths
     static ftype torsion( const Coord_orth& x1, const Coord_orth& x2,
@@ -475,7 +479,7 @@ namespace clipper
 
   //! generic grid
   /*! This holds the dimensions of a 3D array, indexed from 0 along
-    each dimension. */ 
+    each dimension. */
   class CLIPPER_IMEX Grid : public Vec3<int>
   {
   public:
@@ -602,7 +606,7 @@ namespace clipper
     bool in_grid( Coord_grid g ) const { return (g.u() >= min_.u() && g.u() <= max_.u() && g.v() >= min_.v() && g.v() <= max_.v() && g.w() >= min_.w() && g.w() <= max_.w()); }
 
     //! grid indexing operator
-    int index( const Coord_grid& c ) const { return (c - min_).index(*this); } 
+    int index( const Coord_grid& c ) const { return (c - min_).index(*this); }
     //! grid deindexing operator
     Coord_grid deindex( const int& index ) const { return Coord_grid( *this, index ) + min_; }
   private:

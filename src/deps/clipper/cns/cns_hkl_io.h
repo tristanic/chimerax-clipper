@@ -41,6 +41,11 @@
 //L  Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 //L  MA 02111-1307 USA
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
+
 
 #ifndef CLIPPER_CNS_HKL_IO
 #define CLIPPER_CNS_HKL_IO

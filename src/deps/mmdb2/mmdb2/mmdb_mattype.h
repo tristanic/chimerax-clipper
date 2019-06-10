@@ -42,6 +42,10 @@
 //  =================================================================
 //
 
+/* Modifications by Tristan Croll, 2016-2019:
+ *
+ * - Native Windows compatibility
+ */
 
 #ifndef  __MMDB_MatType__
 #define  __MMDB_MatType__
@@ -653,4 +657,3 @@ namespace mmdb  {
 #endif
 
 /* ===================================================  */
-
