@@ -262,8 +262,8 @@ class ContourSelectedVolume(MouseMode):
                 sd = v.mean_sd_rms()[1]
             step = d/30 * sd
             rep, levels = adjust_threshold_level(v, step, self.symmetrical)
-            lsig = tuple(l/sd for l in levels)
-            if rep != 'solid':
+            if rep != 'image':
+                lsig = tuple(l/sd for l in levels)
                 lstr = ', '.join(format(l, '.3f') for l in levels)
                 sstr = ', '.join(format(s, '.3f') for s in lsig)
                 self.session.logger.status('Volume {} contour level(s): {} ({} sigma)'.format(v.name, lstr, sstr))
@@ -272,12 +272,13 @@ class ContourSelectedVolume(MouseMode):
 
 
 def adjust_threshold_level(m, step, sym):
-    if m.surfaces_in_style('solid'):
-        new_levels = [(l+step,b) for l,b in m.solid_levels]
+    if m.image_shown:
+        ms = m.matrix_value_statistics()
+        new_levels = [(l+step,b) for l,b in m.image_levels]
         l,b = new_levels[-1]
         new_levels[-1] = (max(l,1.01*ms.maximum),b)
-        m.set_parameters(solid_levels = new_levels)
-        return ('solid', new_levels)
+        m.set_parameters(image_levels = new_levels)
+        return ('image', new_levels)
     else:
         #if sym and len(m.surface_levels) > 1:
         if sym and len(m.surfaces) > 1:
