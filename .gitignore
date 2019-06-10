@@ -21,6 +21,9 @@ __pycache__/
 # Precompiled MKL libraries
 !libfftw2xc.so
 !libfftw_mkl_core.so
+# Private ChimeraX source
+src/contour/
+
 
 # Distribution / packaging
 bin/
