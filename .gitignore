@@ -20,13 +20,14 @@ __pycache__/
 *.o.d
 *.so
 *.so.*
+
 # Precompiled MKL libraries
 !libfftw2xc.so
 !libfftw_mkl_core.so
-# Private ChimeraX source
-src/contour/
-# Precompiled contouring binary
-!contour_thread.cpython-37m*
+!libfftw2xc.dylib
+!mkl_custom.dylib
+!mkl_fftw2.dll
+!lib/fftw2xc_win
 
 # Distribution / packaging
 bin/

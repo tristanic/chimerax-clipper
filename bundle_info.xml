@@ -409,8 +409,6 @@
          <DataFile platform="mac">libfftw2xc.dylib</DataFile>
          <DataFile platform="mac">mkl_custom.dylib</DataFile>
          <DataFile platform="windows">mkl_fftw2.dll</DataFile>
-         <DataFile platform="linux">contour_thread.cpython-37m-x86_64-linux-gnu.so</DataFile>
-         <DataFile platform="mac">contour_thread.cpython-37m-darwin.so</DataFile>
      </DataFiles>
 
   <!-- <DataFiles>
