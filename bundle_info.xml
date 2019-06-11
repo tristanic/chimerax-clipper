@@ -47,10 +47,7 @@
   </CModule>
 
 
-<!-- This module currently uses some private ChimeraX code, so is not provided
-     on the GitHub repository. Instead, precompiled modules for Linux, Mac and
-     Windows are provided. -->
-  <!-- <CModule name="contour_thread" usesNumpy="true">
+  <CModule name="contour_thread" usesNumpy="true">
       <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
@@ -64,7 +61,7 @@
       <IncludeDir platform="windows">C:\include</IncludeDir>
         <SourceFile>src/contour/contour_threaded.cpp</SourceFile>
         <SourceFile>src/contour/contourdata.cpp</SourceFile>
-  </CModule> -->
+  </CModule>
 
 
 
