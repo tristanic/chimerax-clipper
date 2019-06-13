@@ -104,6 +104,7 @@ def associate_volumes(session, volumes, to_model=None):
     mgr = get_map_mgr(to_model, create=True)
     for v in volumes:
         mgr.nxmapset.add_nxmap_handler_from_volume(v)
+    session.models.add([mgr.crystal_mgr])
 
 def isolate(session, atoms,
         surround_distance=5,
