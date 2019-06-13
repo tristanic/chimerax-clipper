@@ -426,7 +426,8 @@ def load_mtz_data(session, filename, free_flag_label = None,
             err_str = ('The specified free flag label {} was not found in this '
                 'file. Possible names are:\n{}')
             raise UserError(err_str.format(free_flag_label, ',\n'.join(flag_names)))
-    if free_flag_name is None:
+    free_flags = None
+    if free_flag_name is None and len(flag_names):
         if len(flag_names) == 1:
             free_flag_name = flag_names[0]
             free_flags = flag_arrays[0]
