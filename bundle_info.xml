@@ -3,14 +3,14 @@
 @Date:   26-Feb-2018
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 07-Jun-2019
+@Last modified time: 13-Jun-2019
 @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 @Copyright: Copyright 2017-2018 Tristan Croll
 -->
 
 
 
-<BundleInfo name="ChimeraX-Clipper" version="0.9.3" package="chimerax.clipper"
+<BundleInfo name="ChimeraX-Clipper" version="0.9.4" package="chimerax.clipper"
   	    minSessionVersion="1" maxSessionVersion="1">
 
   <!-- Additional information about bundle source -->
