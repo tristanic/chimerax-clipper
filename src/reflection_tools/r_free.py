@@ -41,9 +41,9 @@ def generate_free_set(flag_array, data_array, free_frac=0.05, max_free=2000):
     import numpy
     test_vals = numpy.random.randint(0, high=random_range, size=ntot)
     flags = test_vals.astype(numpy.double).reshape([ntot, 1])
-    print('N_obs: {} N_tot: {}, flags shape: {}, flag_array shape: {}'.format(
-        nobs, ntot, flags.shape, flag_array.data[1].shape
-    ))
+    # print('N_obs: {} N_tot: {}, flags shape: {}, flag_array shape: {}'.format(
+    #     nobs, ntot, flags.shape, flag_array.data[1].shape
+    # ))
     flag_array.set_data(flag_array.data[0],flags)
     free_obs = 0
     ih = data_array.first_data
