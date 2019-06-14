@@ -889,7 +889,7 @@ class AtomicSymmetryModel(Model):
     Finds and draws local symmetry atoms for an atomic structure
     '''
     def __init__(self, parent, radius = 15,
-        dim_colors_to = 0.6, backbone_mode = 'CA trace', live = True, debug=False):
+        dim_colors_to = 0.4, backbone_mode = 'CA trace', live = True, debug=False):
         self._debug = debug
         self._live_scrolling = False
         session = self.session = parent.session
