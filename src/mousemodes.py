@@ -25,6 +25,16 @@ from chimerax.mouse_modes import MouseMode, ZoomMouseMode as ZoomMouseMode_Base
 def initialize_clipper_mouse_modes(session):
     initialize_zoom_mouse_modes(session)
     initialize_map_contour_mouse_modes(session)
+    std_modes = session.ui.mouse_modes.modes
+    from chimerax.mouse_modes.std_modes import TranslateMouseMode
+    tmml = list(filter(lambda m: type(m)==TranslateMouseMode, std_modes))
+    if len(tmml) != 1:
+        # Just in case. There *should* only be one TranslateMouseMode in the list,
+        # but if not let's play it safe and just create a fresh one
+        tmm = TranslateMouseMode(session)
+    else:
+        tmm = tmml[0]
+    session.ui.mouse_modes.bind_mouse_mode('left',['shift'], tmm)
 
 def initialize_zoom_mouse_modes(session):
     z = ZoomMouseMode(session)
