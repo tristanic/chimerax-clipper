@@ -231,7 +231,8 @@ def symmetry_from_model_metadata_mmcif(model):
     if not res:
             res = 3.0
 
-    if 'X-RAY DIFFRACTION' not in metadata['exptl data']:
+    exptl_data = metadata.get('exptl_data', None)
+    if exptl_data is None or 'X-RAY DIFFRACTION' not in exptl_data:
         return simple_p1_box(model, resolution=res)
 
     try:
