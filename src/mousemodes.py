@@ -110,13 +110,14 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         if fc is not None:
             return fc
         else:
-            from chimerax.core.graphics.view import ClipPlane
+            from chimerax.core.graphics.clipping import CameraClipPlane
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
             clip_point = cpos + (1+self.far_clip_multiplier)* (cofr-cpos)
-            fc = ClipPlane('far', c.view_direction(),
-                                clip_point, camera_normal = (0,0,1))
+            camera_point = c.position.inverse() * clip_point
+            fc = CameraClipPlane('far', (0,0,1),
+                                camera_point, v)
             # Put the near clip at the camera position for depth cueing
             v.clip_planes.add_plane(fc)
             return fc
@@ -129,13 +130,14 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         if nc is not None:
             return nc
         else:
-            from chimerax.core.graphics.view import ClipPlane
+            from chimerax.core.graphics.clipping import CameraClipPlane
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
             clip_point = cpos + (1-self.near_clip_multiplier) * (cofr-cpos)
-            nc = ClipPlane('near', c.view_direction(),
-                                clip_point, camera_normal = (0,0,-1))
+            camera_point = c.position.inverse() * clip_point
+            nc = CameraClipPlane('near', (0,0,-1),
+                                camera_point, v)
             # Put the near clip at the camera position for depth cueing
             v.clip_planes.add_plane(nc)
             return nc

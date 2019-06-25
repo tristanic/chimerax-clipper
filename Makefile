@@ -2,7 +2,7 @@
 # @Date:   21-May-2019
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Jun-2019
+# @Last modified time: 25-Jun-2019
 # @License: Free for non-commercial use (see license.pdf)
 # @Copyright: 2017-2018 Tristan Croll
 
@@ -22,13 +22,13 @@
 # to avoid clashes with package names in pypi.python.org.
 # When uploaded to the ChimeraX toolshed, the bundle
 # will be displayed without the ChimeraX- prefix.
-BUNDLE_NAME = ChimeraX-Clipper
-BUNDLE_VERSION = 0.1.3
+# BUNDLE_NAME = ChimeraX-Clipper
+# BUNDLE_VERSION = 0.9.4-dev1
 # ChimeraX bundles should only include packages
 # that install as chimerax.package_name.
 # General Python packages should be uploaded to
 # pypi.python.org rather than the ChimeraX toolshed.
-PKG_NAME = chimerax.clipper
+# PKG_NAME = chimerax.clipper
 
 # Define where ChimeraX is installed.
 OS = $(patsubst CYGWIN_NT%,CYGWIN_NT,$(shell uname -s))
@@ -42,8 +42,8 @@ ifeq ($(OS),Darwin)
 CHIMERAX_APP = /Applications/ChimeraX.app
 endif
 ifeq ($(OS),Linux)
-# CHIMERAX_APP = /opt/UCSF/ChimeraX-daily
-CHIMERAX_APP = /opt/UCSF/ChimeraX
+CHIMERAX_APP = /opt/UCSF/ChimeraX-daily
+# CHIMERAX_APP = /opt/UCSF/ChimeraX
 endif
 
 # ==================================================================
