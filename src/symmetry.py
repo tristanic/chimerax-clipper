@@ -231,7 +231,7 @@ def symmetry_from_model_metadata_mmcif(model):
     if not res:
             res = 3.0
 
-    exptl_data = metadata.get('exptl_data', None)
+    exptl_data = metadata.get('exptl data', None)
     if exptl_data is None or 'X-RAY DIFFRACTION' not in exptl_data:
         return simple_p1_box(model, resolution=res)
 
@@ -492,6 +492,16 @@ class Symmetry_Manager(Model):
         self.initialized=True
         # if id is not None and len(id) == 1:
         #     session.models.assign_id(self, id)
+
+    def add_symmetry_info(self, cell, spacegroup, grid_sampling):
+        if self.has_symmetry:
+            from chimerax.core.errors import UserError
+            raise UserError('This manager already has crystallographic symmetry information!')
+        self.cell = cell
+        self.spacegroup = spacegroup
+        self.grid = grid_sampling
+        self._unit_cell = Unit_Cell(self.structure.atoms, cell, spacegroup, grid_sampling)
+        self.has_symmetry = True
 
     def added_to_session(self, session):
         super().added_to_session(session)

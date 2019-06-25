@@ -279,11 +279,8 @@ class Map_Mgr(Model):
             self.session.logger.info('(CLIPPER) NOTE: No symmetry information found '
                 'in model. Using symmetry from MTZ file.')
             cm = self.crystal_mgr
-            cm.cell = mtzdata.cell
-            cm.spacegroup = mtzdata.spacegroup
-            cm.grid = mtzdata.grid_sampling
+            cm.add_symmetry_info(mtzdata.cell, mtzdata.spacegroup, mtzdata.grid_sampling)
 
-            cm.has_symmetry = True
         elif not self.symmetry_matches(mtzdata):
             raise RuntimeError('Symmetry info from MTZ file does not match '
                 'symmetry info from model!')
