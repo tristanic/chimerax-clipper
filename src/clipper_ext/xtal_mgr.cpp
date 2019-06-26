@@ -210,10 +210,11 @@ Xtal_mgr_base::generate_base_map_coeffs()
 HKL_data<F_phi<ftype32>>
 Xtal_mgr_base::scaled_fcalc() const
 {
-    int nparams = 7;
+    int nparams = 20;
     std::vector<ftype> params(nparams, 0.0);
     HKL_data<F_phi<ftype32>> ret(hklinfo_);
-    BasisFn_aniso_gaussian basisfn;
+    //BasisFn_aniso_gaussian basisfn;
+    BasisFn_spline basisfn(fobs_, nparams);
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
     ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
     HKL_info::HKL_reference_index ih;
@@ -233,10 +234,10 @@ Xtal_mgr_base::scaling_function() const
     auto l = hklinfo_.num_reflections();
     std::vector<float> ret(l);
 
-    int nparams = 7;
+    int nparams = 20;
     std::vector<ftype> params(nparams, 0.0);
-    //BasisFn_spline basisfn(hklinfo_, nparams, 1.0);
-    BasisFn_aniso_gaussian basisfn;
+    BasisFn_spline basisfn(fobs_, nparams, 1.0);
+    // BasisFn_aniso_gaussian basisfn;
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
     ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
     HKL_info::HKL_reference_index ih;
@@ -254,12 +255,14 @@ Xtal_mgr_base::calculate_r_factors()
         throw std::runtime_error("No Fcalc values have been calculated! Run "
             " generate_fcalc() on a suitable set of atoms first!");
 
-    int nparams = 7;
-    std::vector<ftype> params(nparams, 0.0);
-    //BasisFn_spline basisfn(hklinfo_, nparams, 1.0);
-    BasisFn_aniso_gaussian basisfn;
-    TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
-    ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
+    // int nparams = 7;
+    // std::vector<ftype> params(nparams, 0.0);
+    // //BasisFn_spline basisfn(hklinfo_, nparams, 1.0);
+    // BasisFn_aniso_gaussian basisfn;
+    // TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
+    // ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
+
+    auto s_fcalc = scaled_fcalc();
 
     HKL_info::HKL_reference_index ih;
     // for standard rwork, rfree
@@ -269,7 +272,7 @@ Xtal_mgr_base::calculate_r_factors()
     for (ih=fcalc_.first(); !ih.last(); ih.next())
     {
         const auto& fo = fobs_[ih];
-        const auto& fc = fcalc_[ih];
+        const auto& fc = s_fcalc[ih];
         const auto& fflag = free_flags_[ih];
         if (!fo.missing() && !fc.missing())
         {
@@ -277,36 +280,36 @@ Xtal_mgr_base::calculate_r_factors()
             ftype two_on_eps = 2.0/eps;
             // Shouldn't really have to do this, but the spline function can
             // dip below zero for sudden changes
-            float scale = rfn.f(ih);
-            if (scale < 0)
-            {
-              std::cerr << "Below-zero scaling value of " << scale << " at " << ih.hkl().format() << "!" << std::endl;
-              scale = 0;
-            }
-            auto scaled_fcalc = sqrt(scale)*fc.f();
+            // float scale = rfn.f(ih);
+            // if (scale < 0)
+            // {
+            //   std::cerr << "Below-zero scaling value of " << scale << " at " << ih.hkl().format() << "!" << std::endl;
+            //   scale = 0;
+            // }
+            // auto scaled_fcalc = sqrt(scale)*fc.f();
             if (fflag.flag()==freeflag_) {
                 sum_ffree+=two_on_eps*fo.f();
-                sum_dfree+=two_on_eps*std::abs(fo.f()-scaled_fcalc);
+                sum_dfree+=two_on_eps*std::abs(fo.f()-fc.f());
 
                 sum_wffree2 += 1/fo.sigf()*pow(two_on_eps*fo.f(), 2);
-                sum_wdfree2 += 1/fo.sigf()*pow(two_on_eps*(fo.f()-scaled_fcalc), 2);
+                sum_wdfree2 += 1/fo.sigf()*pow(two_on_eps*(fo.f()-fc.f()), 2);
             } else {
                 sum_fwork+=two_on_eps*fo.f();
-                sum_dwork+=two_on_eps*std::abs(fo.f()-scaled_fcalc);
+                sum_dwork+=two_on_eps*std::abs(fo.f()-fc.f());
                 if (Util::is_nan(sum_fwork) || Util::is_nan(sum_dwork))
                 {
                     std::cerr << "Invalid value encountered at " << ih.hkl().format() << "!" << std::endl;
                     std::cerr << "eps: " << eps << " two_on_eps: " << two_on_eps << std::endl;
                     std::cerr << "fobs: " << fo.f() << std::endl;
-                    std::cerr << "fcalc: " << fc.f() << std::endl;
-                    std::cerr << "ResolutionFn value: " << rfn.f(ih) << std::endl;
-                    std::cerr << "scaled_fcalc: " << scaled_fcalc << std::endl;
+                    std::cerr << "fcalc: " << fcalc_[ih].f() << std::endl;
+                    // std::cerr << "ResolutionFn value: " << rfn.f(ih) << std::endl;
+                    std::cerr << "scaled_fcalc: " << fc.f() << std::endl;
                     std::cerr << "fsigf: " << fo.f() << ", " << fo.sigf() << std::endl;
                     throw std::runtime_error("Invalid value encountered in R-factor calculation!");
                 }
 
                 sum_wfwork2 += 1/fo.sigf()*pow(two_on_eps*fo.f(), 2);
-                sum_wdwork2 += 1/fo.sigf()*pow(two_on_eps*(fo.f()-scaled_fcalc), 2);
+                sum_wdwork2 += 1/fo.sigf()*pow(two_on_eps*(fo.f()-fc.f()), 2);
             }
         }
     }
