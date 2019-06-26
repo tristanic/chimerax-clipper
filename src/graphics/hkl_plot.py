@@ -66,17 +66,16 @@ class _HKL_Plot_3D(Drawing):
         super().__init__(name)
         from chimerax.surface.shapes import sphere_geometry2
         self.set_geometry(*sphere_geometry2(80))
-
+        import numpy
         from chimerax.core.geometry import Places, Place, identity
         id_axes = identity().axes()
-        sanitized_vals = vals.copy()
-        sanitized_vals[sanitized_vals<0] = 0
+        abs_vals = numpy.abs(vals)
         import numpy
         place_array = numpy.zeros((len(hkls),3,4))
         place_array[:,:,3] = hkls*dim_scale
         place_array[:,:,:3] = id_axes
         for i in range(3):
-            place_array[:,i,i] *=sanitized_vals
+            place_array[:,i,i] *=abs_vals
 
         # positions =[Place(origin=hkl*dim_scale, axes=id_axes*max(rval, 0))
         #     for (hkl, rval) in zip(hkls, vals)
@@ -92,9 +91,10 @@ class _HKL_Plot_3D(Drawing):
 
         self.set_positions(Places(positions))
         from chimerax.core.colors import BuiltinColormaps
-        cmap = BuiltinColormaps['ylgnbu'].linear_range(0,1)
+        cmap = BuiltinColormaps['rdylbu'].linear_range(-1,1)
         colors = cmap.interpolated_rgba8(vals)
-        colors[vals<0] = [255,0,0,255]
+        if highlight_negatives:
+            colors[vals<0] = [255,0,0,255]
         self.set_colors(colors)
 
 
