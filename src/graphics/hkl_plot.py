@@ -75,7 +75,8 @@ class _HKL_Plot_3D(Drawing):
         place_array[:,:,3] = hkls*dim_scale
         place_array[:,:,:3] = id_axes
         for i in range(3):
-            place_array[:,i,i] *=abs_vals
+            # Volume scales with value, so radius scales with cube root of value
+            place_array[:,i,i] *=abs_vals**(1/3)
 
         # positions =[Place(origin=hkl*dim_scale, axes=id_axes*max(rval, 0))
         #     for (hkl, rval) in zip(hkls, vals)
