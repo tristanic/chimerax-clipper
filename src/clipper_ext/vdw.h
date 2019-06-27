@@ -127,6 +127,7 @@ namespace data
         {"Cm", 1.65},
         {"Bk", 1.64},
         {"Cf", 1.63},
+        {"Pu", 2.00} // Yes, there **is** actually someone crazy enough to use plutonium in a crystal!
     };
 } // namespace clipper_cx::data
 } // namespace clipper_cx
