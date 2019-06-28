@@ -285,11 +285,11 @@ class XmapSet(MapSet_Base):
 
     @property
     def live_xmaps(self):
-        return [m for m in self.child_models if isinstance(m, XmapHandler_Live)]
+        return [m for m in self.child_models() if isinstance(m, XmapHandler_Live)]
 
     @property
     def static_xmaps(self):
-        return [m for m in self.child_models if isinstance(m, XmapHandler_Static)]
+        return [m for m in self.child_models() if isinstance(m, XmapHandler_Static)]
 
     @property
     def free_flags(self):
