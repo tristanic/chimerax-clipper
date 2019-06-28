@@ -104,7 +104,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
 
     @property
     def far_clip(self):
-        v = self.session.view
+        v = self.session.main_view
         cp = v.clip_planes
         fc = cp.find_plane('far')
         if fc is not None:
@@ -124,7 +124,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
 
     @property
     def near_clip(self):
-        v = self.session.view
+        v = self.session.main_view
         cp = v.clip_planes
         nc = cp.find_plane('near')
         if nc is not None:

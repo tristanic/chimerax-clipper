@@ -418,7 +418,7 @@ class Symmetry_Manager(Model):
             from chimerax.std_commands import lighting
             lighting.lighting(session, preset='simple')
 
-        self._last_box_center = session.view.center_of_rotation
+        self._last_box_center = session.main_view.center_of_rotation
         super().__init__(name, session)
         self._debug = debug
         self._structure = model
@@ -644,7 +644,7 @@ class Symmetry_Manager(Model):
         raise NotImplementedError(
             'Centre of the spotlight should not be directly set. Change it by '
             'changing the centre of rotation of the main view: '
-            'session.view.center_of_rotation = new_center'
+            'session.main_view.center_of_rotation = new_center'
         )
 
     @property
@@ -697,7 +697,7 @@ class Symmetry_Manager(Model):
         super().delete()
 
     def update(self, *_, force=False):
-        v = self.session.view
+        v = self.session.main_view
         cofr = v.center_of_rotation
         # center = self.scene_position.inverse(is_orthonormal=True)*cofr
         update_needed = False
@@ -758,7 +758,7 @@ class Symmetry_Manager(Model):
             mask_radius=mask_radius,
             extra_padding=extra_padding)
         if focus:
-            focus_on_selection(self.session, self.session.view, atoms)
+            focus_on_selection(self.session, self.session.main_view, atoms)
 
     _cube_pairs = numpy.array([[0,1], [0,2], [0,4], [1,3], [1,5], [2,3], [2,6], [3,7], [4,5], [4,6], [5,7], [6,7]], numpy.int)
 
@@ -917,7 +917,7 @@ class AtomicSymmetryModel(Model):
         self._last_hides = atomic_structure.atoms.hides
 
         self._box_changed_handler = None
-        self._center = session.view.center_of_rotation
+        self._center = session.main_view.center_of_rotation
         self._spotlight_radius = radius
         self._box_dim = numpy.array([radius*2, radius*2, radius*2], numpy.double)
         ad = self._atoms_drawing = SymAtomsDrawing('Symmetry atoms')
@@ -1158,7 +1158,7 @@ class AtomicSymmetryModel(Model):
         super().set_display(flag)
         if flag:
             if self.live_scrolling:
-                self._center = self.session.view.center_of_rotation
+                self._center = self.session.main_view.center_of_rotation
                 self._update_box()
             self.update_graphics()
 

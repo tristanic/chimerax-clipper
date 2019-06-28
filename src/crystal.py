@@ -541,7 +541,7 @@ class CrystalStructure(Model):
         self.sym_always_shows_reference_model = True
         self._sym_box_radius = radius
         uc = self.unit_cell
-        v = self.session.view
+        v = self.session.main_view
         c = self.cell
         g = self.grid
         self._sym_box_center = v.center_of_rotation
@@ -558,7 +558,7 @@ class CrystalStructure(Model):
         self._sym_box_radius = radius
 
     def _update_sym_box(self, *_, force_update = False):
-        v = self.session.view
+        v = self.session.main_view
         uc = self.unit_cell
         cofr = v.center_of_rotation
         from .clipper_python import Coord_orth
@@ -721,7 +721,7 @@ class CrystalStructure(Model):
             context_atoms.displays = True
             context_atoms.intra_bonds.radii = 0.1
         if focus:
-            self.session.view.view_all(atoms.scene_bounds, 0.2)
+            self.session.main_view.view_all(atoms.scene_bounds, 0.2)
         # return the original selection in case we want to re-run with modified settings
         return orig_atoms
 
@@ -1132,7 +1132,7 @@ class XmapSet(Model):
     def display_radius(self, radius):
         '''Set the radius (in Angstroms) of the live map display sphere.'''
         self._display_radius = radius
-        v = self.session.view
+        v = self.session.main_view
         cofr = self._box_center = v.center_of_rotation
         from .clipper_python import Coord_orth
         self._box_center_grid = Coord_orth(cofr).coord_frac(self.cell).coord_grid(self.grid)
