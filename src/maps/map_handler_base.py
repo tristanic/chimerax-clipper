@@ -161,6 +161,7 @@ class FastVolumeSurface(VolumeSurface):
             va, ta, na = sct.get_result()
             va, na, ta, hidden_edges = self._postprocess(va, na, ta, self.volume.rendering_options, self.level)
             self._set_surface(va, na, ta, hidden_edges)
+            self.clip_cap=False
             self._set_appearance(rendering_options)
             self._surf_calc_thread = None
             if self._update_needed:
