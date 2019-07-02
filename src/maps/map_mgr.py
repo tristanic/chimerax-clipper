@@ -115,7 +115,7 @@ class Map_Mgr(Model):
         if self.spotlight_mode:
             self._start_spotlight_mode()
 
-        self.display=False
+        # self.display=False
         self._rezone_pending = False
         # Apply the surface mask
 
@@ -127,9 +127,9 @@ class Map_Mgr(Model):
         # self.session.triggers.add_handler('frame drawn', self._first_init_cb)
         cm.add([self])
 
-    def added_to_session(self, session):
-        super().added_to_session(session)
-        session.triggers.add_handler('frame drawn', self._first_init_cb)
+    # def added_to_session(self, session):
+    #     super().added_to_session(session)
+    #     session.triggers.add_handler('frame drawn', self._first_init_cb)
 
     def _initialize_zone_mgr(self):
         if self._zone_mgr is None:

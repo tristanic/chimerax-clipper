@@ -941,9 +941,12 @@ class AtomicSymmetryModel(Model):
 
 
     def _set_default_cartoon_cb(self, *_):
+        from chimerax.core.triggerset import DEREGISTER
+        if not hasattr(self, 'session'):
+            # Most likely the model has been closed prior to drawing. Just deregister
+            return DEREGISTER
         from .util import set_to_default_cartoon
         set_to_default_cartoon(self.session, model = self.structure)
-        from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
 

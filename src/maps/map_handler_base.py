@@ -172,6 +172,8 @@ class FastVolumeSurface(VolumeSurface):
         return DEREGISTER
 
     def update_surface(self, rendering_options):
+        if not hasattr(self.volume, 'session'):
+            return
         sct = self._surf_calc_thread
         if sct is not None: # and not sct.ready():
             self._update_needed = True
