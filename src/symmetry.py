@@ -1602,8 +1602,8 @@ def focus_on_selection(session, view, atoms, clip = True):
     vd = cam.view_direction()
     if clip:
         cp = v.clip_planes
-        cp.set_clip_position('near', center - radius*vd, cam)
-        cp.set_clip_position('far', center + radius*vd, cam)
+        cp.set_clip_position('near', center - radius*vd, v)
+        cp.set_clip_position('far', center + radius*vd, v)
     session.selection.clear()
     atoms.selected=True
 
