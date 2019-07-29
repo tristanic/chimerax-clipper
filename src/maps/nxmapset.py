@@ -37,12 +37,13 @@ class NXmapSet(MapSet_Base):
         from chimerax.map.data import open_file
         grid_data = open_file(filename)[0]
         from chimerax.map.volume import volume_from_grid_data
-        return self.add_nxmap_handler_from_volume(
+        h = self.add_nxmap_handler_from_volume(
             volume_from_grid_data(grid_data, self.session),
             is_difference_map=is_difference_map,
             color=color, style=style, contour=contour
         )
         self._mgr.rezone_needed()
+        return h
 
 
     def add_nxmap_handler_from_volume(self, volume,
@@ -54,7 +55,8 @@ class NXmapSet(MapSet_Base):
                 h.data.xyz_to_ijk_transform)
             h.expand_to_cover_coords(corners, 15)
         self.add([h])
-        self.set_nxmap_display_style(h)
+        self.set_nxmap_display_style(h, is_difference_map=is_difference_map,
+            color=color, style=style, contour=contour)
         self.crystal_mgr.normalize_scene_positions()
         self._mgr.rezone_needed()
         return h
