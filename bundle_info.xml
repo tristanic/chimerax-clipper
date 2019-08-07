@@ -11,7 +11,7 @@
 
 
 <BundleInfo name="ChimeraX-Clipper" version="0.9.7" package="chimerax.clipper"
-  	    minSessionVersion="1" maxSessionVersion="1">
+  	    minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
 
   <!-- Additional information about bundle source -->
   <Author>Tristan Croll</Author>
@@ -407,6 +407,15 @@
          <DataFile platform="mac">mkl_custom.dylib</DataFile>
          <DataFile platform="windows">mkl_fftw2.dll</DataFile>
      </DataFiles>
+
+     <ExtraFiles>
+       <ExtraFileGroup source="src/deps/clipper/**/*.h">include/clipper</ExtraFileGroup>
+       <ExtraFileGroup source="src/clipper_ext/*.h">include/clipper_ext</ExtraFileGroup>
+       <ExtraFileGroup source="src/deps/fftw2/include/*.h">include</ExtraFileGroup>
+       <ExtraFileGroup source="src/deps/libccp4/ccp4/**/*.h">include/ccp4</ExtraFileGroup>
+       <ExtraFileGroup source="src/deps/mmdb2/mmdb2/**/*.h">include/mmdb2</ExtraFileGroup>
+     </ExtraFiles>
+
 
   <!-- <DataFiles>
     <DataFile>dir/file</DataFile>
