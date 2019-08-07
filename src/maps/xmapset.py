@@ -189,6 +189,7 @@ class XmapSet(MapSet_Base):
         self._live_update = False
         self._recalc_needed = False
         self._model_changes_handler = None
+        self._model_swap_handler = None
         self._delayed_recalc_handler = None
         self._show_r_factors = show_r_factors
 
@@ -317,15 +318,22 @@ class XmapSet(MapSet_Base):
                     'data! Live map recalculation is not possible.'.format(self.name))
             else:
                 if self._model_changes_handler is None:
-                    self._model_changes_handler = self.structure.triggers.add_handler(
-                        'changes', self._model_changed_cb
+                    self._model_changes_handler = self.crystal_mgr.triggers.add_handler(
+                        'atoms changed', self._model_changed_cb
+                    )
+                if self._model_swap_handler is None:
+                    self._model_swap_handler = self.crystal_mgr.triggers.add_handler(
+                        'model replaced', self._model_changed_cb
                     )
         else:
-            if self._model_changes_handler is not None:
-                self.structure.triggers.remove_handler(
-                    self._model_changes_handler
-                )
-                self._model_changes_handler = None
+            mch = self._model_changes_handler
+            msh = self._model_swap_handler
+            for h in (mch, msh):
+                if h is not None:
+                    self.crystal_mgr.triggers.remove_handler(h)
+
+            self._model_changes_handler = None
+            self._model_swap_handler = None
         self._live_update = flag
 
     @property
@@ -584,17 +592,22 @@ class XmapSet(MapSet_Base):
         "occupancy changed",
     ))
     def _model_changed_cb(self, trigger_name, changes):
-        if changes is not None:
+        recalc_needed = False
+        if trigger_name == 'model replaced':
+            recalc_needed = True
+        elif changes is not None:
             changes = changes[1]
             atom_changes = set(changes.atom_reasons()).intersection(self._map_impacting_changes)
             added = len(changes.created_atoms())
             deleted = changes.num_deleted_atoms()
-            if atom_changes or added or deleted:
-                self._recalc_needed = True
-                if self._delayed_recalc_handler is None:
-                    self._delayed_recalc_handler = self.session.triggers.add_handler(
-                        'new frame', self._recalculate_maps_if_needed
-                    )
+            recalc_needed = (atom_changes or added or deleted)
+
+        if recalc_needed:
+            self._recalc_needed = True
+            if self._delayed_recalc_handler is None:
+                self._delayed_recalc_handler = self.session.triggers.add_handler(
+                    'new frame', self._recalculate_maps_if_needed
+                )
 
     def _recalculate_maps_if_needed(self, *_):
         xm = self.live_xmap_mgr
@@ -629,7 +642,7 @@ class XmapSet(MapSet_Base):
 
     def delete(self):
         self.live_update = False
-        self.stop_showing_r_factors
+        self.stop_showing_r_factors()
         super().delete()
 
     # Callbacks

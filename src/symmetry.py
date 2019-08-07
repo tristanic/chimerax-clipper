@@ -445,10 +445,19 @@ class Symmetry_Manager(Model):
             # Like 'map box changed' but for atomic symmetry (box parameters
             # may be different)
             'atom box changed',
-            'backbone mode changed', # Changed backbone mode from ribbon to CA trace or vice versa
+            # Changed backbone mode from ribbon to CA trace or vice versa
+            'backbone mode changed',
+            # Simply re-fires the model's 'changes' trigger
+            'atoms changed',
+            # Replaced the atomic model with a new one. All structure change
+            # handlers will need to be reapplied
+            'model replaced',
         )
         for t in trigger_names:
             self.triggers.add_trigger(t)
+
+        self._structure_change_handler = model.triggers.add_handler(
+            'changes', self._structure_change_cb)
 
         if ignore_model_symmetry:
             f = simple_p1_box
@@ -493,6 +502,9 @@ class Symmetry_Manager(Model):
         # if id is not None and len(id) == 1:
         #     session.models.assign_id(self, id)
 
+    def _structure_change_cb(self, trigger_name, changes):
+        self.triggers.activate_trigger('atoms changed', changes)
+
     def add_symmetry_info(self, cell, spacegroup, grid_sampling):
         if self.has_symmetry:
             from chimerax.core.errors import UserError
@@ -508,6 +520,37 @@ class Symmetry_Manager(Model):
         self.set_default_atom_display(mode=self._hydrogen_mode)
         from .mousemodes import initialize_clipper_mouse_modes
         initialize_clipper_mouse_modes(session)
+
+    def swap_model(self, new_model, keep_old = False):
+        '''
+        Swap out the current atomic model for a new one.
+        '''
+        old_model = self._structure
+        old_model.triggers.remove_handler(self._structure_change_handler)
+        self._transplant_model(new_model)
+        # self.add([new_model])
+        self.session.models.remove([old_model])
+        self._structure = new_model
+        if keep_old:
+            self.session.models.add([old_model])
+        else:
+            old_model.delete()
+        new_model.triggers.add_handler('changes', self._structure_change_cb)
+        def redraw_cb(*_):
+            self.set_default_atom_display(mode=self._hydrogen_mode)
+            from chimerax.core.triggerset import DEREGISTER
+            return DEREGISTER
+        self.session.triggers.add_handler('frame drawn', redraw_cb)
+        self.triggers.activate_trigger('model replaced', new_model)
+
+    def swap_model_from_file(self, filename, keep_old=False):
+        '''
+        Load a model from file, and replace the current coordinates with the
+        result.
+        '''
+        from chimerax.core import io
+        new_model = io.open_data(self.session, filename)[0][0]
+        self.swap_model(new_model, keep_old=keep_old)
 
 
     @property
@@ -926,11 +969,13 @@ class AtomicSymmetryModel(Model):
         bd = self._bonds_drawing = SymBondsDrawing('Symmetry bonds', PickedSymBond, structure.PickedBonds)
         self.add_drawing(bd)
         rd = self._ribbon_drawing = SymRibbonDrawing('Symmetry ribbons',
-            atomic_structure._ribbon_drawing, dim_colors_to)
+            self, dim_colors_to)
         self.add_drawing(rd)
         self._current_atoms = atomic_structure.atoms
-        self._model_changes_handler = atomic_structure.triggers.add_handler(
-                                        'changes', self._model_changed_cb)
+        self._model_changes_handler = self.manager.triggers.add_handler(
+                                        'atoms changed', self._model_changed_cb)
+        self._model_swap_handler = self.manager.triggers.add_handler(
+                                        'model replaced', self._model_swap_cb)
         self.live_scrolling = live
 
     def added_to_session(self, session):
@@ -1076,11 +1121,11 @@ class AtomicSymmetryModel(Model):
 
     def delete(self):
         bh = self._box_changed_handler
-        if bh is not None:
-            self.manager.triggers.remove_handler(bh)
         mh = self._model_changes_handler
-        if mh is not None:
-            self.structure.triggers.remove_handler(mh)
+        sh = self._model_swap_handler
+        for h in (bh, mh, sh):
+            if h is not None:
+                self.manager.triggers.remove_handler(h)
         if not self.structure.deleted:
             self.unhide_all_atoms()
         super().delete()
@@ -1291,6 +1336,15 @@ class AtomicSymmetryModel(Model):
         self._current_bond_syms = bond_sym_indices
         self._current_ribbon_syms = numpy.unique(csym[csym!=0])
         self.update_graphics()
+
+    def _model_swap_cb(self, trigger_name, new_model):
+        print('Updating cartoon style...')
+        self.spotlight_mode = True
+        from .util import set_to_default_cartoon
+        set_to_default_cartoon(self.session, model = self.structure)
+
+        # self.session.triggers.add_handler('frame drawn', self._set_default_cartoon_cb)
+
 
     def _model_changed_cb(self, trigger_name, changes):
         if not self.visible:
@@ -1507,12 +1561,21 @@ class PickedSymBond(Pick):
 
 class SymRibbonDrawing(Drawing):
     pickable = False
-    def __init__(self, name, master_ribbon, dim_factor):
+    def __init__(self, name, manager, dim_factor):
         super().__init__(name)
-        m = self._master = master_ribbon
+        self._manager = manager
+        # m = self._master = master_ribbon
         self._tether_coords = numpy.array([], numpy.double)
-        _copy_ribbon_drawing(m, self, dim_factor)
+        _copy_ribbon_drawing(self.master_ribbon, self, dim_factor)
         self._dim_factor = dim_factor
+
+    @property
+    def structure(self):
+        return self._manager.structure
+
+    @property
+    def master_ribbon(self):
+        return self.structure._ribbon_drawing
 
     @property
     def dim_factor(self):
@@ -1534,7 +1597,7 @@ class SymRibbonDrawing(Drawing):
 
     def rebuild(self, *args):
         self.remove_all_drawings()
-        _copy_ribbon_drawing(self._master, self, self.dim_factor)
+        _copy_ribbon_drawing(self.master_ribbon, self, self.dim_factor)
         self.find_tether_coords()
         if args and args[0] == "frame drawn":
             self._rebuild_handler = None
@@ -1555,7 +1618,7 @@ class SymRibbonDrawing(Drawing):
 
     def update(self):
         dim_factor = self.dim_factor
-        sad, mad = self.all_drawings(), self._master.all_drawings()
+        sad, mad = self.all_drawings(), self.master_ribbon.all_drawings()
         if len(sad) != len(mad):
             self.rebuild()
             return
