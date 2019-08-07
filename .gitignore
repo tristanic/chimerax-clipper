@@ -30,6 +30,7 @@ __pycache__/
 !lib/fftw2xc_win
 
 # Distribution / packaging
+src/include/
 bin/
 build/
 develop-eggs/
