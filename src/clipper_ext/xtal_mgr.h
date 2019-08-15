@@ -120,12 +120,21 @@ private:
 
 
 
+class BasisFn_Deleter;
+
+
 //! General manager class for handling operations on a set of crystallographic
 //  maps and their data
 class CLIPPER_CX_IMEX Xtal_mgr_base
 {
     friend class Xtal_thread_mgr;
 public:
+    enum resol_fn {
+        NOT_CHOSEN = 0,
+        SPLINE,
+        ANISO_GAUSSIAN,
+    };
+
     //Xtal_mgr_base() {} // default constructor
     Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs);
@@ -139,7 +148,6 @@ public:
 
     Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom);
-
 
     inline bool fcalc_initialized() const { return fcalc_initialized_; }
     inline bool coeffs_initialized() const { return coeffs_initialized_; }
@@ -187,7 +195,7 @@ public:
     }
 
     // Fcalc scaled to Fobs
-    HKL_data<F_phi<ftype32>> scaled_fcalc() const;
+    HKL_data<F_phi<ftype32>> scaled_fcalc();
 
     inline const HKL_data<Flag>& usage() const { return usage_; }
     inline const HKL_data<F_phi<ftype32>>& base_2fofc() const
@@ -257,7 +265,12 @@ public:
 
     // Return the values of the current scaling function scaling fcalc to fobs
     // for each (H,K,L)
-    std::vector<float> scaling_function() const;
+    std::vector<float> scaling_function();
+    ~Xtal_mgr_base() {
+#ifdef CLIPPER_VERBOSE
+      std::cerr << "Shutting down Xtal_mgr_base" << std::endl;
+#endif
+    }
 
 
 protected:
@@ -268,9 +281,23 @@ protected:
     bool coeffs_initialized_=false;
 
 private:
+    const std::map<int, std::string> scaling_method_names_ = {
+        {SPLINE, "Isotropic spline"},
+        {ANISO_GAUSSIAN, "Anisotropic gaussian"}
+    };
     //! Common portion of all constructors
     Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling);
+
+    int scaling_method_ = NOT_CHOSEN;
+    std::unique_ptr<BasisFn_base, BasisFn_Deleter> choose_basisfn_(
+        const HKL_data<F_phi<ftype32>>& fcalc, HKL_data<F_sigF<ftype32>> fobs,
+        int nparams);
+
+    HKL_data<F_phi<ftype32>> scaled_fcalc_(
+        const HKL_data<F_phi<ftype32>>& fcalc,
+        const HKL_data<F_sigF<ftype32>>& fobs,
+        std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn);
 
 
     // constants
@@ -463,6 +490,10 @@ private:
     std::unordered_map<std::string, Xmap_details> xmap_thread_results_;
     //std::vector<std::pair<std::string, Xmap_details>> xmap_thread_results_;
 
+    // Safety check to prevent use (and nullptr dereference) after delete() has
+    // been called.
+    void deletion_guard() const;
+
     // Master thread function called by recalculate_all();
     bool recalculate_all_(const Atom_list& atoms);
     // Inner threads called by recalculate_all_();
@@ -472,5 +503,27 @@ private:
 
 }; // Xtal_thread_mgr
 
+class BasisFn_Deleter
+{
+public:
+    BasisFn_Deleter(int fn_type)
+        : fn_type_(fn_type) {}
+
+    void operator()(BasisFn_base* ptr)
+    {
+        switch (fn_type_)
+        {
+            case Xtal_mgr_base::SPLINE: delete (BasisFn_spline*)ptr; break;
+            case Xtal_mgr_base::ANISO_GAUSSIAN: delete (BasisFn_aniso_gaussian*)ptr; break;
+            default:
+                std::stringstream err;
+                err << "Attempted to delete a BasisFn with unknown type id " << fn_type_ << "!";
+                throw std::runtime_error(err.str());
+        }
+    }
+
+private:
+    int fn_type_ = 0;
+};
 
 } // namespace clipper_cx

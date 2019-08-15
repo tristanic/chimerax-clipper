@@ -24,8 +24,10 @@
 
 #include <set>
 #include <memory>
+#include <algorithm>
 
 #include <iostream> // debugging
+#include <iomanip>
 
 using namespace clipper;
 using namespace clipper::datatypes;
@@ -208,15 +210,22 @@ Xtal_mgr_base::generate_base_map_coeffs()
 } // generate_base_map_coeffs
 
 HKL_data<F_phi<ftype32>>
-Xtal_mgr_base::scaled_fcalc() const
+Xtal_mgr_base::scaled_fcalc()
 {
     int nparams = 20;
-    std::vector<ftype> params(nparams, 0.0);
+    auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
+    return scaled_fcalc_(fcalc_, fobs_, basisfn);
+
+} // scaled_fcalc
+
+HKL_data<F_phi<ftype32>>
+Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
+    const HKL_data<F_sigF<ftype32>>& fobs, std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn)
+{
+    std::vector<ftype> params(basisfn->num_params());
     HKL_data<F_phi<ftype32>> ret(hklinfo_);
-    //BasisFn_aniso_gaussian basisfn;
-    BasisFn_spline basisfn(fobs_, nparams);
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
-    ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
     HKL_info::HKL_reference_index ih;
     for (ih=fcalc_.first(); !ih.last(); ih.next())
     {
@@ -225,21 +234,60 @@ Xtal_mgr_base::scaled_fcalc() const
             ret[ih].phi() = fcalc_[ih].phi();
     }
     return ret;
+}
 
-} // scaled_fcalc
+std::unique_ptr<BasisFn_base, BasisFn_Deleter> Xtal_mgr_base::choose_basisfn_(
+    const HKL_data<F_phi<ftype32>>& fcalc, HKL_data<F_sigF<ftype32>> fobs,
+    int nparams)
+{
+    if (scaling_method_ == NOT_CHOSEN)
+    {
+        std::cout << "Automatically detecting best scaling method..." << std::endl;
+        std::vector<int> candidates = {SPLINE, ANISO_GAUSSIAN};
+        std::vector<ftype> rfactors;
+        for (auto c: candidates) {
+            scaling_method_ = c;
+            std::cout << scaling_method_names_.at(c);
+            calculate_r_factors();
+            std::cout << ": Rwork: " << std::setprecision(3) << rwork_
+                      << " Rfree: " << std::setprecision(3) << rfree_ << std::endl;
+            rfactors.push_back(rwork_);
+        }
+        auto best_index = std::distance(rfactors.begin(), std::min_element(rfactors.begin(), rfactors.end()));
+        std::cout << "Chose " << scaling_method_names_.at(candidates[best_index])
+                  << " for this dataset." << std::endl;
+        scaling_method_ = candidates[best_index];
+    }
+    auto deleter = BasisFn_Deleter(scaling_method_);
+    //std::unique_ptr<BasisFn_base> ret;
+    switch (scaling_method_)
+    {
+        case SPLINE:         return std::unique_ptr<BasisFn_base, BasisFn_Deleter>(new BasisFn_spline(fobs, nparams, 1.0), deleter);
+        case ANISO_GAUSSIAN: return std::unique_ptr<BasisFn_base, BasisFn_Deleter>(new BasisFn_aniso_gaussian(), deleter);
+        default:
+        {
+            std::stringstream err;
+            err << "Attempted to make a basis function with unknown type " << scaling_method_ << "!";
+            throw std::runtime_error(err.str());
+        }
+    }
+    return std::unique_ptr<BasisFn_base, BasisFn_Deleter>(nullptr, deleter);
+}
+
 
 std::vector<float>
-Xtal_mgr_base::scaling_function() const
+Xtal_mgr_base::scaling_function()
 {
     auto l = hklinfo_.num_reflections();
     std::vector<float> ret(l);
 
     int nparams = 20;
     std::vector<ftype> params(nparams, 0.0);
-    BasisFn_spline basisfn(fobs_, nparams, 1.0);
+    auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
+    //BasisFn_spline basisfn(fobs_, nparams, 1.0);
     // BasisFn_aniso_gaussian basisfn;
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
-    ResolutionFn_nonlinear rfn(hklinfo_, basisfn, targetfn, params);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
     HKL_info::HKL_reference_index ih;
     size_t i=0;
     for (ih = fcalc_.first(); !ih.last(); ih.next(), ++i)
