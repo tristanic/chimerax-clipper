@@ -86,7 +86,7 @@ def spotlight(session, models=None, enable=True, radius=None):
         from chimerax.atomic import AtomicStructure
         models = session.models.list(type=AtomicStructure)
     for m in models:
-        sh = get_symmetry_handler(m, create=True)
+        sh = get_symmetry_handler(m, create=True, auto_add_to_session=True)
         session.logger.info('Setting spotlight mode for model {} to {}'.format(
             m.id_string, enable
         ))
