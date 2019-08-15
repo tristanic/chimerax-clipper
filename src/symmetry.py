@@ -526,10 +526,12 @@ class Symmetry_Manager(Model):
         Swap out the current atomic model for a new one.
         '''
         old_model = self._structure
+        old_id = old_model.id
         old_model.triggers.remove_handler(self._structure_change_handler)
         self._transplant_model(new_model)
         # self.add([new_model])
         self.session.models.remove([old_model])
+        self.session.assign_id(new_model(old_id))
         self._structure = new_model
         if keep_old:
             self.session.models.add([old_model])
@@ -542,6 +544,7 @@ class Symmetry_Manager(Model):
             return DEREGISTER
         self.session.triggers.add_handler('frame drawn', redraw_cb)
         self.triggers.activate_trigger('model replaced', new_model)
+        return new_model
 
     def swap_model_from_file(self, filename, keep_old=False):
         '''
@@ -550,7 +553,7 @@ class Symmetry_Manager(Model):
         '''
         from chimerax.core import io
         new_model = io.open_data(self.session, filename)[0][0]
-        self.swap_model(new_model, keep_old=keep_old)
+        return self.swap_model(new_model, keep_old=keep_old)
 
 
     @property
