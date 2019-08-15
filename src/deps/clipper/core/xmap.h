@@ -347,6 +347,10 @@ private:
     Map_reference_coord first_coord() const { return Map_reference_coord( *this ); }
     //! set/get default backend type
     static FFTtype& default_type() { return default_type_; }
+
+    //! for std::unique_ptr<Xmap> to correctly clean up, the base class must implement a virtual destructor
+    virtual ~Xmap_base() {}
+
   protected:
     ObjectCache<Xmap_cacheobj>::Reference cacheref;  //!< object cache reference
     const unsigned char* asu;  //!< fast access ptr

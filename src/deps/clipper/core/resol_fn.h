@@ -99,10 +99,12 @@ namespace clipper {
     virtual FNtype type() const;
     //! number of non-zero diagonals in the upper triangle of the curvatures
     virtual int num_diagonals() const;
+
+    virtual ~BasisFn_base() {}  //!< destructor
+
   protected:
     //! provide write access to result for subclasses
     Fderiv& result() const { return result_; }
-    virtual ~BasisFn_base() {}  //!< destructor
 
   private:
     int np_;                 //!< number of params
