@@ -641,8 +641,14 @@ class XmapSet(MapSet_Base):
         self.triggers.activate_trigger('maps recalculated', None)
 
     def delete(self):
+        print('Deleting {}'.format(self.name))
         self.live_update = False
         self.stop_showing_r_factors()
+        self.session.logger.status('', secondary=True)
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            xm.delete()
+        self._live_xmap_mgr = None
         super().delete()
 
     # Callbacks
@@ -811,6 +817,7 @@ class XmapHandler_Live(XmapHandler_Base):
         self.data.values_changed()
 
     def delete(self):
+        print('Deleting {}'.format(self.name))
         self.xmap_mgr.delete_xmap(self._map_name)
         super().delete()
 

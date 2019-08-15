@@ -354,12 +354,19 @@ public:
         const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom,
         const size_t num_threads = 1);
 
+    ~Xtal_thread_mgr() {
+#ifdef CLIPPER_VERBOSE
+      std::cerr << "Shutting down Xtal_thread_mgr" << std::endl;
+#endif
+    }
+
 
     inline size_t num_threads() const { return num_threads_; }
     inline void set_num_threads(size_t n)
     {
+        deletion_guard();
         num_threads_=std::max(n, size_t(1));
-        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads_);
+        mgr_->bulk_solvent_calculator_.set_n_threads(num_threads_);
     }
 
     bool thread_running() const { return master_thread_result_.valid(); }
@@ -387,23 +394,23 @@ public:
     }
 
     // Pass through calls to base manager functions in a thread-safe manner
-    inline int freeflag() const { return mgr_.freeflag(); }
+    inline int freeflag() const { deletion_guard(); return mgr_->freeflag(); }
     void set_freeflag(int f);
-    inline const HKL_data<Flag>& flags() const { return mgr_.flags(); }
-    inline const HKL_data<Flag>& usage_flags() const { return mgr_.usage(); }
-    inline const ftype& rwork() { return mgr_.rwork(); }
-    inline const ftype& rfree() { return mgr_.rfree(); }
-    inline const ftype& weighted_rwork() { return mgr_.weighted_rwork(); }
-    inline const ftype& weighted_rfree() { return mgr_.weighted_rfree(); }
+    inline const HKL_data<Flag>& flags() const { deletion_guard(); return mgr_->flags(); }
+    inline const HKL_data<Flag>& usage_flags() const { deletion_guard(); return mgr_->usage(); }
+    inline const ftype& rwork() { deletion_guard(); return mgr_->rwork(); }
+    inline const ftype& rfree() { deletion_guard(); return mgr_->rfree(); }
+    inline const ftype& weighted_rwork() { deletion_guard(); return mgr_->weighted_rwork(); }
+    inline const ftype& weighted_rfree() { deletion_guard(); return mgr_->weighted_rfree(); }
 
-    inline const Xmap_details& map_details(const std::string& name) const { return mgr_.map_details(name); }
-    inline size_t n_maps() const { return mgr_.n_maps(); }
-    std::vector<std::string> map_names() const { return mgr_.map_names(); }
+    inline const Xmap_details& map_details(const std::string& name) const { deletion_guard(); return mgr_->map_details(name); }
+    inline size_t n_maps() const { deletion_guard(); return mgr_->n_maps(); }
+    std::vector<std::string> map_names() const { deletion_guard(); return mgr_->map_names(); }
 
-    inline const ftype& bulk_frac() { return mgr_.bulk_frac(); }
-    inline const ftype& bulk_scale() { return mgr_.bulk_scale(); }
+    inline const ftype& bulk_frac() { deletion_guard(); return mgr_->bulk_frac(); }
+    inline const ftype& bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
 
-    inline const HKL_data<F_sigF<ftype32>>& fobs() const { return mgr_.fobs(); }
+    inline const HKL_data<F_sigF<ftype32>>& fobs() const { deletion_guard(); return mgr_->fobs(); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();
@@ -427,19 +434,27 @@ public:
 
     void delete_xmap(const std::string& name);
 
-    inline const Xmap<ftype32>& get_xmap(const std::string& name) { return mgr_.get_xmap(name); }
+    // Delete all "large memory" items (atoms, maps and structure factors).
+    // Only really needed because Python's garbage collection doesn't seem to
+    // reliably delete the Xtal_thread_mgr C++ object when the Python object
+    // goes out of scope.)
+    void delete_all();
 
-    inline const Map_stats& get_map_stats(const std::string& name) { return mgr_.get_map_stats(name); }
+
+    inline const Xmap<ftype32>& get_xmap(const std::string& name) { deletion_guard(); return mgr_->get_xmap(name); }
+
+    inline const Map_stats& get_map_stats(const std::string& name) { deletion_guard(); return mgr_->get_map_stats(name); }
 
     // Return the values of the current scaling function scaling fcalc to fobs
     // for each (H,K,L)
-    inline std::vector<float> scaling_function() const { return mgr_.scaling_function(); }
+    inline std::vector<float> scaling_function() const { deletion_guard(); return mgr_->scaling_function(); }
 
 
 private:
     Atom_list atoms_; // Temporary Clipper atoms created from ChimeraX atoms
                       // at each iteration
-    Xtal_mgr_base mgr_;
+    //Xtal_mgr_base mgr_;
+    std::unique_ptr<Xtal_mgr_base> mgr_;
     size_t num_threads_;
     // std::future does not (yet) have an is_ready() function, so just have the
     // thread set a flag instead.

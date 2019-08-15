@@ -468,33 +468,37 @@ Xtal_mgr_base::remove_missing_reflections_from_map_coeffs(HKL_data<F_phi<ftype32
 Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
     const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs,
     const size_t num_threads)
-    : mgr_(hklinfo, free_flags, grid_sampling, fobs), num_threads_(num_threads)
+    : num_threads_(num_threads)
     {
-        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+        mgr_ = std::unique_ptr<Xtal_mgr_base>(new Xtal_mgr_base(hklinfo, free_flags, grid_sampling, fobs));
+        mgr_->bulk_solvent_calculator_.set_n_threads(num_threads);
     }
 
 Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
     const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_anom,
     const size_t num_threads)
-    : mgr_(hklinfo, free_flags, grid_sampling, fobs_anom), num_threads_(num_threads)
+    : num_threads_(num_threads)
     {
-        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+        mgr_ = std::unique_ptr<Xtal_mgr_base>(new Xtal_mgr_base(hklinfo, free_flags, grid_sampling, fobs_anom));
+        mgr_->bulk_solvent_calculator_.set_n_threads(num_threads);
     }
 
 Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
     const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs,
     const size_t num_threads)
-    : mgr_(hklinfo, free_flags, grid_sampling, iobs), num_threads_(num_threads)
+    : num_threads_(num_threads)
     {
-        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+        mgr_ = std::unique_ptr<Xtal_mgr_base>(new Xtal_mgr_base(hklinfo, free_flags, grid_sampling, iobs));
+        mgr_->bulk_solvent_calculator_.set_n_threads(num_threads);
     }
 
 Xtal_thread_mgr::Xtal_thread_mgr(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
     const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_anom,
     const size_t num_threads)
-    : mgr_(hklinfo, free_flags, grid_sampling, iobs_anom), num_threads_(num_threads)
+    : num_threads_(num_threads)
     {
-        mgr_.bulk_solvent_calculator_.set_n_threads(num_threads);
+        mgr_ = std::unique_ptr<Xtal_mgr_base>(new Xtal_mgr_base(hklinfo, free_flags, grid_sampling, iobs_anom));
+        mgr_->bulk_solvent_calculator_.set_n_threads(num_threads);
     }
 
 
@@ -502,6 +506,7 @@ void
 // Xtal_thread_mgr::recalculate_all(const Atom_list& atoms)
 Xtal_thread_mgr::recalculate_all(std::vector<uintptr_t> cxatoms)
 {
+    deletion_guard();
     if (thread_running())
         throw std::runtime_error("Map recalculation already in progress! Run "
         "apply_new_maps() first.");
@@ -518,11 +523,11 @@ bool
 Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
 {
     ready_ = false;
-    mgr_.generate_fcalc(atoms);
-    mgr_.generate_base_map_coeffs();
-    auto map_names = mgr_.map_names();
+    mgr_->generate_fcalc(atoms);
+    mgr_->generate_base_map_coeffs();
+    auto map_names = mgr_->map_names();
     auto nmaps = map_names.size();
-    size_t maps_per_thread = (size_t) ceil(( (float)mgr_.n_maps()) /num_threads_);
+    size_t maps_per_thread = (size_t) ceil(( (float)(mgr_->n_maps())) /num_threads_);
     size_t threads_per_map = std::max(num_threads_ / nmaps * maps_per_thread, size_t(1));
     // Make copies of all maps to work on. Expensive, but necessary for thread
     // safety.
@@ -558,7 +563,7 @@ Xtal_thread_mgr::recalculate_inner_(const std::vector<std::string>& names,
     for (size_t i= i_min; i<i_max; ++i)
     {
         // std::cerr << "Recalculating map " << i << std::endl;
-        mgr_.recalculate_map(xmap_thread_results_[names[i]], threads);
+        mgr_->recalculate_map(xmap_thread_results_[names[i]], threads);
     }
     return true;
 } // recalculate_inner_
@@ -566,6 +571,7 @@ Xtal_thread_mgr::recalculate_inner_(const std::vector<std::string>& names,
 void
 Xtal_thread_mgr::apply_new_maps()
 {
+    deletion_guard();
     if (!thread_running())
         throw std::logic_error("You haven't generated any new maps yet! Call "
             "recalculate_all() first.");
@@ -573,7 +579,7 @@ Xtal_thread_mgr::apply_new_maps()
     for (auto& it: xmap_thread_results_)
     {
         auto& source = it.second;
-        auto& target = mgr_.maps_.at(it.first);
+        auto& target = mgr_->maps_.at(it.first);
         source.coeffs_.swap(target.coeffs_);
         source.xmap_.swap(target.xmap_);
         source.map_stats_.swap(target.map_stats_);
@@ -587,48 +593,55 @@ Xtal_thread_mgr::apply_new_maps()
 void
 Xtal_thread_mgr::set_freeflag(int f)
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    mgr_.set_freeflag(f);
+    mgr_->set_freeflag(f);
 }
 
 HKL_data<F_phi<ftype32>>
 Xtal_thread_mgr::fcalc()
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    return mgr_.fcalc();
+    return mgr_->fcalc();
 }
 
 HKL_data<F_phi<ftype32>>
 Xtal_thread_mgr::scaled_fcalc()
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    return mgr_.scaled_fcalc();
+    return mgr_->scaled_fcalc();
 }
 
 HKL_data<F_phi<ftype32>>
 Xtal_thread_mgr::base_fofc()
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    return mgr_.base_fofc();
+    return mgr_->base_fofc();
 }
 
 HKL_data<F_phi<ftype32>>
 Xtal_thread_mgr::base_2fofc()
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    return mgr_.base_2fofc();
+    return mgr_->base_2fofc();
 }
 
 HKL_data<Phi_fom<ftype32>>
 Xtal_thread_mgr::weights()
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    return mgr_.weights();
+    return mgr_->weights();
 }
 
 void
 Xtal_thread_mgr::init(std::vector<uintptr_t> cxatoms)
 {
+    deletion_guard();
     auto cxa = std::vector<atomstruct::Atom*>();
     for (const auto& ptr: cxatoms)
         cxa.push_back(reinterpret_cast<atomstruct::Atom*>(ptr));
@@ -641,7 +654,7 @@ void
 Xtal_thread_mgr::init_(const Atom_list& atoms)
 {
     finalize_threads_if_necessary();
-    mgr_.init(atoms);
+    mgr_->init(atoms);
 }
 
 void
@@ -650,20 +663,40 @@ Xtal_thread_mgr::add_xmap(const std::string& name,
     bool exclude_missing_reflections,
     bool exclude_free_reflections, bool fill_with_fcalc)
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    mgr_.add_xmap(name, bsharp, is_difference_map,
+    mgr_->add_xmap(name, bsharp, is_difference_map,
         exclude_missing_reflections, exclude_free_reflections, fill_with_fcalc);
-    xmap_thread_results_.emplace(name, mgr_.maps_[name]);
+    xmap_thread_results_.emplace(name, mgr_->maps_[name]);
 
 }
 
 void
 Xtal_thread_mgr::delete_xmap(const std::string& name)
 {
+    deletion_guard();
     finalize_threads_if_necessary();
-    mgr_.delete_xmap(name);
+    mgr_->delete_xmap(name);
     xmap_thread_results_.erase(name);
 }
 
+void
+Xtal_thread_mgr::deletion_guard() const
+{
+    if (mgr_==nullptr)
+    {
+        throw std::runtime_error("Xtal_thread_mgr C++ side has been deleted!");
+    }
+}
+
+void
+Xtal_thread_mgr::delete_all()
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    atoms_.clear();
+    xmap_thread_results_.clear();
+    mgr_.reset();
+}
 
 } //namespace clipper_cx;

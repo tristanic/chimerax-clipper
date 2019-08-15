@@ -132,6 +132,7 @@ void declare_xtal_thread_mgr(py::module& m)
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
         .def("get_map_stats", &Class::get_map_stats)
+        .def("delete", &Class::delete_all)
         ;
 }
 
