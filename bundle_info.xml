@@ -154,6 +154,7 @@
   </CLibrary>
   <CLibrary name="clipper">
       <Define>CLIPPER_EXPORTS</Define>
+      <Define>CLIPPER_VERBOSE</Define>
       <Define platform="windows">NOMINMAX</Define>
       <Define>FFTW_MKL</Define>
       <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
@@ -258,6 +259,7 @@
 
   <CLibrary name="clipper_cx" usesNumpy="true">
       <Define>CLIPPER_CX_EXPORTS</Define>
+      <Define>CLIPPER_VERBOSE</Define>
       <Define platform="windows">NOMINMAX</Define>
       <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
@@ -313,6 +315,8 @@
       <Library>clipper_cx</Library>
       <Library>atomstruct</Library>
       <Library>element</Library>
+
+      <Define>CLIPPER_VERBOSE</Define>
 
       <Define platform="windows">NOMINMAX</Define>
       <LinkArgument platform="windows">/FORCE:MULTIPLE</LinkArgument>
