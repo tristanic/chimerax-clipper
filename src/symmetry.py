@@ -1298,7 +1298,7 @@ class AtomicSymmetryModel(Model):
         self._search_positions_drawing.positions = Places(places)
 
     def set_sym_display(self, symops, primary_atoms, sym_atoms, sym_coords, atom_sym_indices,
-        sym_bonds, sym_bond_tfs, bond_sym_indices):
+        sym_bonds, sym_bond_tfs, bond_sym_indices, update_hides=True):
         '''
         Manually define the set of symmetry atoms to be displayed.
         Args:
@@ -1325,9 +1325,10 @@ class AtomicSymmetryModel(Model):
                 index of the corresponding symmetry operator in symops
         '''
         self.live_scrolling = False
-        all_atoms = self.structure.atoms
-        all_atoms.hides |= HIDE_ISOLDE
-        primary_atoms.hides &= ~HIDE_ISOLDE
+        if update_hides:
+            all_atoms = self.structure.atoms
+            all_atoms.hides |= HIDE_ISOLDE
+            primary_atoms.hides &= ~HIDE_ISOLDE
         self._current_symops = symops
         self._current_tfs = symops.all_matrices_orth(self.cell, '3x4')
         self._current_master_atoms = primary_atoms
@@ -1396,7 +1397,7 @@ class AtomicSymmetryModel(Model):
         focal_set = self._current_focal_set
         # try:
         res = atom_and_bond_sym_transforms_from_sym_atoms(*focal_set[0:3])
-        self.set_sym_display(focal_set[3], *res)
+        self.set_sym_display(focal_set[3], *res, update_hides=False)
         # except:
         #     from chimerax.atomic import Atoms, Bonds
         #     self._current_sym_atoms = Atoms()
