@@ -538,7 +538,7 @@ class Symmetry_Manager(Model):
         self._transplant_model(new_model)
         # self.add([new_model])
         self.session.models.remove([old_model])
-        self.session.assign_id(new_model(old_id))
+        self.session.models.assign_id(new_model,old_id)
         self._structure = new_model
         if keep_old:
             self.session.models.add([old_model])
