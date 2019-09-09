@@ -34,7 +34,7 @@ class ReflectionDataContainer(Model):
     ChimeraX Model class allowing it to be loaded into the model
     hierarchy making it easily visible to the user.
     '''
-    def __init__(self, session, hklfile, shannon_rate = 1.5, min_voxel_size = 0.5,
+    def __init__(self, session, hklfile, shannon_rate = 1.5,
         free_flag_label = None):
         '''
         This class should hold the information that's common to all
@@ -49,9 +49,6 @@ class ReflectionDataContainer(Model):
         self._hklinfo = hklinfo
         self._grid_sampling = None
 
-        voxel_size = calculate_voxel_size(hklinfo.resolution, shannon_rate)
-        if voxel_size < min_voxel_size:
-            shannon_rate = calculate_shannon_rate(hklinfo.resolution, min_voxel_size)
         self.shannon_rate = shannon_rate
 
         if free[0] is not None:
