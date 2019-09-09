@@ -160,6 +160,9 @@ public:
     inline const ftype& weighted_rwork() { return w_rwork_; }
     inline const ftype& weighted_rfree() { return w_rfree_; }
 
+    inline bool ignore_hydrogens() const { return ignore_hydrogens_; }
+    inline void set_ignore_hydrogens(bool flag) { ignore_hydrogens_ = flag; }
+
     const Xmap_details& map_details(const std::string& name) const { return maps_.at(name); }
 
     size_t n_maps() const { return maps_.size(); }
@@ -304,6 +307,8 @@ private:
     //static constexpr ftype ONE_1_ON_4_PI_SQUARED = 1/(4*M_PI*M_PI);
     int freeflag_ = 0;
 
+    bool ignore_hydrogens_ = true;
+
     // Basic information
     HKL_info hklinfo_;
     Cell cell_;
@@ -438,6 +443,9 @@ public:
     inline const ftype& bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
 
     inline const HKL_data<F_sigF<ftype32>>& fobs() const { deletion_guard(); return mgr_->fobs(); }
+
+    inline bool ignore_hydrogens() const { return mgr_->ignore_hydrogens(); }
+    inline void set_ignore_hydrogens(bool flag) { mgr_->set_ignore_hydrogens(flag); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();

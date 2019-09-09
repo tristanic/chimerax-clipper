@@ -562,7 +562,7 @@ Xtal_thread_mgr::recalculate_all(std::vector<uintptr_t> cxatoms)
     for (const auto& ptr: cxatoms)
         cxa.push_back(reinterpret_cast<atomstruct::Atom*>(ptr));
     //auto cxa = static_cast<atomstruct::Atom**>(cxatoms);
-    atoms_ = bridge::clipper_atoms_from_cx_atoms_threaded(cxa.data(), cxa.size(), num_threads());
+    atoms_ = bridge::clipper_atoms_from_cx_atoms_threaded(cxa.data(), cxa.size(), num_threads(), ignore_hydrogens());
     master_thread_result_ = std::async(std::launch::async,
         &Xtal_thread_mgr::recalculate_all_, this, atoms_);
 } // recalculate_all
@@ -694,7 +694,7 @@ Xtal_thread_mgr::init(std::vector<uintptr_t> cxatoms)
     for (const auto& ptr: cxatoms)
         cxa.push_back(reinterpret_cast<atomstruct::Atom*>(ptr));
     // auto cxa = static_cast<atomstruct::Atom**>(cxatoms);
-    atoms_ = bridge::clipper_atoms_from_cx_atoms_threaded(cxa.data(), cxa.size(), num_threads());
+    atoms_ = bridge::clipper_atoms_from_cx_atoms_threaded(cxa.data(), cxa.size(), num_threads(), ignore_hydrogens());
     init_(atoms_);
 }
 

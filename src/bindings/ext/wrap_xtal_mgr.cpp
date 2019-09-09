@@ -73,6 +73,7 @@ void declare_xtal_mgr(py::module& m)
         // Get a reference to the managed xmap of a given name
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
+        .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
         .def("delete_xmap", &Class::delete_xmap)
         ;
 } // declare_xal_mgr
@@ -132,6 +133,7 @@ void declare_xtal_thread_mgr(py::module& m)
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
         .def("get_map_stats", &Class::get_map_stats)
+        .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
         .def("delete", &Class::delete_all)
         ;
 }

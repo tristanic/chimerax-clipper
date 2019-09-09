@@ -20,6 +20,7 @@
 // of these is redistributed under its own license terms.
 
 #include <atomstruct/Atom.h>
+#include <atomstruct/Residue.h>
 #include <clipper/clipper.h>
 #include <chrono>
 #include <memory>
@@ -53,15 +54,15 @@ template <class ... Types> clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* 
     return clatom;
 }
 
-
-clipper::Atom_list clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n)
+clipper::Atom_list clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens)
 {
     // auto start_time = std::chrono::steady_clock::now();
     auto al = clipper::Atom_list();
     for (size_t i=0; i<n; ++i)
     {
         auto cxa = cxatoms[i];
-        auto altlocs = cxa->alt_locs();
+        if (ignore_hydrogens && cxa->element().number()==1) continue;
+        const auto& altlocs = cxa->alt_locs();
         if (altlocs.size())
         {
             for (const auto& altloc: altlocs)
@@ -76,13 +77,13 @@ clipper::Atom_list clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_
     return al;
 }
 
-clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n, size_t n_threads)
+clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n, size_t n_threads, bool ignore_hydrogens)
 {
     // auto start_time = std::chrono::steady_clock::now();
     const size_t min_threaded_size = 10000;
     const size_t min_atoms_per_thread = 4000;
     if (n_threads==1 || n < min_threaded_size)
-        return clipper_atoms_from_cx_atoms(cxatoms, n);
+        return clipper_atoms_from_cx_atoms(cxatoms, n, ignore_hydrogens);
 
     size_t atoms_per_thread = std::max(min_atoms_per_thread, n/n_threads+1);
 
@@ -94,13 +95,14 @@ clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxato
     {
         end = std::min(n, start+atoms_per_thread);
         results.push_back(std::async(std::launch::async,
-            [&atom_count](atomstruct::Atom** cxatoms, size_t start, size_t end)
+            [&atom_count, ignore_hydrogens](atomstruct::Atom** cxatoms, size_t start, size_t end)
             {
                 auto al = clipper::Atom_list();
                 size_t counter = 0;
                 for (size_t i=start; i<end; ++i)
                 {
                     auto cxa = cxatoms[i];
+                    if (ignore_hydrogens && cxa->element().number()==1) continue;
                     auto altlocs = cxa->alt_locs();
                     if (altlocs.size())
                     {

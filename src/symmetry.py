@@ -407,7 +407,7 @@ class Symmetry_Manager(Model):
     SPOTLIGHT_UPDATE_THRESHOLD = 0.1
     ATOMIC_SYM_EXTRA_RADIUS = 3
     def __init__(self, model, mtzfile=None, map_oversampling=1.5,
-        min_voxel_size = 0.5, spotlight_mode = True, spotlight_radius=12,
+        spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
         set_lighting_to_simple=True, debug=False):
         if isinstance(model.parent, Symmetry_Manager):
