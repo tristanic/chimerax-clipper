@@ -422,6 +422,7 @@ class Symmetry_Manager(Model):
         super().__init__(name, session)
         self._debug = debug
         self._structure = model
+        self._anisou_sanity_check(model.atoms)
         self._stepper = None
         self._last_covered_selection = None
 
@@ -503,7 +504,13 @@ class Symmetry_Manager(Model):
         #     session.models.assign_id(self, id)
 
     def _structure_change_cb(self, trigger_name, changes):
+        if 'aniso_u changed' in changes[1].atom_reasons():
+            self._anisou_sanity_check(changes[1].modified_atoms())
         self.triggers.activate_trigger('atoms changed', changes)
+
+    def _anisou_sanity_check(self, atoms):
+        from chimerax.clipper.sanity_check import remove_invalid_anisou
+        remove_invalid_anisou(self.session, atoms)
 
     def add_symmetry_info(self, cell, spacegroup, grid_sampling):
         if self.has_symmetry:
@@ -543,6 +550,7 @@ class Symmetry_Manager(Model):
             from chimerax.core.triggerset import DEREGISTER
             return DEREGISTER
         self.session.triggers.add_handler('frame drawn', redraw_cb)
+        self._anisou_sanity_check(new_model.atoms)
         self.triggers.activate_trigger('model replaced', new_model)
         return new_model
 

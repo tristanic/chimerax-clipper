@@ -122,3 +122,13 @@ def guess_suitable_contour(volume, model, mask_radius=3, atom_radius_scale = 0.5
         sh.spotlight_mode = spotlight_mode
 
     return level
+
+def anisou_determinants(anisous):
+    a = anisous
+    a00, a11, a22, a01, a02, a12 = [a[:,i] for i in range(6)]
+    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02);
+
+def anisou_determinant(anisou):
+    a = anisou
+    a00, a11, a22, a01, a02, a12 = [a[i] for i in range(6)]
+    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02);
