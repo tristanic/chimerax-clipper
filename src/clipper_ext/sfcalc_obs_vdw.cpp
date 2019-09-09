@@ -29,22 +29,126 @@ namespace clipper_cx
 {
 
 template<class T>
+T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
+        const HKL_data<datatypes::F_phi<T>>& fphi_atom,
+        const HKL_data<datatypes::F_phi<T>>& fphi_mask,
+        HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
+        const HKL_data<datatypes::F_sigF<T>>& fsig,
+        const HKL_info& hkls, T k, T dk, int nparams)
+{
+    std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
+    // try some different scale factors
+    std::vector<double> params( nparams, 1.0 );
+    //BasisFn_spline basisfn( hkls, nparams, 1.0 );
+    BasisFn_aniso_gaussian basisfn;
+    TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
+    T x1 = k, dx = dk, x;
+    ftype y[3] = { 0.0, 0.0, 0.0 };
+    for ( int i = 0; i < 8; i++ ) {
+      // take 3 samples of function
+      for ( int d = -1; d <= 1; d++ ) if ( y[d+1] == 0.0 ) {
+        HKL_data<data32::F_phi>::HKL_reference_index ih;
+        x = x1 + T(d)*dx;
+        x = (x < 0 ? 0.0 : x);
+        for ( ih = fphi.first(); !ih.last(); ih.next() )
+          fphi[ih] = std::complex<T>(fphi_atom[ih]) +
+                 x * std::complex<T>(fphi_mask[ih]);
+        ResolutionFn rfn( hkls, basisfn, targetfn, params );
+        double r = 0.0;
+        for ( ih = fsig.first(); !ih.last(); ih.next() )
+          if ( !fsig[ih].missing() ) {
+            double eps = ih.hkl_class().epsilon();
+            auto f1 = sqrt(rfn.f(ih))*fphi[ih].f();
+            auto f2 = fsig[ih].f();
+            if (std::isnan(f1) || std::isnan(f2))
+            {
+                std::cerr << "NaN encountered at " << ih.hkl().format() << "!"
+                  << "Fobs: " << f2 << ", fcalc: " << fphi[ih].f() << ", scale: " << rfn.f(ih) << std::endl;
+            }
+            r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
+            // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
+          }
+          std::cerr << "Bulk solvent scale: " << x << "R: " << r << std::endl;
+        y[d+1] = r;
+        //std::cout << d << "\t" << x << "\t" << r << "\n";
+      }
+      // find minimum of current 3 samples
+      if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; x1 -= dx; }
+      else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; x1 += dx; }
+      x1 = (x1 < 0 ? 0.0 : x1 );
+      // reduce step and search again
+      y[0] = y[2] = 0.0;
+      dx /= 2.0;
+    }
+    return x1;
+
+}
+
+template <class T>
+T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
+        const HKL_data<datatypes::F_phi<T>>& fphi_atom,
+        const HKL_data<datatypes::F_phi<T>>& fphi_mask,
+        HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
+        const HKL_data<datatypes::F_sigF<T>>& fsig,
+        const HKL_info& hkls, T k_sol, T ua1, T dua, int nparams)
+{
+    T ua;
+    std::vector<double> params( nparams, 1.0 );
+    // BasisFn_spline basisfn( hkls, nparams, 1.0 );
+    BasisFn_aniso_gaussian basisfn;
+    TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
+    // HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
+    ftype y[3] = { 0.0, 0.0, 0.0 };
+    for (int i=0; i<8; ++i) {
+        for (int d=-1; d<=1; ++d ) if (y[d+1] == 0.0 ) {
+            HKL_data<data32::F_phi>::HKL_reference_index ih;
+            ua = ua1+T(d)*dua;
+            fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua));
+            for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
+                  !ih.last(); ih.next() )
+                fphi[ih] = std::complex<T>(fphi_atom[ih]) +
+                    k_sol * std::complex<T>(fphi_mask_final[ih]);
+            ResolutionFn rfn( hkls, basisfn, targetfn, params );
+            double r = 0.0;
+            for ( ih = fsig.first(); !ih.last(); ih.next() )
+              if ( !fsig[ih].missing() ) {
+                double eps = ih.hkl_class().epsilon();
+                r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
+                // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
+              }
+              std::cerr << "B_add: " << Util::u2b(ua) << " R: " << r << std::endl;
+            y[d+1] = r;
+            //std::cout << d << "\t" << x << "\t" << r << "\n";
+        }
+        // find minimum of current 3 samples
+        if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; ua1 -= dua; }
+        else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; ua1 += dua; }
+        // reduce step and search again
+        y[0] = y[2] = 0.0;
+        dua /= 2.0;
+
+    }
+    return ua1;
+
+}
+
+template<class T>
 bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
     const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms)
 {
   // std::cout << "Starting bulk solvent calculation..." << std::endl << std::flush;
   // set U value constants
-  double u_atom = Util::b2u( 20.0 );
+  //double u_atom = Util::b2u( 0 ); // 20.0 );
   double u_mask = Util::b2u( 50.0 );
 
   // increase the U values
-  Atom_list atomu = atoms;
-  U_aniso_orth uadd( u_atom ), u;
-  for ( int i = 0; i < atomu.size(); i++ ) if ( !atomu[i].is_null() ) {
-    u = atomu[i].u_aniso_orth();
-    if ( u.is_null() ) u = U_aniso_orth( atomu[i].u_iso() );
-    atomu[i].set_u_aniso_orth( u + uadd );
-  }
+  // Atom_list atomu = atoms;
+  // U_aniso_orth uadd( u_atom ), u;
+  // for ( int i = 0; i < atomu.size(); i++ ) if ( !atomu[i].is_null() ) {
+  //   u = atomu[i].u_aniso_orth();
+  //   if ( u.is_null() ) u = U_aniso_orth( atomu[i].u_iso() );
+  //   atomu[i].set_u_aniso_orth( u + uadd );
+  // }
 
   // now make the map for ed calcs
   const HKL_info&   hkls = fsig.base_hkl_info();
@@ -60,7 +164,7 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   // auto start = std::chrono::steady_clock  ::now();
   EDcalc_aniso_thread<ftype32> edcalc(nthreads);
   // std::cout << "Number locked before: " << xmap.count_locked() << std::endl;
-  edcalc( xmap, atomu);
+  edcalc( xmap, atoms);
   // std::cout << "Number locked after: " << xmap.count_locked() << std::endl;
   // if (!xmap.all_unlocked())
     // std::cerr << "ERROR: not all grid points are unlocked!" << std::endl;
@@ -74,14 +178,14 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   // elapsed = end-start;
   // std::cout << "Single x-to-h FFT took " << elapsed.count() << " seconds." << std::endl;
 
-  fphi_atom.compute( fphi_atom, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, u_atom ) );
+  // fphi_atom.compute( fphi_atom, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, u_atom ) );
 
   // do density calc from mask
 
   // start = std::chrono::steady_clock  ::now();
   auto emcalc = EDcalc_mask_vdw<ftype32>();
   emcalc.set_num_threads(nthreads);
-  emcalc( xmap, atomu );
+  emcalc( xmap, atoms );
   for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
         !ix.last(); ix.next() )
     xmap[ix] = 1.0 - xmap[ix];
@@ -96,90 +200,28 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   // set (0,0,0) terms to null
   fphi_mask.compute( fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, -u_mask ) );
-  fphi_atom[fphi_atom.first()].set_null();
-  fphi_mask[fphi_mask.first()].set_null();
+  // std::cerr << "First HKL: " << fphi_atom.first().hkl().format() << std::endl;
+  // fphi_atom[fphi_atom.first()].set_null();
+  // fphi_mask[fphi_mask.first()].set_null();
+  auto c000 = HKL_data<data32::F_phi>::HKL_reference_coord(hkls, HKL(0,0,0)).index();
+  fphi_atom[c000].set_null();
+  fphi_mask[c000].set_null();
 
   if (bulk_solvent_optimization_needed_)
   {
-
-      std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
-      // try some different scale factors
-      std::vector<double> params( nparams, 1.0 );
-      BasisFn_spline basisfn( hkls, nparams, 1.0 );
-      TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
-      T x1 = 0.35, dx = 0.35, x;
-      ftype y[3] = { 0.0, 0.0, 0.0 };
-      for ( int i = 0; i < 8; i++ ) {
-        // take 3 samples of function
-        for ( int d = -1; d <= 1; d++ ) if ( y[d+1] == 0.0 ) {
-          HKL_data<data32::F_phi>::HKL_reference_index ih;
-          x = x1 + T(d)*dx;
-          for ( ih = fphi.first(); !ih.last(); ih.next() )
-            fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-                   x * std::complex<T>(fphi_mask[ih]);
-          ResolutionFn rfn( hkls, basisfn, targetfn, params );
-          double r = 0.0;
-          for ( ih = fsig.first(); !ih.last(); ih.next() )
-            if ( !fsig[ih].missing() ) {
-              double eps = ih.hkl_class().epsilon();
-              r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
-              // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
-            }
-            // std::cerr << "Bulk solvent fraction: " << x << "R: " << r << std::endl;
-          y[d+1] = r;
-          //std::cout << d << "\t" << x << "\t" << r << "\n";
-        }
-        // find minimum of current 3 samples
-        if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; x1 -= dx; }
-        else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; x1 += dx; }
-        // reduce step and search again
-        y[0] = y[2] = 0.0;
-        dx /= 2.0;
-      }
-
-      // adopt final scale, and optimise solvent B-factor
-
-      T ua1 = Util::b2u(0), dua = Util::b2u(50), ua;
-      // HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
-      for (size_t i=0; i<3; ++i) y[i] = 0.0;
-      for (int i=0; i<8; ++i) {
-          for (int d=-1; d<=1; ++d ) if (y[d+1] == 0.0 ) {
-              HKL_data<data32::F_phi>::HKL_reference_index ih;
-              ua = ua1+T(d)*dua;
-              fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, ua));
-              for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
-                    !ih.last(); ih.next() )
-                  fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-                      x1 * std::complex<T>(fphi_mask_final[ih]);
-              ResolutionFn rfn( hkls, basisfn, targetfn, params );
-              double r = 0.0;
-              for ( ih = fsig.first(); !ih.last(); ih.next() )
-                if ( !fsig[ih].missing() ) {
-                  double eps = ih.hkl_class().epsilon();
-                  r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
-                  // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
-                }
-                // std::cerr << "B_sol: " << Util::u2b(u_mask + ua) << "R: " << r << std::endl;
-              y[d+1] = r;
-              //std::cout << d << "\t" << x << "\t" << r << "\n";
-          }
-          // find minimum of current 3 samples
-          if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; ua1 -= dua; }
-          else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; ua1 += dua; }
-          // reduce step and search again
-          y[0] = y[2] = 0.0;
-          dua /= 2.0;
-
-      }
+      T x1 = 0.35;
+      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, x1, x1, nparams);
+      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, x1, Util::b2u(0), Util::b2u(50), nparams);
 
       // adopt final scale and B-factor
       bulk_u = ua1;
       bulkscl = x1;
-      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, ua1));
+      std::cout << "Final solvent B-factor: " << Util::u2b(u_mask + ua1) << " scale: " << x1 << std::endl;
+      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua1));
       bulk_solvent_optimization_needed_ = false;
   } else {
       // Just use the stored values
-      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, bulk_u));
+      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, -bulk_u));
   }
   for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
         !ih.last(); ih.next() )
