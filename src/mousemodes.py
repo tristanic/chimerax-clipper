@@ -303,7 +303,13 @@ class ContourSelectedVolume(MouseMode):
             rep, levels = adjust_threshold_level(v, step, self.symmetrical)
             if rep != 'image':
                 lsig = tuple(l/sd for l in levels)
-                lstr = ', '.join(format(l, '.3f') for l in levels)
+                level_strings = []
+                for l in levels:
+                    if l > 0.1:
+                        level_strings.append('{:.3f}'.format(l))
+                    else:
+                        level_strings.append('{:1.2e}'.format(l))
+                lstr = ', '.join(level_strings)
                 sstr = ', '.join(format(s, '.3f') for s in lsig)
                 self.session.logger.status('Volume {} contour level(s): {} ({} sigma)'.format(v.name, lstr, sstr))
 
