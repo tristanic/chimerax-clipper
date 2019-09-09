@@ -86,27 +86,29 @@ bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& 
     Xmap<T> unshrunk(xmap);
     typename Xmap<T>::Map_reference_index ix;
     for (ix = unshrunk.first(); !ix.last(); ix.next()) {
-        if (unshrunk[ix] != zero)
-        {
-            xyz = ix.coord_orth();
-            g0 = xmap.coord_map( xyz ).coord_grid() + gd.min();
-            g1 = xmap.coord_map( xyz ).coord_grid() + gd.max();
-            i0 = typename Xmap<T>::Map_reference_coord( xmap, g0 );
-            for (iu = i0; iu.coord().u() < g1.u(); iu.next_u() ) {
-                for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() ) {
-                    for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
-                        if (unshrunk[iw] == zero) {
-                            if ( (xyz-iw.coord_orth()).lengthsq() < pow(shrink_radius_, 2) ) {
-                                //std::cerr << "Filling in value at " << iw.coord().format() << std::endl;
-                                xmap[iw] = 0.0;
-
+        [&] {
+            if (unshrunk[ix] != zero)
+            {
+                xyz = ix.coord_orth();
+                g0 = xmap.coord_map( xyz ).coord_grid() + gd.min();
+                g1 = xmap.coord_map( xyz ).coord_grid() + gd.max();
+                i0 = typename Xmap<T>::Map_reference_coord( xmap, g0 );
+                for (iu = i0; iu.coord().u() < g1.u(); iu.next_u() ) {
+                    for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() ) {
+                        for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
+                            if (unshrunk[iw] == zero) {
+                                if ( (xyz-iw.coord_orth()).lengthsq() < pow(shrink_radius_, 2) ) {
+                                    //std::cerr << "Filling in value at " << iw.coord().format() << std::endl;
+                                    xmap[ix] = 0.0;
+                                    return;
+                                }
                             }
                         }
                     }
                 }
-            }
 
-        }
+            }
+        } ();
     }
     return true;
 }
@@ -185,9 +187,9 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
                 Coord_grid cg, g0, g1;
                 typename Xmap<T>::Map_reference_coord i0;
                 for (size_t j=0; j<points_per_thread && !ix.last(); ix.next(), ++j)
-                {
+                [&]{
                     if (unshrunk[ix] == zero)
-                        continue;
+                        return;
                     xyz = ix.coord_orth();
                     cg = xmap.coord_map(xyz).coord_grid();
                     g0 = cg+gd.min();
@@ -198,13 +200,14 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
                             for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
                                 if (unshrunk[iw] == zero) {
                                     if ((xyz-iw.coord_orth()).lengthsq() < pow(shrink_radius, 2) ) {
-                                        xmap[iw] = zero;
+                                        xmap[ix] = zero;
+                                        return;
                                     }
                                 }
                             }
                         }
                     }
-                }
+                }();
             },
             std::cref(unshrunk), std::ref(xmap), shrink_radius_
         ));

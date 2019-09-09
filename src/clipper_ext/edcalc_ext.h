@@ -40,8 +40,8 @@ class EDcalc_mask_vdw: public EDcalc_base<T>
 public:
     // In my empirical tests, these slightly smaller probe/shrink radii seem better than the published ones
     EDcalc_mask_vdw( const ftype grid_radius = 3.0,
-                     const ftype probe_radius = 0.6,
-                     const ftype shrink_radius = 0.7,
+                     const ftype probe_radius = 0.9, // 0.6,
+                     const ftype shrink_radius = 1.1, // 0.7,
                      const size_t n_threads = 1)
         : grid_radius_(grid_radius), probe_radius_(probe_radius),
           shrink_radius_(shrink_radius), n_threads_(n_threads)
@@ -73,7 +73,7 @@ private:
     T cutoff_radius( const Atom& a) const
     {
         T atom_radius = data::vdw_radii.at(a.element().c_str());
-        return std::max(atom_radius * (0.4 + 1.5 * pow(a.u_iso(), 0.5)), 1.5);
+        return std::max(atom_radius * (0.4 + 1.5 * pow(a.u_iso(), 0.5)), 3.0);
     }
 };
 
