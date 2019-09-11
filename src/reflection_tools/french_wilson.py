@@ -45,7 +45,7 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
         TargetFn_meanInth_I_sigI_float,
         TargetFn_meanInth_I_sigI_ano_float,
         TargetFn_scaleI1I2_I_sigI_float,
-        BasisFn_spline,
+        BasisFn_spline, BasisFn_binner,
         ResolutionFn
     )
     from math import sqrt
@@ -74,7 +74,8 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
 
     import numpy
     params = [1.0]*n_bins #    numpy.ones(n_bins, numpy.float32)
-    basisfn = BasisFn_spline(hkls, n_bins, 1.0)
+    #basisfn = BasisFn_spline(hkls, n_bins, 1.0)
+    basisfn = BasisFn_binner(hkls, n_bins, 1.0)
     target = TargetFn_meanInth_I_sigI_float(i_sigi, 1.0)
     rfn = ResolutionFn(hkls, basisfn, target, params)
 
@@ -94,12 +95,19 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
         eps = ih.hkl_class.epsilon
         eobs_sq = isigi_data.i / eps / imean
         sig_eobs_sq = isigi_data.sigi / eps / imean
-        if ih.hkl_class.centric:
-            e_xpct = _expected_E_FW_cen(eobs_sq, sig_eobs_sq)
-            esq_xpct = _expected_Esq_FW_cen(eobs_sq, sig_eobs_sq)
-        else:
-            e_xpct = _expected_E_FW_acen(eobs_sq, sig_eobs_sq)
-            esq_xpct = _expected_Esq_FW_acen(eobs_sq, sig_eobs_sq)
+        try:
+            if ih.hkl_class.centric:
+                e_xpct = _expected_E_FW_cen(eobs_sq, sig_eobs_sq)
+                esq_xpct = _expected_Esq_FW_cen(eobs_sq, sig_eobs_sq)
+            else:
+                e_xpct = _expected_E_FW_acen(eobs_sq, sig_eobs_sq)
+                esq_xpct = _expected_Esq_FW_acen(eobs_sq, sig_eobs_sq)
+        except ValueError:
+            print ('Failed on {}'.format(str(ih.hkl)))
+            print('N_bins: {} Imean: {} I: {} sigI: {} eobs_sq: {} sig_eobs_sq: {}'.format(
+                n_bins, imean, isigi_data.i, isigi_data.sigi, eobs_sq, sig_eobs_sq
+            ))
+            raise
         sig_e = sqrt(esq_xpct - e_xpct**2)
 
         sqrt_eps = sqrt(eps)
