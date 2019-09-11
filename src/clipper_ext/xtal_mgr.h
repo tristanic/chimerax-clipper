@@ -229,6 +229,14 @@ public:
     // Generate the standard set of map coefficients
     void generate_base_map_coeffs();
 
+    // Remove outliers based on prior probability with respect to Wilson
+    // distribution. Based on Read (1999)
+    // https://doi.org/10.1107/S0907444999008471
+    void remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
+        HKL_data<F_sigF<ftype32>>& f_sigf_out, int reflections_per_bin,
+        ftype high_p_cutoff=1e-6, ftype beamstop_cutoff=0.01,
+        ftype beamstop_d_min=10.0);
+
     // One-stop wrapper for to generate fcalcs and base map coefficients
     inline void init(const Atom_list& atoms)
     {
@@ -265,6 +273,7 @@ public:
     //
     inline const Xmap<ftype32>& get_xmap(const std::string& name) const { return maps_.at(name).xmap(); }
     inline const Map_stats& get_map_stats(const std::string& name) { return maps_.at(name).map_stats(); }
+
 
     // Return the values of the current scaling function scaling fcalc to fobs
     // for each (H,K,L)
@@ -318,6 +327,7 @@ private:
     HKL_data<Flag> usage_;
     Grid_sampling grid_sampling_;
     // Observed structure factors
+    HKL_data<F_sigF<ftype32>> fobs_original_;
     HKL_data<F_sigF<ftype32>> fobs_;
     // Real-space maps
 
@@ -354,6 +364,7 @@ private:
     void remove_missing_reflections_from_map_coeffs(HKL_data<F_phi<ftype32>>& coeffs,
         const HKL_data<F_sigF<ftype32>>& f_sigf);
 
+    const double OUTLIER_REJECTION_LIMIT = 1e-6;
 
 }; // class Xmap_mgr
 

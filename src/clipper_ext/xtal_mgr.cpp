@@ -21,6 +21,7 @@
 
 #include "xtal_mgr.h"
 #include "french_wilson.h"
+#include "math_ext.h"
 
 #include <set>
 #include <memory>
@@ -65,7 +66,9 @@ Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free
     const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs)
     : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
 {
-    fobs_ = fobs;
+    fobs_original_ = fobs;
+    fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
+    remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
     set_freeflag(guess_free_flag_value(free_flags_));
 } // Xtal_mgr_base
 
@@ -73,12 +76,14 @@ Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free
     const Grid_sampling& grid_sampling, const HKL_data<F_sigF_ano<ftype32>>& fobs_anom)
     : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
 {
+    fobs_original_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
     fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
     for (auto ih = fobs_anom.first(); !ih.last(); ih.next())
     {
-        fobs_[ih].f() = fobs_anom[ih].f();
-        fobs_[ih].sigf() = fobs_anom[ih].sigf();
+        fobs_original_[ih].f() = fobs_anom[ih].f();
+        fobs_original_[ih].sigf() = fobs_anom[ih].sigf();
     }
+    remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
     set_freeflag(guess_free_flag_value(free_flags_));
 }
 
@@ -86,8 +91,10 @@ Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free
     const Grid_sampling& grid_sampling, const HKL_data<I_sigI<ftype32>>& iobs)
     : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
 {
+    fobs_original_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
     fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
-    french_wilson::french_wilson(iobs, fobs_);
+    french_wilson::french_wilson(iobs, fobs_original_);
+    remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
     set_freeflag(guess_free_flag_value(free_flags_));
 }
 
@@ -95,8 +102,10 @@ Xtal_mgr_base::Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free
     const Grid_sampling& grid_sampling, const HKL_data<I_sigI_ano<ftype32>>& iobs_ano)
     : Xtal_mgr_base(hklinfo, free_flags, grid_sampling)
 {
+    fobs_original_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
     fobs_ = HKL_data<F_sigF<ftype32>>(hklinfo_);
-    french_wilson::french_wilson(iobs_ano, fobs_);
+    french_wilson::french_wilson(iobs_ano, fobs_original_);
+    remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
     set_freeflag(guess_free_flag_value(free_flags_));
 }
 
@@ -208,6 +217,65 @@ Xtal_mgr_base::generate_base_map_coeffs()
 
     coeffs_initialized_=true;
 } // generate_base_map_coeffs
+
+void
+Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
+    HKL_data<F_sigF<ftype32>>& f_sigf_out, int reflections_per_bin,
+    ftype high_p_cutoff, ftype beamstop_cutoff, ftype beamstop_d_min)
+{
+    ftype high_e_cutoff_centric = approx_inverse_erfc(high_p_cutoff) * sqrt(2.0);
+    ftype high_e_cutoff_acentric = sqrt(log(1/high_p_cutoff));
+    ftype beamstop_invrsq_cutoff = 1/pow(beamstop_d_min, 2.0);
+    ftype beamstop_e_cutoff_centric = pow(beamstop_cutoff, 2.0)*M_PI/2.0;
+    ftype beamstop_e_cutoff_acentric = -log(1.0-beamstop_cutoff);
+    HKL_data<E_sigE<ftype32>> esige(hklinfo_);
+    esige.compute(f_sigf_in, data32::Compute_EsigE_from_FsigF());
+    int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
+    BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
+    TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(esige);
+    std::vector<ftype> params(n_bins);
+    ResolutionFn rfn(hklinfo_, basisfn, targetfn, params);
+    ftype32 e_norm;
+    size_t outlier_count = 0;
+    for (auto ih=esige.first(); !ih.last(); ih.next())
+    {
+        const auto& e = esige[ih];
+        if (f_sigf_in[ih].missing())
+        {
+            f_sigf_out[ih].set_null();
+            continue;
+        }
+        auto scale = sqrt(rfn.f(ih));
+        e_norm = e.E() * scale;
+        // e.sigE() *= scale;
+        bool centric = ih.hkl_class().centric();
+        if ((centric && e_norm >= high_e_cutoff_centric)
+                || (!centric && e_norm >= high_e_cutoff_acentric))
+        {
+            f_sigf_out[ih].set_null();
+            outlier_count++;
+            continue;
+        } else if (ih.invresolsq() < beamstop_invrsq_cutoff)
+        {
+            if ((centric && e_norm <= beamstop_e_cutoff_centric)
+                || (!centric && e_norm <= beamstop_e_cutoff_acentric))
+            {
+                std::cout << "Removed probable beamstop shadow artefact at "
+                    << ih.hkl().format() << std::endl;
+                f_sigf_out[ih].set_null();
+                outlier_count++;
+                continue;
+            }
+        }
+        f_sigf_out[ih] = f_sigf_in[ih];
+    }
+    if (outlier_count > 0)
+    {
+        std::cout << "Removed " << outlier_count << " outliers from reflection data." << std::endl;
+    }
+
+}
+
 
 HKL_data<F_phi<ftype32>>
 Xtal_mgr_base::scaled_fcalc()
