@@ -49,6 +49,15 @@ def _space_group_identifiers():
         ('space_group_name_Hall', Spgr_descr.TYPE.Hall)
     )
 
+def _expand_hm_symbol(symbol_hm):
+    s = symbol_hm.split(' ')
+    if len(s) != 2:
+        return symbol_hm
+    lattice, sym = s
+    if sym in ('2', '21', 'm', 'c', '2/m', '21/m', '2/c', '21/c'):
+        return ' '.join([lattice, '1', sym, '1'])
+    return symbol_hm
+
 
 from .. import (
     HKL_data_ABCD,
@@ -128,6 +137,9 @@ def _parse_tables(table_list, load_map_coeffs=True):
         if symm.has_field(id):
             spgr_descriptor = symm.fields((id,))[0][0]
             spgr_dtype = dtype
+            from chimerax.clipper.clipper_python import Spgr_descr
+            if dtype == Spgr_descr.TYPE.HM:
+                spgr_descriptor = _expand_hm_symbol(spgr_descriptor)
             break
     else:
         raise TypeError('Could not read spacegroup information from file!')
