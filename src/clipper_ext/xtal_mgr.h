@@ -199,6 +199,8 @@ public:
 
     // Fcalc scaled to Fobs
     HKL_data<F_phi<ftype32>> scaled_fcalc();
+    HKL_data<F_sigF<ftype32>> scaled_fobs();
+
 
     inline const HKL_data<Flag>& usage() const { return usage_; }
     inline const HKL_data<F_phi<ftype32>>& base_2fofc() const
@@ -310,6 +312,11 @@ private:
         const HKL_data<F_phi<ftype32>>& fcalc,
         const HKL_data<F_sigF<ftype32>>& fobs,
         std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn);
+
+        HKL_data<F_sigF<ftype32>> scaled_fobs_(
+            const HKL_data<F_phi<ftype32>>& fcalc,
+            const HKL_data<F_sigF<ftype32>>& fobs,
+            std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn);
 
 
     // constants

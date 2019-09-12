@@ -216,7 +216,7 @@ Xtal_mgr_base::generate_base_map_coeffs()
     if (!fcalc_initialized())
         throw std::runtime_error("No Fcalc values have been calculated! Run "
             " generate_fcalc() on a suitable set of atoms first!");
-    map_calculator_(base_2fofc_, base_fofc_, phi_fom_, fobs_, fcalc_, usage_);
+    map_calculator_(base_2fofc_, base_fofc_, phi_fom_, scaled_fobs(), fcalc_, usage_);
 
     coeffs_initialized_=true;
 } // generate_base_map_coeffs
@@ -313,6 +313,41 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
     }
     return ret;
 }
+
+HKL_data<F_sigF<ftype32>>
+Xtal_mgr_base::scaled_fobs()
+{
+    int nparams = 20;
+    auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
+    return scaled_fobs_(fcalc_, fobs_, basisfn);
+
+} // scaled_fcalc
+
+HKL_data<F_sigF<ftype32>>
+Xtal_mgr_base::scaled_fobs_(const HKL_data<F_phi<ftype32>>& fcalc,
+    const HKL_data<F_sigF<ftype32>>& fobs, std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn)
+{
+    std::vector<ftype> params(basisfn->num_params());
+    if (scaling_method_==ANISO_GAUSSIAN)
+        params=initial_scale_params_;
+    HKL_data<F_sigF<ftype32>> ret(hklinfo_);
+    TargetFn_scaleF1F2<F_sigF<ftype32>, F_phi<ftype32>> targetfn (fobs_, fcalc_);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
+    params = rfn.params();
+    // if (scaling_method_==ANISO_GAUSSIAN)
+    //     std::cerr << "Anisotropic gaussian params: " << params[0] << ", " << params[1]
+    //         << ", " << params[2] << ", " << params[3] << ", " << params[4]
+    //         << ", " << params[5] << ", " << params[6] << std::endl;
+    HKL_info::HKL_reference_index ih;
+    for (ih=fobs_.first(); !ih.last(); ih.next())
+    {
+        if (!fobs_[ih].missing())
+            ret[ih].f() = sqrt(rfn.f(ih))*fobs_[ih].f();
+            ret[ih].sigf() = sqrt(rfn.f(ih))*fobs_[ih].sigf();
+    }
+    return ret;
+}
+
 
 std::unique_ptr<BasisFn_base, BasisFn_Deleter> Xtal_mgr_base::choose_basisfn_(
     const HKL_data<F_phi<ftype32>>& fcalc, HKL_data<F_sigF<ftype32>> fobs,
