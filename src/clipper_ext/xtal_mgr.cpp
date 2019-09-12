@@ -22,6 +22,7 @@
 #include "xtal_mgr.h"
 #include "french_wilson.h"
 #include "math_ext.h"
+#include "scaling.h"
 
 #include <set>
 #include <memory>
@@ -202,7 +203,9 @@ Xtal_mgr_base::generate_fcalc(const Atom_list& atoms)
     // auto end_time = std::chrono::system_clock::now();
     // std::chrono::duration<double> elapsed = end_time-start_time;
     // std::cout << "Complete Fcalc generation took " << elapsed.count() << " seconds." << std::endl;
+    // guess_initial_gaussian_params_();
     fcalc_initialized_ = true;
+
     calculate_r_factors();
 } // generate_fcalc
 
@@ -291,9 +294,16 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
     const HKL_data<F_sigF<ftype32>>& fobs, std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn)
 {
     std::vector<ftype> params(basisfn->num_params());
+    if (scaling_method_==ANISO_GAUSSIAN)
+        params=initial_scale_params_;
     HKL_data<F_phi<ftype32>> ret(hklinfo_);
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
     ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
+    params = rfn.params();
+    // if (scaling_method_==ANISO_GAUSSIAN)
+    //     std::cerr << "Anisotropic gaussian params: " << params[0] << ", " << params[1]
+    //         << ", " << params[2] << ", " << params[3] << ", " << params[4]
+    //         << ", " << params[5] << ", " << params[6] << std::endl;
     HKL_info::HKL_reference_index ih;
     for (ih=fcalc_.first(); !ih.last(); ih.next())
     {
@@ -308,6 +318,7 @@ std::unique_ptr<BasisFn_base, BasisFn_Deleter> Xtal_mgr_base::choose_basisfn_(
     const HKL_data<F_phi<ftype32>>& fcalc, HKL_data<F_sigF<ftype32>> fobs,
     int nparams)
 {
+    guess_initial_gaussian_params_();
     if (scaling_method_ == NOT_CHOSEN)
     {
         std::cout << "Automatically detecting best scaling method..." << std::endl;
@@ -578,6 +589,11 @@ Xtal_mgr_base::remove_missing_reflections_from_map_coeffs(HKL_data<F_phi<ftype32
 
 }
 
+void
+Xtal_mgr_base::guess_initial_gaussian_params_()
+{
+    initial_scale_params_ = guess_initial_aniso_gaussian_params(fobs_, fcalc_);
+}
 
 
 // THREADED IMPLEMENTATIONS

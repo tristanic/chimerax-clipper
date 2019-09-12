@@ -342,6 +342,8 @@ private:
     // Most recent Fcalc values
     HKL_data<F_phi<ftype32>> fcalc_;
 
+    std::vector<ftype> initial_scale_params_;
+
     SFcalc_obs_bulk_vdw<ftype32> bulk_solvent_calculator_ = SFcalc_obs_bulk_vdw<ftype32>();
 
     // SFcalc_obs_bulk<ftype32> bulk_solvent_calculator_ = SFcalc_obs_bulk<ftype32>();
@@ -363,6 +365,8 @@ private:
         HKL_data<F_phi<ftype32>>& dest);
     void remove_missing_reflections_from_map_coeffs(HKL_data<F_phi<ftype32>>& coeffs,
         const HKL_data<F_sigF<ftype32>>& f_sigf);
+
+    void guess_initial_gaussian_params_();
 
     const double OUTLIER_REJECTION_LIMIT = 1e-6;
 
