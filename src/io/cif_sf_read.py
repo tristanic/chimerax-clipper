@@ -76,8 +76,8 @@ from .. import (
 _data_columns_to_data_types = {
     ('F_meas_au', 'F_meas_sigma_au'):                   (float, HKL_data_F_sigF),
     ('F_meas', 'F_meas_sigma'):                         (float, HKL_data_F_sigF),
-    ('pdbx_F_plus', 'pdbx_F_minus',
-     'pdbx_F_plus_sigma', 'pdbx_F_minus_sigma'):        (float, HKL_data_F_sigF_ano),
+    ('pdbx_F_plus', 'pdbx_F_plus_sigma',
+     'pdbx_F_minus', 'pdbx_F_minus_sigma'):             (float, HKL_data_F_sigF_ano),
 
     ('pdbx_anom_difference',
      'pdbx_anom_difference_sigma'):                     (float, HKL_data_D_sigD),
@@ -86,8 +86,8 @@ _data_columns_to_data_types = {
 
     ('intensity_meas', 'intensity_sigma'):              (float, HKL_data_I_sigI),
 
-    ('pdbx_I_plus', 'pdbx_I_minus',
-     'pdbx_I_plus_sigma', 'pdbx_I_minus_sigma'):        (float, HKL_data_I_sigI_ano),
+    ('pdbx_I_plus', 'pdbx_I_plus_sigma',
+      'pdbx_I_minus', 'pdbx_I_minus_sigma'):            (float, HKL_data_I_sigI_ano),
 
     ('pdbx_HL_A_iso', 'pdbx_HL_B_iso',
      'pdbx_HL_C_iso', 'pdbx_HL_D_iso'):                 (float, HKL_data_ABCD),
@@ -111,8 +111,8 @@ _data_columns_to_data_types = {
 }
 
 _anomalous_data_columns = (
-    ('pdbx_F_plus', 'pdbx_F_minus', 'pdbx_F_plus_sigma', 'pdbx_F_minus_sigma'),
-    ('pdbx_I_plus', 'pdbx_I_minus', 'pdbx_I_plus_sigma', 'pdbx_I_minus_sigma')
+    ('pdbx_F_plus', 'pdbx_F_plus_sigma', 'pdbx_F_minus', 'pdbx_F_minus_sigma'),
+    ('pdbx_I_plus', 'pdbx_I_plus_sigma', 'pdbx_I_minus', 'pdbx_I_minus_sigma')
 )
 
 
@@ -220,10 +220,10 @@ def _cif_columns_to_clipper(table, hkl_info, hkls, field_names, type_spec):
         )
     if field_names in _anomalous_data_columns:
         # Clipper's anomalous data types have a fifth covariance column, but
-        # this is not provided in the .cif file. Just set it to zero.
+        # this is not provided in the .cif file. Just set it to 1.
         padded_data = numpy.empty((len(data), 5), numpy.double)
         padded_data[:,:4] = data
-        padded_data[:,4] = 0
+        padded_data[:,4] = 1
         data = padded_data
     clipper_data = array_type(hkl_info)
     try:
