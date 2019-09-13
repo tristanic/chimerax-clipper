@@ -325,6 +325,8 @@ private:
 
     bool ignore_hydrogens_ = true;
 
+    U_aniso_orth aniso_ucryst_;
+
     // Basic information
     HKL_info hklinfo_;
     Cell cell_;
@@ -375,7 +377,8 @@ private:
 
     void guess_initial_gaussian_params_();
 
-    const double OUTLIER_REJECTION_LIMIT = 1e-6;
+    const ftype OUTLIER_REJECTION_LIMIT = 1e-6;
+    const ftype NONLINEAR_DAMP = 1.0;
 
 }; // class Xmap_mgr
 

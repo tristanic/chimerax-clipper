@@ -23,6 +23,7 @@
 #include "french_wilson.h"
 #include "math_ext.h"
 #include "scaling.h"
+#include "aniso_scale.h"
 
 #include <set>
 #include <memory>
@@ -234,10 +235,15 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     HKL_data<E_sigE<ftype32>> esige(hklinfo_);
     esige.compute(f_sigf_in, data32::Compute_EsigE_from_FsigF());
     int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
-    BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
+    BasisFn_gaussian iso_basisfn;
+    //BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
     TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(esige);
-    std::vector<ftype> params(n_bins);
-    ResolutionFn rfn(hklinfo_, basisfn, targetfn, params);
+    std::vector<ftype> iso_params = {1.0,0.1};
+    ResolutionFn_nonlinear iso_rfn(hklinfo_, iso_basisfn, targetfn, iso_params, NONLINEAR_DAMP);
+    iso_params = iso_rfn.params();
+    std::vector<ftype> aniso_params = {iso_params[0], iso_params[1], iso_params[1], iso_params[1], 0.0, 0.0, 0.0};
+    BasisFn_aniso_gaussian aniso_basisfn;
+    ResolutionFn_nonlinear aniso_rfn(hklinfo_, aniso_basisfn, targetfn, aniso_params, NONLINEAR_DAMP);
     ftype32 e_norm;
     size_t outlier_count = 0;
     for (auto ih=esige.first(); !ih.last(); ih.next())
@@ -248,7 +254,7 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
             f_sigf_out[ih].set_null();
             continue;
         }
-        auto scale = sqrt(rfn.f(ih));
+        auto scale = sqrt(aniso_rfn.f(ih));
         e_norm = e.E() * scale;
         // e.sigE() *= scale;
         bool centric = ih.hkl_class().centric();
@@ -283,9 +289,13 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
 HKL_data<F_phi<ftype32>>
 Xtal_mgr_base::scaled_fcalc()
 {
-    int nparams = 20;
-    auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
-    return scaled_fcalc_(fcalc_, fobs_, basisfn);
+    HKL_data<F_phi<ftype32>> sfcalc(hklinfo_);
+    scale_fcalc_to_fobs(fcalc_, fobs_, sfcalc, aniso_ucryst_);
+    // std::cout << "Overall Anisou scaling fcalc to fobs: " << aniso_ucryst_.format() << std::endl;
+    return sfcalc;
+    // int nparams = 20;
+    // auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
+    // return scaled_fcalc_(fcalc_, fobs_, basisfn);
 
 } // scaled_fcalc
 
@@ -297,9 +307,13 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
     if (scaling_method_==ANISO_GAUSSIAN)
         params=initial_scale_params_;
     HKL_data<F_phi<ftype32>> ret(hklinfo_);
-    TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
-    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
+    //TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
+    TargetFn_scaleF1F2<F_sigF<ftype32>, F_phi<ftype32>> targetfn (fobs_, fcalc_);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params, NONLINEAR_DAMP);
     params = rfn.params();
+    if (scaling_method_==ANISO_GAUSSIAN)
+        if (static_cast<BasisFn_aniso_gaussian*>(basisfn.get())->u_aniso_orth(params).det() <= 0.0)
+            std::cerr << "WARNING: Overall anisotropic B-factor is non-positive definite when scaling fcalc to fobs!" << std::endl;
     // if (scaling_method_==ANISO_GAUSSIAN)
     //     std::cerr << "Anisotropic gaussian params: " << params[0] << ", " << params[1]
     //         << ", " << params[2] << ", " << params[3] << ", " << params[4]
@@ -308,8 +322,10 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
     for (ih=fcalc_.first(); !ih.last(); ih.next())
     {
         if (!fobs_[ih].missing())
-            ret[ih].f() = sqrt(rfn.f(ih))*fcalc_[ih].f();
+        {
+            ret[ih].f() = fcalc_[ih].f()/sqrt(rfn.f(ih));
             ret[ih].phi() = fcalc_[ih].phi();
+        }
     }
     return ret;
 }
@@ -317,9 +333,15 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
 HKL_data<F_sigF<ftype32>>
 Xtal_mgr_base::scaled_fobs()
 {
-    int nparams = 20;
-    auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
-    return scaled_fobs_(fcalc_, fobs_, basisfn);
+    HKL_data<F_sigF<ftype32>> sfobs(hklinfo_);
+    aniso_scale_fobs_to_fcalc(fcalc_, fobs_, sfobs, aniso_ucryst_);
+    // std::cout << "Overall Anisou scaling fcalc to fobs: " << aniso_ucryst_.format() << std::endl;
+    return sfobs;
+
+
+    // int nparams = 20;
+    // auto basisfn = choose_basisfn_(fcalc_, fobs_, nparams);
+    // return scaled_fobs_(fcalc_, fobs_, basisfn);
 
 } // scaled_fcalc
 
@@ -332,8 +354,11 @@ Xtal_mgr_base::scaled_fobs_(const HKL_data<F_phi<ftype32>>& fcalc,
         params=initial_scale_params_;
     HKL_data<F_sigF<ftype32>> ret(hklinfo_);
     TargetFn_scaleF1F2<F_sigF<ftype32>, F_phi<ftype32>> targetfn (fobs_, fcalc_);
-    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params, NONLINEAR_DAMP);
     params = rfn.params();
+    if (scaling_method_==ANISO_GAUSSIAN)
+    if (static_cast<BasisFn_aniso_gaussian*>(basisfn.get())->u_aniso_orth(params).det() <= 0.0)
+            std::cerr << "WARNING: Overall anisotropic B-factor is non-positive definite when scaling fobs to fcalc!" << std::endl;
     // if (scaling_method_==ANISO_GAUSSIAN)
     //     std::cerr << "Anisotropic gaussian params: " << params[0] << ", " << params[1]
     //         << ", " << params[2] << ", " << params[3] << ", " << params[4]
@@ -342,8 +367,10 @@ Xtal_mgr_base::scaled_fobs_(const HKL_data<F_phi<ftype32>>& fcalc,
     for (ih=fobs_.first(); !ih.last(); ih.next())
     {
         if (!fobs_[ih].missing())
+        {
             ret[ih].f() = sqrt(rfn.f(ih))*fobs_[ih].f();
             ret[ih].sigf() = sqrt(rfn.f(ih))*fobs_[ih].sigf();
+        }
     }
     return ret;
 }
@@ -401,7 +428,7 @@ Xtal_mgr_base::scaling_function()
     //BasisFn_spline basisfn(fobs_, nparams, 1.0);
     // BasisFn_aniso_gaussian basisfn;
     TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
-    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params);
+    ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params, NONLINEAR_DAMP);
     HKL_info::HKL_reference_index ih;
     size_t i=0;
     for (ih = fcalc_.first(); !ih.last(); ih.next(), ++i)
