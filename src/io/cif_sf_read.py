@@ -44,9 +44,9 @@ _required_columns = {
 def _space_group_identifiers():
     from chimerax.clipper.clipper_python import Spgr_descr
     return (
-        ('Int_Tables_number', Spgr_descr.TYPE.Number),
+        ('space_group_name_Hall', Spgr_descr.TYPE.Hall),
         ('space_group_name_H-M', Spgr_descr.TYPE.HM),
-        ('space_group_name_Hall', Spgr_descr.TYPE.Hall)
+        ('Int_Tables_number', Spgr_descr.TYPE.Number),
     )
 
 def _expand_hm_symbol(symbol_hm):
@@ -58,6 +58,36 @@ def _expand_hm_symbol(symbol_hm):
         return ' '.join([lattice, '1', sym, '1'])
     return symbol_hm
 
+_ccp4_symop_code_to_hm_symbol = {
+    '1003': 'P 1 2 1',
+    '1004': 'P 1 1 21',
+    '1005': 'B 1 1 2',
+    '1006': 'P 1 1 m',
+    '1007': 'P 1 1 b',
+    '1008': 'B 1 1 m',
+    '1009': 'B 1 1 b',
+    '1010': 'P 1 1 2/m',
+    '1011': 'P 1 1 21/m',
+    '1012': 'B 1 1 2/m',
+    '1013': 'P 1 1 2/b',
+    '1014': 'P 1 1 21/b',
+    '1015': 'B 1 1 2/b',
+    '1017': 'P 21 2 2',
+    '1059': 'P m m n',
+    '1146': 'R 3',
+    '1148': 'R -3',
+    '1155': 'R 3 2',
+    '1160': 'R 3 m',
+    '1161': 'R 3 c',
+    '1166': 'R -3 m',
+    '1167': 'R -3 c',
+    '2005': 'A 1 2 1',
+    '2014': 'P 1 21/n 1',
+    '2017': 'P 2 21 2',
+    '2018': 'P 21 2 21',
+    '3018': 'P 2 21 21',
+    '4005': 'I 1 2 1',
+}
 
 from .. import (
     HKL_data_ABCD,
@@ -140,6 +170,12 @@ def _parse_tables(table_list, load_map_coeffs=True):
             from chimerax.clipper.clipper_python import Spgr_descr
             if dtype == Spgr_descr.TYPE.HM:
                 spgr_descriptor = _expand_hm_symbol(spgr_descriptor)
+            elif dtype == Spgr_descr.TYPE.Number:
+                # Check if it's a non-standard CCP4 number which Clipper doesn't recognise
+                symbol_hm = _ccp4_symop_code_to_hm_symbol.get(spgr_descriptor, None)
+                if symbol_hm is not None:
+                    spgr_descriptor = symbol_hm
+                    dtype = Spgr_descr.TYPE.HM
             break
     else:
         raise TypeError('Could not read spacegroup information from file!')
