@@ -72,12 +72,13 @@ class Map_Mgr(Model):
     '''
     Top-level manager for all maps associated with a model.
     '''
-    def __init__(self, crystal_manager, spotlight_radius=12):
+    def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0):
         cm = self._mgr = crystal_manager
         super().__init__('Map Manager', cm.session)
         self._live_xmapsets = []
         self._static_xmapsets = []
         self._nxmapsets = []
+        self._default_oversampling_rate=default_oversampling_rate
 
         self._zone_mgr = None
 
@@ -267,10 +268,14 @@ class Map_Mgr(Model):
                 self._start_spotlight_mode()
             self._reapply_zone()
 
-    def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=1.5):
+    def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None):
+        if oversampling_rate is None:
+            oversampling_rate = self._default_oversampling_rate
         return self.add_xmapset_from_file(mtzfile, oversampling_rate)
 
-    def add_xmapset_from_file(self, sffile, oversampling_rate=1.5):
+    def add_xmapset_from_file(self, sffile, oversampling_rate=None):
+        if oversampling_rate is None:
+            oversampling_rate = self._default_oversampling_rate
         from ..clipper_mtz import ReflectionDataContainer
         mtzdata = ReflectionDataContainer(self.session, sffile,
             shannon_rate = oversampling_rate)

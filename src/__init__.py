@@ -118,7 +118,7 @@ class _ClipperBundle(BundleAPI):
 
     @staticmethod
     def open_file(session, path, format_name, structure_model=None,
-            over_sampling=1.5):
+            over_sampling=2.0):
         if format_name in ('mtz', 'sfcif'):
             if structure_model is None:
                 from chimerax.core.errors import UserError

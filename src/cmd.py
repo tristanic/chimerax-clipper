@@ -22,7 +22,7 @@
 from chimerax.core.errors import UserError
 
 def open_structure_factors(session, path, structure_model = None,
-        over_sampling=1.5):
+        over_sampling=2.0):
     if structure_model is None:
         raise UserError('Reflection data must be associated with an atomic '
             'structure, provided via the structure_model argument.')
@@ -51,7 +51,7 @@ def open_structure_factors(session, path, structure_model = None,
             return None, None
 
 def open_structure_factors_and_add_to_session(session, path, structure_model=None,
-        over_sampling=1.5, always_raise_errors=False):
+        over_sampling=2.0, always_raise_errors=False):
     models, log_str = open_structure_factors(session, path, structure_model,
         over_sampling, always_raise_errors)
     session.models.add(models)

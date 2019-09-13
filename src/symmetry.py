@@ -406,7 +406,7 @@ class Symmetry_Manager(Model):
     # spotlight
     SPOTLIGHT_UPDATE_THRESHOLD = 0.1
     ATOMIC_SYM_EXTRA_RADIUS = 3
-    def __init__(self, model, mtzfile=None, map_oversampling=1.5,
+    def __init__(self, model, mtzfile=None,
         spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
         set_lighting_to_simple=True, debug=False):
@@ -474,8 +474,7 @@ class Symmetry_Manager(Model):
         self.spotlight_mode = spotlight_mode
 
         if mtzfile is not None:
-            mmgr.add_xmapset_from_mtz(mtzfile,
-                oversampling_rate=map_oversampling)
+            mmgr.add_xmapset_from_mtz(mtzfile)
 
         cell = self.cell
         spacegroup = self.spacegroup

@@ -34,7 +34,7 @@ class ReflectionDataContainer(Model):
     ChimeraX Model class allowing it to be loaded into the model
     hierarchy making it easily visible to the user.
     '''
-    def __init__(self, session, hklfile, shannon_rate = 1.5,
+    def __init__(self, session, hklfile, shannon_rate = 2.0,
         free_flag_label = None):
         '''
         This class should hold the information that's common to all
