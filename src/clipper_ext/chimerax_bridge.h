@@ -86,9 +86,8 @@ clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxato
         return clipper_atoms_from_cx_atoms(cxatoms, n, ignore_hydrogens);
 
     size_t atoms_per_thread = std::max(min_atoms_per_thread, n/n_threads+1);
-
     std::vector<std::future<clipper::Atom_list>> results;
-    size_t start=0, end;
+    size_t start=0, end=0;
     size_t actual_num_threads=0;
     std::atomic<size_t> atom_count(0);
     for (size_t i=0; i<n_threads && end<n; ++i)
@@ -126,7 +125,7 @@ clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxato
     }
 
     auto final_al = clipper::Atom_list();
-    final_al.reserve(atom_count.load());
+    //final_al.reserve(atom_count.load());
     // The final thread will always have the smallest number of atoms in it.
     // Since Clipper doesn't care about atom order, we should start with that
     // first to save time while the other threads complete.
