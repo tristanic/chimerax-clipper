@@ -75,7 +75,7 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
     import numpy
     params = [1.0]*n_bins #    numpy.ones(n_bins, numpy.float32)
     #basisfn = BasisFn_spline(hkls, n_bins, 1.0)
-    basisfn = BasisFn_binner(hkls, n_bins, 1.0)
+    basisfn = BasisFn_binner(i_sigi, n_bins, 1.0)
     target = TargetFn_meanInth_I_sigI_float(i_sigi, 1.0)
     rfn = ResolutionFn(hkls, basisfn, target, params)
 
