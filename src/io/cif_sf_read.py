@@ -44,9 +44,9 @@ _required_columns = {
 def _space_group_identifiers():
     from chimerax.clipper.clipper_python import Spgr_descr
     return (
+        ('Int_Tables_number', Spgr_descr.TYPE.Number),
         ('space_group_name_Hall', Spgr_descr.TYPE.Hall),
         ('space_group_name_H-M', Spgr_descr.TYPE.HM),
-        ('Int_Tables_number', Spgr_descr.TYPE.Number),
     )
 
 def _expand_hm_symbol(symbol_hm):
