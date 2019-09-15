@@ -279,6 +279,45 @@ def symmetry_from_model_metadata_mmcif(model):
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
     return cell, spacegroup, grid_sampling, True
 
+def parse_symops_from_pdb_header(remarks):
+    # '''
+    # The spacegroup identifier tends to be the most unreliable part
+    # of the CRYST1 card, so it's considered safer to let Clipper
+    # infer it from the list of symmetry operators at remark 290. This
+    # typically looks something like the following:
+    #
+    # REMARK 290      SYMOP   SYMMETRY
+    # REMARK 290     NNNMMM   OPERATOR
+    # REMARK 290       1555   X,Y,Z
+    # REMARK 290       2555   -X,-Y,Z+1/2
+    # REMARK 290       3555   -Y+1/2,X+1/2,Z+1/4
+    # REMARK 290       4555   Y+1/2,-X+1/2,Z+3/4
+    # REMARK 290       5555   -X+1/2,Y+1/2,-Z+1/4
+    # REMARK 290       6555   X+1/2,-Y+1/2,-Z+3/4
+    # REMARK 290       7555   Y,X,-Z
+    # REMARK 290       8555   -Y,-X,-Z+1/2
+    #
+    # Clipper is able to initialise a Spacegroup object from a
+    # string containing a semicolon-delimited list of the symop
+    # descriptors in the SYMMETRY OPERATOR column, so we need to
+    # parse those out.
+    # '''
+    # # Find the start of the REMARK 290 section
+    for i, remark in enumerate(remarks):
+        if 'REMARK 290' in remark:
+            break;
+    else:
+        return None
+    while 'NNNMMM' not in remarks[i]:
+        i += 1
+    i+= 1
+    thisline = remarks[i]
+    symstrings = []
+    while 'REMARK 290' in thisline and 'X' in thisline:
+        symstrings.append(thisline.split()[3])
+        i+= 1
+        thisline = remarks[i]
+    return ';'.join(symstrings)
 
 def symmetry_from_model_metadata_pdb(model):
     '''
@@ -286,11 +325,25 @@ def symmetry_from_model_metadata_pdb(model):
     CRYST1 card.
     '''
     logger = model.session.logger
+    from chimerax.clipper.clipper_python import Spgr_descr
+    symstr = None
+    symstr_type = None
+    metadata = model.metadata
+    remarks = metadata.get('REMARK', None)
+    if remarks is not None and len(remarks):
+        try:
+            symstr = parse_symops_from_pdb_header(remarks)
+            symstr_type = Spgr_descr.TYPE.Symops
+        except:
+            symstr = None
     try:
-        cryst1 = model.metadata['CRYST1'][0]
-        abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
-        angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
-        symstr = cryst1[55:67].upper()
+        cryst1 = metadata.get('CRYST1', None)
+        if cryst1 is not None:
+            abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
+            angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
+            if symstr is not None:
+                symstr = cryst1[55:67].upper()
+                symstr_type = Spgr_descr.TYPE.HM
     except:
         logger.warning('Missing or corrupted CRYST1 card found in the PDB file. '
             'This model will be treated as a cryo-EM model until associated '
@@ -300,7 +353,6 @@ def symmetry_from_model_metadata_pdb(model):
 
     res = 3.0
     try:
-        remarks = model.metadata['REMARK']
         i = 0
 
         '''
@@ -347,7 +399,7 @@ def symmetry_from_model_metadata_pdb(model):
 
     cell_descr = Cell_descr(*abc, *angles)
     cell = Cell(cell_descr)
-    spgr_descr = Spgr_descr(symstr, Spgr_descr.TYPE.HM)
+    spgr_descr = Spgr_descr(symstr, symstr_type)
     spacegroup = Spacegroup(spgr_descr)
     resolution = Resolution(float(res))
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
