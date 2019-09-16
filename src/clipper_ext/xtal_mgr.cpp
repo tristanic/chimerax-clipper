@@ -290,7 +290,7 @@ HKL_data<F_phi<ftype32>>
 Xtal_mgr_base::scaled_fcalc()
 {
     HKL_data<F_phi<ftype32>> sfcalc(hklinfo_);
-    scale_fcalc_to_fobs(fcalc_, fobs_, sfcalc, aniso_ucryst_);
+    scale_fcalc_to_fobs(fcalc_, fobs_, sfcalc, aniso_ucryst_, aniso_scale_params_);
     // std::cout << "Overall Anisou scaling fcalc to fobs: " << aniso_ucryst_.format() << std::endl;
     return sfcalc;
     // int nparams = 20;
@@ -305,7 +305,7 @@ Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
 {
     std::vector<ftype> params(basisfn->num_params());
     if (scaling_method_==ANISO_GAUSSIAN)
-        params=initial_scale_params_;
+        params=aniso_scale_params_;
     HKL_data<F_phi<ftype32>> ret(hklinfo_);
     //TargetFn_scaleF1F2<F_phi<ftype32>, F_sigF<ftype32>> targetfn (fcalc_, fobs_);
     TargetFn_scaleF1F2<F_sigF<ftype32>, F_phi<ftype32>> targetfn (fobs_, fcalc_);
@@ -334,7 +334,7 @@ HKL_data<F_sigF<ftype32>>
 Xtal_mgr_base::scaled_fobs()
 {
     HKL_data<F_sigF<ftype32>> sfobs(hklinfo_);
-    aniso_scale_fobs_to_fcalc(fcalc_, fobs_, sfobs, aniso_ucryst_);
+    aniso_scale_fobs_to_fcalc(fcalc_, fobs_, sfobs, aniso_ucryst_, aniso_scale_params_);
     // std::cout << "Overall Anisou scaling fcalc to fobs: " << aniso_ucryst_.format() << std::endl;
     return sfobs;
 
@@ -351,7 +351,7 @@ Xtal_mgr_base::scaled_fobs_(const HKL_data<F_phi<ftype32>>& fcalc,
 {
     std::vector<ftype> params(basisfn->num_params());
     if (scaling_method_==ANISO_GAUSSIAN)
-        params=initial_scale_params_;
+        params=aniso_scale_params_;
     HKL_data<F_sigF<ftype32>> ret(hklinfo_);
     TargetFn_scaleF1F2<F_sigF<ftype32>, F_phi<ftype32>> targetfn (fobs_, fcalc_);
     ResolutionFn_nonlinear rfn(hklinfo_, *basisfn, targetfn, params, NONLINEAR_DAMP);
@@ -380,7 +380,6 @@ std::unique_ptr<BasisFn_base, BasisFn_Deleter> Xtal_mgr_base::choose_basisfn_(
     const HKL_data<F_phi<ftype32>>& fcalc, HKL_data<F_sigF<ftype32>> fobs,
     int nparams)
 {
-    guess_initial_gaussian_params_();
     if (scaling_method_ == NOT_CHOSEN)
     {
         std::cout << "Automatically detecting best scaling method..." << std::endl;
@@ -651,11 +650,6 @@ Xtal_mgr_base::remove_missing_reflections_from_map_coeffs(HKL_data<F_phi<ftype32
 
 }
 
-void
-Xtal_mgr_base::guess_initial_gaussian_params_()
-{
-    initial_scale_params_ = guess_initial_aniso_gaussian_params(fobs_, fcalc_);
-}
 
 
 // THREADED IMPLEMENTATIONS

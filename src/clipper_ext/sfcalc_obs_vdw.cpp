@@ -35,7 +35,8 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         const HKL_data<datatypes::F_phi<T>>& fphi_mask,
         HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
-        const HKL_info& hkls, T k, T dk)
+        const HKL_info& hkls,
+        std::vector<ftype>& params, T k, T dk)
 {
     std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
     // try some different scale factors
@@ -54,8 +55,9 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         for ( ih = fphi.first(); !ih.last(); ih.next() )
           fphi[ih] = std::complex<T>(fphi_atom[ih]) +
                  x * std::complex<T>(fphi_mask[ih]);
-        auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
+        // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
         ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params );
+        params = rfn.params();
         double r = 0.0;
         for ( ih = fsig.first(); !ih.last(); ih.next() )
           if ( !fsig[ih].missing() ) {
@@ -66,6 +68,10 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
             {
                 std::cerr << "NaN encountered at " << ih.hkl().format() << "!"
                   << "Fobs: " << f2 << ", fcalc: " << fphi[ih].f() << ", scale: " << rfn.f(ih) << std::endl;
+                std::cerr << "Aniso params: ";
+                for (auto p: params)
+                    std::cerr << p << ", ";
+                std::cerr << std::endl;
             }
             r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
             // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
@@ -92,7 +98,8 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         const HKL_data<datatypes::F_phi<T>>& fphi_mask,
         HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
-        const HKL_info& hkls, T k_sol, T ua1, T dua)
+        const HKL_info& hkls,
+        std::vector<ftype>& params, T k_sol, T ua1, T dua)
 {
     T ua;
     //std::vector<double> params( nparams, 1.0 );
@@ -110,8 +117,9 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
                   !ih.last(); ih.next() )
                 fphi[ih] = std::complex<T>(fphi_atom[ih]) +
                     k_sol * std::complex<T>(fphi_mask_final[ih]);
-            auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
+            // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
             ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params );
+            params = rfn.params();
             double r = 0.0;
             for ( ih = fsig.first(); !ih.last(); ih.next() )
               if ( !fsig[ih].missing() ) {
@@ -212,9 +220,14 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   if (bulk_solvent_optimization_needed_)
   {
+      *params_ = guess_initial_aniso_gaussian_params(fsig, fphi_atom);
+      std::cerr << "Initial anisotropic scaling params: ";
+      for (auto p: *params_)
+        std::cerr << p << ",";
+      std::cerr << std::endl;
       T x1 = 0.35;
-      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, x1, x1);
-      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, x1, Util::b2u(0), Util::b2u(50));
+      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, x1);
+      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, Util::b2u(0), Util::b2u(50));
 
       // adopt final scale and B-factor
       bulk_u = ua1;

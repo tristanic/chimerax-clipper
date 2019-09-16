@@ -41,10 +41,10 @@ class SFcalc_obs_bulk_vdw : public SFcalc_obs_base<T>
 {
 public:
     // default constructor
-    SFcalc_obs_bulk_vdw(const int n_params=12, const size_t n_threads=8) : nparams(n_params), nthreads(n_threads) {}
+    SFcalc_obs_bulk_vdw(std::vector<ftype>& params, const size_t n_threads=8) : params_(&params), nthreads(n_threads) {}
     // constructor: shorthand for constructor+operator
     SFcalc_obs_bulk_vdw(HKL_data<F_phi<T> >& fphi, const HKL_data<F_sigF<T> >& fsig,
-        const Atom_list& atoms, const int n_params = 12);
+        const Atom_list& atoms, std::vector<ftype>& params);
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
             const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms );
     const ftype& bulk_frac() { return bulkfrc; }
@@ -55,7 +55,7 @@ public:
     void set_bulk_solvent_optimization_needed() { bulk_solvent_optimization_needed_ = true; }
 private:
     bool bulk_solvent_optimization_needed_ = true;
-    int nparams;
+    std::vector<ftype> *const params_;
     size_t nthreads;
     T bulkfrc, bulkscl;
     T bulk_u;
