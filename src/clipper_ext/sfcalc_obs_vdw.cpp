@@ -29,6 +29,23 @@ using namespace clipper::datatypes;
 namespace clipper_cx
 {
 
+template<class dtype> class Compute_add_scaled_fphi
+{
+public:
+    Compute_add_scaled_fphi(const dtype& scale) : scale_(scale) {}
+    const F_phi<dtype> operator () (const HKL_info::HKL_reference_index& ih,
+            const F_phi<dtype>& fphi1, const F_phi<dtype>& fphi2) const
+    {
+        clipper::datatypes::F_phi<dtype> fphi;
+        if (!fphi1.missing() && !fphi2.missing() )
+            fphi = F_phi<dtype>(std::complex<dtype>(fphi1) + scale_*std::complex<dtype>(fphi2));
+        return fphi;
+    }
+private:
+    dtype scale_;
+};
+
+
 template<class T>
 T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         const HKL_data<datatypes::F_phi<T>>& fphi_atom,
@@ -36,48 +53,36 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
         const HKL_info& hkls,
-        std::vector<ftype>& params, T k, T dk)
+        std::vector<ftype>& params, T k, T dk, T& min_r)
 {
     std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
     // try some different scale factors
     //std::vector<double> params( nparams, 1.0 );
     //BasisFn_spline basisfn( hkls, nparams, 1.0 );
     BasisFn_aniso_gaussian basisfn;
-    TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
+    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
+    // TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
     T x1 = k, dx = dk, x;
     ftype y[3] = { 0.0, 0.0, 0.0 };
     for ( int i = 0; i < 8; i++ ) {
       // take 3 samples of function
       for ( int d = -1; d <= 1; d++ ) if ( y[d+1] == 0.0 ) {
-        HKL_data<data32::F_phi>::HKL_reference_index ih;
         x = x1 + T(d)*dx;
         x = (x < 0 ? 0.0 : x);
-        for ( ih = fphi.first(); !ih.last(); ih.next() )
-          fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-                 x * std::complex<T>(fphi_mask[ih]);
+        fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(x));
+        // for ( ih = fphi.first(); !ih.last(); ih.next() )
+        //   fphi[ih] = std::complex<T>(fphi_atom[ih]) +
+        //          x * std::complex<T>(fphi_mask[ih]);
         // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
-        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params );
-        params = rfn.params();
-        double r = 0.0;
-        for ( ih = fsig.first(); !ih.last(); ih.next() )
-          if ( !fsig[ih].missing() ) {
-            double eps = ih.hkl_class().epsilon();
-            auto f1 = sqrt(rfn.f(ih))*fphi[ih].f();
-            auto f2 = fsig[ih].f();
-            if (std::isnan(f1) || std::isnan(f2))
-            {
-                std::cerr << "NaN encountered at " << ih.hkl().format() << "!"
-                  << "Fobs: " << f2 << ", fcalc: " << fphi[ih].f() << ", scale: " << rfn.f(ih) << std::endl;
-                std::cerr << "Aniso params: ";
-                for (auto p: params)
-                    std::cerr << p << ", ";
-                std::cerr << std::endl;
-            }
-            r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
-            // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
-          }
-          // std::cerr << "Bulk solvent scale: " << x << "R: " << r << std::endl;
+        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 20.0 );
+        auto r = quick_r(fphi, fsig, rfn);
+        // std::cerr << "Bulk solvent scale: " << x << "R: " << r << std::endl;
         y[d+1] = r;
+        if (r < min_r)
+        {
+            params = rfn.params();
+            min_r = r;
+        }
         //std::cout << d << "\t" << x << "\t" << r << "\n";
       }
       // find minimum of current 3 samples
@@ -99,13 +104,13 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
         const HKL_info& hkls,
-        std::vector<ftype>& params, T k_sol, T ua1, T dua)
+        std::vector<ftype>& params, T k_sol, T ua1, T dua, T& min_r)
 {
     T ua;
-    //std::vector<double> params( nparams, 1.0 );
     // BasisFn_spline basisfn( hkls, nparams, 1.0 );
     BasisFn_aniso_gaussian basisfn;
-    TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
+    // TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
+    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
     // HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
     ftype y[3] = { 0.0, 0.0, 0.0 };
     for (int i=0; i<8; ++i) {
@@ -113,27 +118,27 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
             HKL_data<data32::F_phi>::HKL_reference_index ih;
             ua = ua1+T(d)*dua;
             fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua));
-            for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
-                  !ih.last(); ih.next() )
-                fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-                    k_sol * std::complex<T>(fphi_mask_final[ih]);
+            fphi.compute(fphi_atom, fphi_mask_final, Compute_add_scaled_fphi<T>(k_sol));
+            // for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
+            //       !ih.last(); ih.next() )
+            //     fphi[ih] = std::complex<T>(fphi_atom[ih]) +
+            //         k_sol * std::complex<T>(fphi_mask_final[ih]);
             // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
-            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params );
-            params = rfn.params();
-            double r = 0.0;
-            for ( ih = fsig.first(); !ih.last(); ih.next() )
-              if ( !fsig[ih].missing() ) {
-                double eps = ih.hkl_class().epsilon();
-                r += (2.0/eps) * fabs( sqrt(rfn.f(ih))*fphi[ih].f() - fsig[ih].f() );
-                // r += ( 2.0/eps ) * pow( rfn.f(ih) * pow(fphi[ih].f(),2)/eps - pow(fsig[ih].f(),2)/eps, 2 );
-              }
-              // std::cerr << "B_add: " << Util::u2b(ua) << " R: " << r << std::endl;
+            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 20.0 );
+            auto r = quick_r(fphi, fsig, rfn);
+            //std::cerr << "B_add: " << Util::u2b(ua) << " R: " << r << std::endl;
             y[d+1] = r;
+            if (r < min_r)
+            {
+                params = rfn.params();
+                min_r = r;
+            }
             //std::cout << d << "\t" << x << "\t" << r << "\n";
         }
         // find minimum of current 3 samples
         if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; ua1 -= dua; }
         else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; ua1 += dua; }
+        //else params = working_params;
         // reduce step and search again
         y[0] = y[2] = 0.0;
         dua /= 2.0;
@@ -220,14 +225,16 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   if (bulk_solvent_optimization_needed_)
   {
-      *params_ = guess_initial_aniso_gaussian_params(fsig, fphi_atom);
-      std::cerr << "Initial anisotropic scaling params: ";
-      for (auto p: *params_)
-        std::cerr << p << ",";
-      std::cerr << std::endl;
       T x1 = 0.35;
-      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, x1);
-      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, Util::b2u(0), Util::b2u(50));
+      T min_r;
+      fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(0.5));
+      *params_ = guess_initial_aniso_gaussian_params(fsig, fphi, min_r);
+      // std::cerr << "Initial anisotropic scaling params: ";
+      // for (auto p: *params_)
+      //   std::cerr << p << ",";
+      // std::cerr << std::endl;
+      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, x1, min_r);
+      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, Util::b2u(0), Util::b2u(50), min_r);
 
       // adopt final scale and B-factor
       bulk_u = ua1;
