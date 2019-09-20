@@ -336,16 +336,19 @@ def symmetry_from_model_metadata_pdb(model):
             symstr_type = Spgr_descr.TYPE.Symops
         except:
             symstr = None
-    try:
-        cryst1 = metadata.get('CRYST1', None)
-        if cryst1 is not None:
+    cryst1 = metadata.get('CRYST1', None)
+    if cryst1 is not None:
+        cryst1 = cryst1[0]
+        try:
             abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
             angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
-            if symstr is not None:
+            if symstr is None:
                 symstr = cryst1[55:67].upper()
                 symstr_type = Spgr_descr.TYPE.HM
-    except:
-        logger.warning('Missing or corrupted CRYST1 card found in the PDB file. '
+        except:
+            symstr = None
+    if symstr is None:
+        logger.warning('Missing or corrupted symmetry information in the PDB file. '
             'This model will be treated as a cryo-EM model until associated '
             'with an MTZ file containing symmetry information.')
         return simple_p1_box(model)
