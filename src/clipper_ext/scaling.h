@@ -72,7 +72,7 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     T sum_fobs = 0, sum_fcalc=0;
     for (auto ih = fobs.first(); !ih.last(); ih.next())
     {
-        if (!fobs[ih].missing() && !fcalc[ih].missing())
+        if (!fobs[ih].missing() && !fcalc[ih].missing() && ih.invresolsq() < 0.01 )
         {
             sum_fobs += fobs[ih].f();
             sum_fcalc += fcalc[ih].f();
