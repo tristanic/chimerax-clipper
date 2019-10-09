@@ -164,9 +164,10 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             new_origin = c.position.origin() + shift*vd
             new_pos = place.Place(axes = c.position.axes(), origin = new_origin)
             c.position = new_pos
-            distance = cofr-new_origin
-            self.far_clip.plane_point = new_origin + distance*(1+self.far_clip_multiplier)
-            self.near_clip.plane_point = new_origin + distance*(1-self.near_clip_multiplier)
+            #distance = cofr-new_origin
+            new_view_vec = new_view_distance*vd
+            self.far_clip.plane_point = new_origin + new_view_vec*(1+self.far_clip_multiplier)
+            self.near_clip.plane_point = new_origin + new_view_vec*(1-self.near_clip_multiplier)
             c.redraw_needed = True
         else:
             shift = c.position.transform_vectors((0, 0, delta_z))
