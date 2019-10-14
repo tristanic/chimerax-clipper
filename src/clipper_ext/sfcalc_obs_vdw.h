@@ -47,8 +47,8 @@ public:
         const Atom_list& atoms, std::vector<ftype>& params);
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
             const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms );
-    const ftype& bulk_frac() { return bulkfrc; }
-    const ftype& bulk_scale() { return bulkscl; }
+    const ftype& bulk_frac() const { return bulkfrc; }
+    const ftype& bulk_scale() const { return bulkscl; }
     const size_t& n_threads() const { return nthreads; }
     void set_n_threads(size_t n) { nthreads=n; }
     //! If called, then the bulk solvent scale and B-factor will be re-optimised on the next run.

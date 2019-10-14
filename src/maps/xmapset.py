@@ -591,6 +591,12 @@ class XmapSet(MapSet_Base):
         "coordset changed",
         "occupancy changed",
     ))
+    _bulk_solvent_recalc_changes = set ((
+        "aniso_u changed",
+        "bfactor changed",
+        "coordset changed",
+        "occupancy changed",
+    ))
     def _model_changed_cb(self, trigger_name, changes):
         recalc_needed = False
         if trigger_name == 'model replaced':
@@ -601,6 +607,8 @@ class XmapSet(MapSet_Base):
             added = len(changes.created_atoms())
             deleted = changes.num_deleted_atoms()
             recalc_needed = (atom_changes or added or deleted)
+            if added or len(self._bulk_solvent_recalc_changes.intersection(atom_changes)):
+                self.live_xmap_mgr.bulk_solvent_optimization_needed()
 
         if recalc_needed:
             self._recalc_needed = True

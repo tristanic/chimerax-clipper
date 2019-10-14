@@ -173,13 +173,19 @@ public:
         return names;
     }
 
-    inline const ftype& bulk_frac()
+    // Re-optimise bulk solvent on the next map recalculation
+    inline void bulk_solvent_optimization_needed()
+    {
+        bulk_solvent_calculator_.set_bulk_solvent_optimization_needed();
+    }
+
+    inline const ftype& bulk_frac() const
     {
         if (!fcalc_initialized())
             throw std::runtime_error("Coefficients have not been calculated yet!");
         return bulk_solvent_calculator_.bulk_frac();
     }
-    inline const ftype& bulk_scale()
+    inline const ftype& bulk_scale() const
     {
         if (!fcalc_initialized())
             throw std::runtime_error("Coefficients have not been calculated yet!");
@@ -463,6 +469,7 @@ public:
     inline size_t n_maps() const { deletion_guard(); return mgr_->n_maps(); }
     std::vector<std::string> map_names() const { deletion_guard(); return mgr_->map_names(); }
 
+    inline void bulk_solvent_optimization_needed() { deletion_guard(); mgr_->bulk_solvent_optimization_needed(); } 
     inline const ftype& bulk_frac() { deletion_guard(); return mgr_->bulk_frac(); }
     inline const ftype& bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
 
