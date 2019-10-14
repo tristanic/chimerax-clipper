@@ -235,15 +235,11 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     HKL_data<E_sigE<ftype32>> esige(hklinfo_);
     esige.compute(f_sigf_in, data32::Compute_EsigE_from_FsigF());
     int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
-    BasisFn_gaussian iso_basisfn;
-    //BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
+    //BasisFn_gaussian iso_basisfn;
+    BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
     TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(esige);
-    std::vector<ftype> iso_params = {1.0,0.1};
-    ResolutionFn_nonlinear iso_rfn(hklinfo_, iso_basisfn, targetfn, iso_params, NONLINEAR_DAMP);
-    iso_params = iso_rfn.params();
-    std::vector<ftype> aniso_params = {iso_params[0], iso_params[1], iso_params[1], iso_params[1], 0.0, 0.0, 0.0};
-    BasisFn_aniso_gaussian aniso_basisfn;
-    ResolutionFn_nonlinear aniso_rfn(hklinfo_, aniso_basisfn, targetfn, aniso_params, NONLINEAR_DAMP);
+    std::vector<ftype> params = {n_bins, 1.0};
+    ResolutionFn rfn(hklinfo_, basisfn, targetfn, params);
     ftype32 e_norm;
     size_t outlier_count = 0;
     for (auto ih=esige.first(); !ih.last(); ih.next())
@@ -254,7 +250,7 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
             f_sigf_out[ih].set_null();
             continue;
         }
-        auto scale = sqrt(aniso_rfn.f(ih));
+        auto scale = sqrt(rfn.f(ih));
         e_norm = e.E() * scale;
         // e.sigE() *= scale;
         bool centric = ih.hkl_class().centric();

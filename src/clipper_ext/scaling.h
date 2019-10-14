@@ -52,6 +52,14 @@ T quick_r(const HKL_data<F_phi<T>>& fcalc, const HKL_data<F_sigF<T>>& fobs,
             auto f2 = pow(fobs[ih].f(), 2.0)/eps;
             if (std::isnan(f1) || std::isnan(f2))
             {
+                if (std::isnan(rfn.f(ih)))
+                {
+                    std::stringstream err_msg;
+                    err_msg << "Scaling function value is NaN! Parameters are:" << std::endl;
+                    for (const auto& p: rfn.params())
+                        err_msg << p << ", ";
+                    throw std::runtime_error(err_msg.str());
+                }
                 std::cerr << "NaN encountered at " << ih.hkl().format() << "!"
                   << "Fobs: " << f2 << ", fcalc: " << fcalc[ih].f() << ", scale: " << rfn.f(ih) << std::endl;
             }
@@ -81,6 +89,7 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
 
 
     std::vector<ftype> params = {log(sum_fcalc/sum_fobs), 0.0};
+    std::cerr << "Initial log scale estimate from low-resolution reflections: " << params[0] << std::endl;
 
     BasisFn_gaussian basisfn;
     //TargetFn_scaleF1F2<F_phi<T>, F_sigF<T>> target(fcalc, fobs);
