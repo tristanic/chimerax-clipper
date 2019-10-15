@@ -611,11 +611,15 @@ class XmapSet(MapSet_Base):
                 self.live_xmap_mgr.bulk_solvent_optimization_needed()
 
         if recalc_needed:
-            self._recalc_needed = True
-            if self._delayed_recalc_handler is None:
-                self._delayed_recalc_handler = self.session.triggers.add_handler(
-                    'new frame', self._recalculate_maps_if_needed
-                )
+            self.recalc_needed()
+
+    def recalc_needed(self):
+        self._recalc_needed = True
+        if self._delayed_recalc_handler is None:
+            self._delayed_recalc_handler = self.session.triggers.add_handler(
+                'new frame', self._recalculate_maps_if_needed
+            )
+
 
     def _recalculate_maps_if_needed(self, *_):
         xm = self.live_xmap_mgr
