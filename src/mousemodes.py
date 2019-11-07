@@ -71,18 +71,34 @@ class Z_Shift_CofR(MouseMode):
     def __init__(self, session):
         self._step_multiplier = 1
         super().__init__(session)
+        from chimerax.core.graphics import Drawing
+        d = self._drawing = Drawing('Depth Indicator')
+        d.set_geometry(*self._drawing_geometry())
+        d.display = False
+        self.view.drawing.add_drawing(d)
 
     def cleanup(self):
-        pass
+        self.view.drawing.remove_drawing(self._drawing)
+
+    def mouse_down(self, event):
+        MouseMode.mouse_down(self, event)
+        self._set_drawing_position()
+        self._set_drawing_color()
+        self._drawing.display=True
 
     def mouse_drag(self, event):
         dx, dy = self.mouse_motion(event)
-        self.move_camera_and_cofr(3*self.pixel_size()*dy)
+        self.move_camera_and_cofr(-3*self.pixel_size()*dy)
+        self._set_drawing_position()
+
+    def mouse_up(self, event):
+        self._drawing.display=False
+        MouseMode.mouse_up(self, event)
 
     def wheel(self, event):
         d = event.wheel_value()
         psize = self.pixel_size()
-        self.move_camera_and_cofr(100*d*psize)
+        self.move_camera_and_cofr(-100*d*psize)
 
     def move_camera_and_cofr(self, dz):
         cofr = self.view.center_of_rotation
@@ -99,9 +115,22 @@ class Z_Shift_CofR(MouseMode):
         self.view.center_of_rotation_method = cofr_method
         camera.set_position(t*camera.position)
 
+    def _drawing_geometry(self):
+        from chimerax.surface.shapes import box_geometry
+        return box_geometry((-1,-1,-0.01), (1,1,0.01))
 
+    def _set_drawing_position(self):
+        from chimerax.core.geometry import Place, scale
+        scale = 300*self.pixel_size()
+        p = Place(axes=self.view.camera.position.axes()*scale, origin=self.view.center_of_rotation)
+        self._drawing.position = p
 
-
+    def _set_drawing_color(self):
+        from chimerax.core.colors import contrast_with, Color
+        import numpy
+        color = numpy.array([0,0,0,0.5], numpy.float32)
+        color[:3] = contrast_with(self.view.background_color)
+        self._drawing.color = Color(color).uint8x4()
 
 
 
