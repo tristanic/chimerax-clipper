@@ -39,9 +39,11 @@ def initialize_clipper_mouse_modes(session):
 def initialize_zoom_mouse_modes(session):
     z = ZoomMouseMode(session)
     c = ClipPlaneAdjuster(session, z)
+    s = Z_Shift_CofR(session)
     session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z) # Legacy mode
     session.ui.mouse_modes.bind_mouse_mode('wheel',[], z)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['shift'], c)
+    session.ui.mouse_modes.bind_mouse_mode('right',['control'], s)
 
 def initialize_map_contour_mouse_modes(session):
     #z = ZoomMouseMode(session)
@@ -64,6 +66,43 @@ class ClipPlaneAdjuster(MouseMode):
         z = self._zoomer
         z.far_clip_multiplier *= mult
         z.near_clip_multiplier *= mult
+
+class Z_Shift_CofR(MouseMode):
+    def __init__(self, session):
+        self._step_multiplier = 1
+        super().__init__(session)
+
+    def cleanup(self):
+        pass
+
+    def mouse_drag(self, event):
+        dx, dy = self.mouse_motion(event)
+        self.move_camera_and_cofr(3*self.pixel_size()*dy)
+
+    def wheel(self, event):
+        d = event.wheel_value()
+        psize = self.pixel_size()
+        self.move_camera_and_cofr(100*d*psize)
+
+    def move_camera_and_cofr(self, dz):
+        cofr = self.view.center_of_rotation
+        cofr_method = self.view.center_of_rotation_method
+        camera = self.view.camera
+        cpos = self.camera_position.origin()
+        vd = camera.view_direction()
+        import numpy
+        cc = cofr-cpos
+        shift_vec = numpy.dot(cc/numpy.linalg.norm(cc), vd) *vd * dz
+        from chimerax.core.geometry import translation
+        t = translation(shift_vec)
+        self.view.center_of_rotation += shift_vec
+        self.view.center_of_rotation_method = cofr_method
+        camera.set_position(t*camera.position)
+
+
+
+
+
 
 
 class ZoomMouseMode(ZoomMouseMode_Base):
