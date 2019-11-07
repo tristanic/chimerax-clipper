@@ -165,7 +165,7 @@ def _parse_tables(table_list, load_map_coeffs=True):
     symm = tables['symmetry']
     for id, dtype in _space_group_identifiers():
         if symm.has_field(id):
-            spgr_descriptor = symm.fields((id,))[0][0]
+            spgr_descriptor = symm.fields((id,))[0][0].strip()
             spgr_dtype = dtype
             from chimerax.clipper.clipper_python import Spgr_descr
             if dtype == Spgr_descr.TYPE.HM:
@@ -175,7 +175,7 @@ def _parse_tables(table_list, load_map_coeffs=True):
                 symbol_hm = _ccp4_symop_code_to_hm_symbol.get(spgr_descriptor, None)
                 if symbol_hm is not None:
                     spgr_descriptor = symbol_hm
-                    dtype = Spgr_descr.TYPE.HM
+                    spgr_dtype = Spgr_descr.TYPE.HM
             break
     else:
         raise TypeError('Could not read spacegroup information from file!')
