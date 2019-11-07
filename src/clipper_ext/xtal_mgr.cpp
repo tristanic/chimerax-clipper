@@ -238,7 +238,7 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     //BasisFn_gaussian iso_basisfn;
     BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
     TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(esige);
-    std::vector<ftype> params = {n_bins, 1.0};
+    std::vector<ftype> params = {(ftype)n_bins, 1.0};
     ResolutionFn rfn(hklinfo_, basisfn, targetfn, params);
     ftype32 e_norm;
     size_t outlier_count = 0;
