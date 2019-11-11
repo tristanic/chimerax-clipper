@@ -85,14 +85,15 @@ def spotlight(session, models=None, enable=True, radius=None):
     if models is None:
         from chimerax.atomic import AtomicStructure
         models = session.models.list(type=AtomicStructure)
+        create = False
+    else:
+        create = True
     for m in models:
-        sh = get_symmetry_handler(m, create=True, auto_add_to_session=True)
-        session.logger.info('Setting spotlight mode for model {} to {}'.format(
-            m.id_string, enable
-        ))
-        sh.spotlight_mode=enable
-        if radius is not None:
-            sh.spotlight_radius = radius
+        sh = get_symmetry_handler(m, create=create, auto_add_to_session=True)
+        if sh is not None:
+            sh.spotlight_mode=enable
+            if radius is not None:
+                sh.spotlight_radius = radius
 
 
 
@@ -183,7 +184,6 @@ def register_clipper_cmd(logger):
     spot_desc = CmdDesc(
         optional=[
             ('models', StructuresArg),
-            ('enable', BoolArg)
         ],
         keyword=[
             ('radius', FloatArg),
