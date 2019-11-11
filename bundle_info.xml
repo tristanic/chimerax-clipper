@@ -410,6 +410,7 @@
          <DataFile platform="mac">libfftw2xc.dylib</DataFile>
          <DataFile platform="mac">mkl_custom.dylib</DataFile>
          <DataFile platform="windows">mkl_fftw2.dll</DataFile>
+         <DataDir>docs</DataDir>
      </DataFiles>
 
      <ExtraFiles>

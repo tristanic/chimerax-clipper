@@ -28,7 +28,7 @@ import sys, os
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
-    'sphinx.ext.imgmath'
+    'sphinx.ext.imgmath',
     'sphinx.ext.githubpages',
     ]
 
