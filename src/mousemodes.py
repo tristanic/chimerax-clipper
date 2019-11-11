@@ -214,13 +214,13 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         pass
 
     def zoom(self, delta_z, stereo_scaling = False):
+        import numpy
         v = self.view
         c = v.camera
         cofr = v.center_of_rotation
         if stereo_scaling and c.name == 'stereo':
             v.stereo_scaling(delta_z)
         if c.name == 'orthographic':
-            import numpy
             c.field_width = max(c.field_width - delta_z, self.pixel_size())
             # TODO: Make camera field_width a property so it knows to redraw.
             from chimerax.core.geometry import place
@@ -238,10 +238,13 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             self.near_clip.plane_point = new_origin + new_view_vec*(1-self.near_clip_multiplier)
             c.redraw_needed = True
         else:
-            shift = c.position.transform_vectors((0, 0, delta_z))
+            shift = c.position.transform_vector((0, 0, delta_z))
             v.translate(shift)
             new_origin = c.position.origin()
-            self.far_clip.plane_point = new_origin + (cofr-new_origin)*2
+            vd = c.view_direction()
+            distance = numpy.dot(cofr-new_origin, vd)
+            self.far_clip.plane_point = new_origin + vd*distance*(1+self.far_clip_multiplier)
+            self.near_clip.plane_point = new_origin + vd*distance*(1-self.near_clip_multiplier)
 
 class SelectVolumeToContour(MouseMode):
     '''
