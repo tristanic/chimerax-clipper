@@ -43,7 +43,7 @@ def initialize_zoom_mouse_modes(session):
     session.ui.mouse_modes.bind_mouse_mode('right',['shift'], z) # Legacy mode
     session.ui.mouse_modes.bind_mouse_mode('wheel',[], z)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['shift'], c)
-    session.ui.mouse_modes.bind_mouse_mode('right',['control'], s)
+    session.ui.mouse_modes.bind_mouse_mode('middle',['control'], s)
 
 def initialize_map_contour_mouse_modes(session):
     #z = ZoomMouseMode(session)
