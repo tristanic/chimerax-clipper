@@ -112,8 +112,7 @@ def isolate(session, atoms,
         context_distance=5,
         mask_radius=3,
         hide_surrounds=True,
-        focus=False,
-        include_symmetry=True):
+        focus=False):
     from chimerax.clipper.symmetry import get_symmetry_handler
     us = atoms.unique_structures
     for s in us:
@@ -124,8 +123,7 @@ def isolate(session, atoms,
             show_context = context_distance,
             mask_radius = mask_radius,
             hide_surrounds = hide_surrounds,
-            focus = focus,
-            include_symmetry = include_symmetry)
+            focus = focus)
 
 
 
@@ -211,7 +209,6 @@ def register_clipper_cmd(logger):
             ('mask_radius', FloatArg),
             ('hide_surrounds', BoolArg),
             ('focus', BoolArg),
-            ('include_symmetry', BoolArg)
         ],
         synopsis=('Visually isolate the selected atoms from their surroundings, '
             'and mask their maps to their immediate vicinity. The selection '
@@ -220,9 +217,7 @@ def register_clipper_cmd(logger):
             'residues approaching within contextDistance of the result will be '
             'displayed, but not covered by the map(s). If hideSurrounds is '
             'True, all other atoms will be hidden. If focus is True, the view '
-            'will be reset to cover the visible atoms. If includeSymmetry is '
-            'True, symmetry atoms will be included in the contextDistance '
-            'calculation. To revert to the default viewing mode, use '
-            '"clipper spotlight".')
+            'will be reset to cover the visible atoms. To revert to the default '
+            'viewing mode, use "clipper spotlight".')
     )
     register('clipper isolate', isol_desc, isolate, logger=logger)

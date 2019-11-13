@@ -820,7 +820,7 @@ class Symmetry_Manager(Model):
 
     def isolate_and_cover_selection(self, atoms, include_surrounding_residues=5,
         show_context=5, mask_radius=3, extra_padding=0, hide_surrounds=True,
-        focus=True, include_symmetry = True):
+        focus=True):
         '''
         Expand the map(s) (if present) to cover a given atomic selection,  then
         mask them to within a given distance of said atoms to reduce visual
@@ -832,15 +832,16 @@ class Symmetry_Manager(Model):
             be expanded to include the whole residue for every selected atom.
           include_surrounding_residues (float):
             Any residue with an atom coming within this radius of the primary
-            selection will be added to the selection covered by the map. To
-            cover only the primary selection, set this value to zero.
+            selection (including symmetry atoms) will be added to the selection
+            covered by the map. To cover only the primary selection, set this
+            value to zero.
           show_context (float):
             Any residue within an atom coming within this radius of the previous
-            two selections will be displayed as a thinner stick representation,
-            but will not be considered for the map masking calculation.
+            two selections will be displayed, but will not be considered for the
+            map masking calculation.
           mask_radius (float):
-            Components of the map more than this distance from any atom will
-            be hidden.
+            Components of the map more than this distance from any eligible atom
+            will be hidden.
           extra_padding (float):
             Optionally, further pad the volume by this distance. The extra
             volume will be hidden, but available for calculations.
@@ -849,20 +850,25 @@ class Symmetry_Manager(Model):
           focus (bool):
             If true, the camera will be moved to focus on the selection (only
             the atoms in the master model will be considered)
-          include_symmetry (bool):
-            If true, symmetry atoms will be considered for the purposes of
-            show_context.
         '''
         self.spotlight_mode = False
         original_atoms = self.last_covered_selection = atoms
         atoms = original_atoms.unique_residues.atoms
         atoms = atoms[atoms.element_names != 'H']
         asm = self.atomic_symmetry_model
-        asm.show_selection_in_context(atoms,
+        main_set, context_set = asm.show_selection_in_context(atoms,
             include_surrounding_residues=include_surrounding_residues,
             show_context=show_context
         )
-        self.map_mgr.cover_coords(atoms.coords,
+        from chimerax.core.geometry import Places
+        transforms = Places(place_array=main_set[1])
+        indices = main_set[2]
+        coords = main_set[0].coords
+        import numpy
+        for i in numpy.unique(indices):
+            mask = indices==i
+            coords[mask] = transforms[i]*coords[mask]
+        self.map_mgr.cover_coords(coords,
             mask_radius=mask_radius,
             extra_padding=extra_padding)
         if focus:
@@ -1114,7 +1120,7 @@ class AtomicSymmetryModel(Model):
         self.set_sym_display(context_set[3],
             *atom_and_bond_sym_transforms_from_sym_atoms(*context_set[0:3])
         )
-        return context_set
+        return main_set, context_set
 
     def sym_select_within(self, atoms, cutoff, coords=None, whole_residues = True):
         '''
