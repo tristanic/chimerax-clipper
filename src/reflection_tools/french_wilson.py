@@ -91,6 +91,16 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
             scaled_is[ih.hkl] = s_isigi_data
             ih.next()
             continue
+        if isigi_data.sigi <= 0:
+            i = isigi_data.i
+            if i > 0:
+                s_isigi_data.i = sqrt(i)
+                s_isigi_data.sigi = 0
+            else:
+                s_isigi_data.set_null()
+            scaled_is[ih.hkl] = s_isigi_data
+            ih.next()
+            continue
         imean = rfn.f(ih)
         eps = ih.hkl_class.epsilon
         eobs_sq = isigi_data.i / eps / imean
