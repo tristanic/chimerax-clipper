@@ -23,6 +23,8 @@
 #include <pybind11/operators.h>
 #include <pybind11/numpy.h>
 
+#include <future>
+
 #include "type_conversions.h"
 #include <clipper/clipper.h>
 //#include <clipper/core/map_interp.h>
@@ -125,12 +127,12 @@ void declare_xmap_reference_coord(py::module &m)
         ;
 }
 
-#include <iostream> //DELETEME
 template<typename T>
 void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_grid& origin)
 {
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
+    py::gil_scoped_release release;
     int nu, nv, nw;
     nu=tbuf.shape[0]; nv=tbuf.shape[1]; nw=tbuf.shape[2];
     int u,v;
@@ -141,6 +143,47 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
         for (v=origin.v(); v<maxv; ++v)
             for (ix.set_coord(Coord_grid(u, v, origin.w())); ix.coord().w() < maxw; ix.next_w())
                 *tptr++ = xmap[ix];
+}
+
+template <typename T>
+void numpy_thread_core_(const Xmap<T>& xmap, T* target_ptr, int minu, int minv, int minw,
+    int maxu, int maxv, int maxw)
+{
+    Xmap_base::Map_reference_coord ix(xmap);
+    for (int u=minu; u<maxu; ++u)
+        for (int v=minv; v<maxv; ++v)
+            for (ix.set_coord(Coord_grid(u, v, minw)); ix.coord().w() < maxw; ix.next_w())
+                *target_ptr++ = xmap[ix];
+}
+
+template<typename T>
+void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_grid& origin, size_t n_threads)
+{
+    if (n_threads < 1) n_threads=1;
+    auto tbuf = target.request();
+    T* tptr = (T*)tbuf.ptr;
+    py::gil_scoped_release release;
+    int nu, nv, nw;
+    nu = tbuf.shape[0]; nv=tbuf.shape[1]; nw=tbuf.shape[2];
+    std::vector<std::future<void>> results;
+    int u, v;
+    int maxu, maxv, maxw, thread_max_u;
+    int u_per_thread = (int)nu/(int)n_threads+1;
+    u = origin.u();
+    maxu = origin.u()+nu; maxv=origin.v()+nv; maxw=origin.w()+nw;
+    for (size_t i=0; i<n_threads; ++i)
+    {
+        int thread_u = origin.u() + i*u_per_thread;
+        int thread_max_u = std::min(thread_u + u_per_thread, maxu);
+        T* thread_ptr = tptr + i*(u_per_thread*nv*nw);
+        results.push_back(std::async(std::launch::async, numpy_thread_core_<T>,
+            std::cref(xmap), thread_ptr, thread_u, origin.v(), origin.w(),
+            thread_max_u, maxv, maxw));
+        if (thread_max_u==maxu)
+            break;
+    }
+    for (auto& r: results)
+        r.get();
 }
 
 template<typename T>
@@ -179,7 +222,13 @@ void add_xmap_numpy_functions(py::class_<C, Xmap_base>& pyclass)
             return target;
         })
         .def("export_section_numpy", [](const C& self, const Coord_grid& origin, py::array_t<T> target )
-        { numpy_export_core_(self, target, origin); })
+        {
+            numpy_export_core_(self, target, origin);
+        })
+        .def("export_section_numpy", [](const C& self, const Coord_grid& origin, py::array_t<T> target, size_t n_threads)
+        {
+            numpy_export_core_(self, target, origin, n_threads);
+         })
         // TODO: decide how to handle imports
         //.def("import_numpy", [](C& self, py::array_t<T> vals))
         ;

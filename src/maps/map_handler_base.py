@@ -305,7 +305,8 @@ class XmapHandler_Base(MapHandler_Base):
     def _fill_volume_data(self, target, start_grid_coor):
         from .. import Coord_grid
         xmap = self.xmap
-        xmap.export_section_numpy(Coord_grid(start_grid_coor), target)
+        from ..util import available_cores
+        xmap.export_section_numpy(Coord_grid(start_grid_coor), target, available_cores())
 
     def _generate_and_fill_data_array(self, origin, grid_origin, dim):
         darray = self._generate_data_array(origin, grid_origin, dim)
