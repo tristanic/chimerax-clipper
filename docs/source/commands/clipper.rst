@@ -71,3 +71,12 @@ which are already initialised into the ChimeraX-Clipper data structure.
 
 clipper isolate
 ---------------
+
+Syntax: clipper isolate *atoms* [**surroundDistance** *number* (5.0)]
+[**contextDistance** *number* (5.0)] [**maskRadius** *number* (3.0)]
+[**hideSurrounds** *true/false* (true)] [**focus** *true/false* (false)]
+[**includeSymmetry** *true/false* (true)]
+
+Visually isolate the selected atoms from their surroundings, and mask all
+associated maps to cover the immediate vicinity. The algorithm for deciding
+shown and
