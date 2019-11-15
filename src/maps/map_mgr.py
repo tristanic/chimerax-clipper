@@ -136,10 +136,12 @@ class Map_Mgr(Model):
         if self._zone_mgr is None:
             from .mask_handler import Zone_Mgr
             coords = [self.spotlight_center]
-            self._zone_mgr = Zone_Mgr(self.session, 1,
+            self._zone_mgr = Zone_Mgr(self.session, 1.5,
                 5)
 
-
+    @property
+    def zone_mgr(self):
+        return self._zone_mgr
 
     @property
     def xmapsets(self):
@@ -336,18 +338,22 @@ class Map_Mgr(Model):
         self.triggers.activate_trigger('map box changed',
             (center, xyz_min, xyz_max))
 
-    def cover_atoms(self, atoms, mask_radius=3, extra_padding=12):
+    def cover_atoms(self, atoms, transforms=None, transform_indices=None,
+            mask_radius=3, extra_padding=12):
         '''
         Expand all maps to a region large enough to cover the atoms, plus
-        mask_radius+extra_padding in every direction. Unlike cover_coords(),
-        the mask will be periodically updated in response to atom movements.
+        mask_radius+extra_padding in every direction. If provided, transforms
+        should be a Places object, and transform_indices a Numpy array giving
+        the index of the Place to be used to transform the coordinates of each
+        atom. Unlike cover_coords(), the mask will be periodically updated in
+        response to atom movements.
         '''
-        self.triggers.activate_trigger('cover coords',
-            (atoms.coords, mask_radius+extra_padding))
         zm = self._zone_mgr
-        zm.atoms = atoms
+        zm.sym_atoms = (atoms, transforms, transform_indices)
         zm.radius = mask_radius
         zm.pad = extra_padding
+        self.triggers.activate_trigger('cover coords',
+            (zm.coords, mask_radius+extra_padding))
         self._reapply_zone()
 
 
@@ -364,6 +370,9 @@ class Map_Mgr(Model):
         zm.pad = extra_padding
         # self._surface_zone.update(mask_radius, coords=coords)
         self._reapply_zone()
+
+    def update_zone_mask(self, coords):
+        self._zone_mgr.coords = coords
 
     def update_spotlight(self, trigger_name, new_center):
         '''

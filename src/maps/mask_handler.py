@@ -23,13 +23,19 @@ from chimerax.map import Volume
 
 class Zone_Mgr:
     def __init__(self, session, grid_step, radius,
-            atoms=None, coords=None, pad=None, interpolation_threshold=0.75):
+            atoms=None, transforms=None, transform_indices=None, coords=None, pad=None, interpolation_threshold=0.75):
         if pad is None:
             pad = radius
+        self.structure = None
+        if atoms is not None:
+            self.structure = self._unique_structure(atoms)
+        self._structure_change_handler = None
         self.session = session
         self._step = grid_step
         self._radius = radius
         self._atoms = atoms
+        self._transforms = transforms
+        self._transform_indices = transform_indices
         self._coords = coords
         self._pad = pad
         self.threshold=interpolation_threshold
@@ -40,16 +46,25 @@ class Zone_Mgr:
     @property
     def coords(self):
         if self._atoms is not None:
-            return self.atoms.coords
+            coords = self._atoms.coords
+            tf, ind = self._transforms, self._transform_indices
+            if tf is not None and ind is not None:
+                import numpy
+                for i in numpy.unique(ind):
+                    mask = (ind==i)
+                    coords[mask] = tf[i]*coords[mask]
+            return coords
         return self._coords
 
     @coords.setter
     def coords(self, coords):
+        self.stop_tracking_changes()
         if self.coords is not None:
             prev_coord_len = len(self.coords)
         else:
             prev_coord_len = None
         self._atoms = None
+        self.structure = None
         self._coords = coords
         if len(coords) == 1 and prev_coord_len==1:
             self.update_needed(resize_box=False)
@@ -64,6 +79,25 @@ class Zone_Mgr:
     def atoms(self, atoms):
         self._coords = None
         self._atoms = atoms
+        self.stop_tracking_changes()
+        self.structure = self._unique_structure(atoms)
+        self.start_tracking_changes()
+        self._transforms = None
+        self._transform_indices = None
+        self.start_tracking_changes()
+        self.update_needed(resize_box=True)
+
+    @property
+    def sym_atoms(self):
+        return (self._atoms, self._transforms, self._transform_indices)
+
+    @sym_atoms.setter
+    def sym_atoms(self, sym_info):
+        self._coords=None
+        self._atoms, self._transforms, self._transform_indices = sym_info
+        self.stop_tracking_changes()
+        self.structure = self._unique_structure(self._atoms)
+        self.start_tracking_changes()
         self.update_needed(resize_box=True)
 
     @property
@@ -109,18 +143,47 @@ class Zone_Mgr:
         return self._mask
 
     def _update_mask(self):
+        # from time import time
+        # start_time = time()
         update_origin = (len(self.coords) == 1)
         self.mask.generate_mask(self.coords, self.radius,
             reuse_existing=not self._resize_box, update_origin=update_origin,
             step=self.grid_step, pad=self.pad)
         self._update_needed = False
         self._resize_box = False
+        # print('Updating mask took {} ms.'.format((time()-start_time)*1000))
 
     def get_vertex_mask(self, vertices):
         if self._update_needed:
             self._update_mask()
         return (self.mask.interpolated_values(vertices) >= self.threshold)
 
+    def _unique_structure(self, atoms):
+        us = atoms.unique_structures
+        if len(us) != 1:
+            raise TypeError('All atoms for zone mask must be from a single model!')
+        return us[0]
+
+    def start_tracking_changes(self):
+        if self.structure is None or self._atoms is None:
+            raise RuntimeError('Live zone mask updating is only valid for atoms!')
+        self._structure_change_handler = self.structure.triggers.add_handler(
+            'changes', self._model_changes_cb
+        )
+
+    def stop_tracking_changes(self):
+        if self._structure_change_handler is not None:
+            if self.structure is not None:
+                self.structure.triggers.remove_handler(self._structure_change_handler)
+            self._structure_change_handler = None
+
+    def _model_changes_cb(self, trigger_name, changes):
+        if self._atoms is None:
+            self._structure_change_handler = None
+            from chimerax.core.triggerset import DEREGISTER
+            return DEREGISTER
+        if 'coord changed' in changes[1].atom_reasons():
+            self.update_needed()
 
 class VolumeMask(Volume):
     '''

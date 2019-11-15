@@ -820,7 +820,7 @@ class Symmetry_Manager(Model):
 
     def isolate_and_cover_selection(self, atoms, include_surrounding_residues=5,
         show_context=5, mask_radius=3, extra_padding=0, hide_surrounds=True,
-        focus=True):
+        focus=True, include_hydrogens=False):
         '''
         Expand the map(s) (if present) to cover a given atomic selection,  then
         mask them to within a given distance of said atoms to reduce visual
@@ -850,6 +850,9 @@ class Symmetry_Manager(Model):
           focus (bool):
             If true, the camera will be moved to focus on the selection (only
             the atoms in the master model will be considered)
+          include_hydrogens:
+            Include hydrogens for the purposes of masking (this should almost
+            never be necessary)
         '''
         self.spotlight_mode = False
         original_atoms = self.last_covered_selection = atoms
@@ -861,20 +864,35 @@ class Symmetry_Manager(Model):
             show_context=show_context
         )
         from chimerax.core.geometry import Places
+        atoms = main_set[0]
         transforms = Places(place_array=main_set[1])
         indices = main_set[2]
-        coords = main_set[0].coords
-        import numpy
-        for i in numpy.unique(indices):
-            mask = indices==i
-            coords[mask] = transforms[i]*coords[mask]
-        self.map_mgr.cover_coords(coords,
+        if not include_hydrogens:
+            mask = (atoms.element_names != 'H')
+            atoms = atoms[mask]
+            indices = indices[mask]
+        # self._map_cover_data = main_set
+        # coords = self._update_cover_coords(main_set)
+        self.map_mgr.cover_atoms(atoms, transforms=transforms, transform_indices=indices,
             mask_radius=mask_radius,
             extra_padding=extra_padding)
+        if not hide_surrounds:
+            self.structure.atoms.hides &=~HIDE_ISOLDE
         if focus:
             focus_on_selection(self.session, self.session.main_view, atoms)
 
     _cube_pairs = numpy.array([[0,1], [0,2], [0,4], [1,3], [1,5], [2,3], [2,6], [3,7], [4,5], [4,6], [5,7], [6,7]], numpy.int)
+
+    def _update_cover_coords(self, cover_set):
+        from chimerax.core.geometry import Places
+        transforms = Places(place_array=cover_set[1])
+        indices = cover_set[2]
+        coords = cover_set[0].coords
+        import numpy
+        for i in numpy.unique(indices):
+            mask = indices==i
+            coords[mask] = transforms[i]*coords[mask]
+        return coords
 
     def draw_unit_cell_box(self, offset=None, cylinder_radius = 0.05):
         '''

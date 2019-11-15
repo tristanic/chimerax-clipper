@@ -82,7 +82,7 @@ void generate_mask(
                     bc[0]=u; bc[1]=v; bc[2]=w;
                     if (squared_distance(transformed, bc, ijk_to_xyz) < sq_rad)
                     {
-                        map[ w + dim[2] * ( v + dim[1] * u ) ] = 1;
+                        map[w + dim[2] * ( v + dim[1] * u)] = 1;
                     }
                 }
             }
