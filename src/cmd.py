@@ -72,8 +72,9 @@ def save_structure_factors(session, path, models=None, preserve_input=False,
             ext='.mtz'
         else:
             ext += '.mtz'
+    suffix=''
     for i, xmapset in enumerate(xmapsets):
-        if i > 0:
+        if len(xmapsets) > 1:
             suffix = '-{}'.format(i)
         save_path = fname+suffix+ext
         xmapset.save_mtz(save_path, save_input_data=preserve_input,
@@ -165,7 +166,7 @@ def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
         BoolArg, FloatArg,
-        OpenFileNameArg
+        OpenFileNameArg, SaveFileNameArg
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
 
@@ -180,6 +181,21 @@ def register_clipper_cmd(logger):
         synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
     )
     register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
+
+    save_desc = CmdDesc(
+        required=[
+            ('path', SaveFileNameArg),
+        ],
+        optional=[
+            ('models', XmapSetsArg),
+        ],
+        keyword=[
+            ('preserve_input', BoolArg),
+            ('save_map_coeffs', BoolArg)
+        ],
+        synopsis='Save structure factors to .mtz format.'
+    )
+    register('clipper save', save_desc, save_structure_factors)
 
     spot_desc = CmdDesc(
         optional=[
