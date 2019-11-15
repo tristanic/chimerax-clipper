@@ -1,10 +1,23 @@
 ChimeraX-Clipper Commands
 =========================
 
+The primary purpose of ChimeraX-Clipper is to facilitate the handling of
+crystallographic maps and symmetry in ChimeraX. However, it's not restricted to
+crystallographic data: real-space volumetric maps of any kind may be associated
+with your model to provide a unified visualisation scheme
+(see :ref:`associate`). Using Clipper you can open (:ref:`open`) and save
+(:ref:`save`) structure factors in MTZ format, and explore the detailed fit of
+you model to maps (see :ref:`spotlight` and :ref:`isolate`). Where applicable,
+a model initialised for ChimeraX-Clipper will provide a real-time display of
+crystallographic symmetry-related molecules.
+
 .. _`open`:
 
 clipper open
 ------------
+
+*(NOTE: MTZ files - but not .cif files - may also be opened using the standard
+ChimeraX open command, with otherwise identical syntax to that described below)*
 
 Syntax: clipper open *path* [**structureModel** *structure*]
 [**overSampling** *number*]
@@ -40,6 +53,34 @@ will be sharpened, while higher-resolution maps will be smoothed. The sharper
 of the two maps will be displayed as a transparent surface, the other as a
 wireframe. Finally, a standard mFo-DFc map will be generated and displayed
 with contours at ± 3 sigma.
+
+.. _`save`:
+
+clipper save
+------------
+
+*(NOTE: This command is also available via the top-level ChimeraX "save" command
+with identical behaviour and syntax)*
+
+Syntax: clipper save *filename* [*models*]
+[**preserveInput** *true/false* (false)]
+[**saveMapCoeffs** *true/false* (false)]
+
+Save one or more sets of reflection data to (a) MTZ file(s). If more than one
+dataset is specified by *models*, they will be saved as a series of files
+(*filename*-0.mtz, *filename*-1.mtz, etc.) numbered in the order they are found
+in the ChimeraX model tree.
+
+If *preserveInput* is true, then the original experimental data loaded from file
+will be saved, with "in." prepended to the column labels. **(IMPORTANT NOTE: if
+the data was originally loaded from .cif, ONLY the columns selected by Clipper
+for map calculations will be passed through)**
+
+If *saveMapCoeffs* is true, amplitudes and phases for Clipper's current
+Fc, 2Fo-Fc and Fo-Fc maps will be saved.
+
+Free flags and the Fobs/SigFobs arrays used by Clipper will always be saved.
+
 
 .. _`associate`:
 
@@ -79,4 +120,20 @@ Syntax: clipper isolate *atoms* [**surroundDistance** *number* (5.0)]
 
 Visually isolate the selected atoms from their surroundings, and mask all
 associated maps to cover the immediate vicinity. The algorithm for deciding
-shown and
+the final view is as follows:
+
+1. The *atoms* selection is expanded to complete residues.
+2. All residues with any atoms within *surroundDistance* of any atoms in the
+   results from (1) are added to the selection. If *includeSymmetry* is true,
+   symmetry atoms within the *surroundDistance* will also be included. The final
+   selection at this stage will be covered by the map(s).
+3. *(This step only has an effect if hideSurrounds is true)* All residues with
+   any atoms within *contextDistance* of the results from (2) will be displayed,
+   but not covered by the map(s). If *includeSymmetry* is true, symmetry atoms
+   will be included.
+4. All maps associated with the model are masked down to within *maskRadius* of
+   the atoms specified in (2).
+5. If *hideSurrounds* is true, all atoms not found in (1) or (2) will be hidden.
+   Cartoon display will not be affected.
+6. If *focus* is true, the view will be reset to centre on and encompass the
+   covered region.
