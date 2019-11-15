@@ -223,7 +223,7 @@ class Map_Mgr(Model):
         # self._surface_zone.update(radius, coords = numpy.array([center]))
         self._zone_mgr.radius = radius
         self._zone_mgr.pad = radius
-        self._reapply_zone()
+        # self._reapply_zone()
 
     @property
     def box_params(self):
@@ -268,7 +268,7 @@ class Map_Mgr(Model):
         if switch:
             if self.spotlight_mode:
                 self._start_spotlight_mode()
-            self._reapply_zone()
+            # self._reapply_zone()
 
     def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None):
         if oversampling_rate is None:
@@ -320,7 +320,7 @@ class Map_Mgr(Model):
             self.update_spotlight(None, self.spotlight_center)
         from chimerax.core.geometry import Places
         self.positions = Places()
-        self._reapply_zone()
+        # self._reapply_zone()
 
     def _stop_spotlight_mode(self):
         if self._box_update_handler is not None:
@@ -354,7 +354,7 @@ class Map_Mgr(Model):
         zm.pad = extra_padding
         self.triggers.activate_trigger('cover coords',
             (zm.coords, mask_radius+extra_padding))
-        self._reapply_zone()
+        # self._reapply_zone()
 
 
     def cover_coords(self, coords, mask_radius=3, extra_padding=3):
@@ -369,7 +369,7 @@ class Map_Mgr(Model):
         zm.radius = mask_radius
         zm.pad = extra_padding
         # self._surface_zone.update(mask_radius, coords=coords)
-        self._reapply_zone()
+        # self._reapply_zone()
 
     def update_zone_mask(self, coords):
         self._zone_mgr.coords = coords
@@ -388,7 +388,7 @@ class Map_Mgr(Model):
             zm = self._zone_mgr
             zm.coords = numpy.array([new_center])
             # self._surface_zone.update(self.spotlight_radius, coords = numpy.array([new_center]))
-            self._reapply_zone()
+            # self._reapply_zone()
 
     def rezone_needed(self):
         if not self._rezone_pending:
