@@ -132,9 +132,9 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
 {
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
-    py::gil_scoped_release release;
     int nu, nv, nw;
     nu=tbuf.shape[0]; nv=tbuf.shape[1]; nw=tbuf.shape[2];
+    //py::gil_scoped_release release;
     int u,v;
     int maxu, maxv, maxw;
     maxu = origin.u()+nu; maxv=origin.v()+nv; maxw=origin.w()+nw;
@@ -162,13 +162,16 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
     if (n_threads < 1) n_threads=1;
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
-    py::gil_scoped_release release;
     int nu, nv, nw;
     nu = tbuf.shape[0]; nv=tbuf.shape[1]; nw=tbuf.shape[2];
+    //py::gil_scoped_release release;
     std::vector<std::future<void>> results;
     int u, v;
+    const int POINTS_PER_THREAD=50000;
     int maxu, maxv, maxw, thread_max_u;
-    int u_per_thread = (int)nu/(int)n_threads+1;
+    int u_per_thread = std::max(
+        (int)nu/(int)n_threads+1,
+        POINTS_PER_THREAD/(nv*nw)+1);
     u = origin.u();
     maxu = origin.u()+nu; maxv=origin.v()+nv; maxw=origin.w()+nw;
     for (size_t i=0; i<n_threads; ++i)
