@@ -58,6 +58,8 @@ def open_structure_factors_and_add_to_session(session, path, structure_model=Non
 
 def save_structure_factors(session, path, models=None, preserve_input=False,
         save_map_coeffs=False):
+    if models is None:
+        models = session.models.list()
     from .maps import XmapSet
     xmapsets = [m for m in models if isinstance(m, XmapSet)]
     if not xmapsets:
