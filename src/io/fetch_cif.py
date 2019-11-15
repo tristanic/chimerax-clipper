@@ -21,16 +21,24 @@
 
 from chimerax.core.errors import UserError
 
+_valid_db_commands = {
+    'pdb':          'rcsb',
+    'pdbe_updated': 'pdbe',
+    'pdbe':         'pdbe',
+    'pdbj':         'pdbj'
+}
+
 _cif_sources = {
     'rcsb': 'http://files.rcsb.org/download/{}-sf.cif',
     'pdbe': 'http://www.ebi.ac.uk/pdbe/entry-files/download/r{}sf.ent',
+    # Only the coordinates are updated, not the data
     'pdbj': 'https://pdbj.org/rest/downloadPDBfile?format=sf&id={}'
 }
 
 _cif_filenames = {
     'rcsb': '{}-sf.cif',
-    'pdbe': 'r{}sf.ent',
-    'pdbj': 'r{}sf.ent',
+    'pdbe': 'r{}sf.cif',
+    'pdbj': 'r{}sf.cif',
 }
 
 _compressed = {
@@ -44,8 +52,10 @@ def fetch_structure_factors(session, pdb_id, fetch_source='rcsb', ignore_cache=F
     if len(pdb_id) != 4:
         raise UserError('PDB identifiers are 4 characters long, got "{}"'.format(pdb_id))
     if fetch_source not in _cif_sources.keys():
-        raise UserError('Unrecognised database name! Must be one of the following: {}'.format(
-            ', '.join(_cif_sources.keys())
+        fetch_source = _valid_db_commands.get(fetch_source, None)
+    if fetch_source is None:
+        raise UserError('Fetching structure factors is not implemented for "fromDatabase {}"! Must be one of the following: {}'.format(
+            fetch_source, ', '.join(_valid_db_commands.keys())
         ))
     import os
     pdb_id = pdb_id.lower()
