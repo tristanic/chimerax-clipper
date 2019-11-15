@@ -268,7 +268,7 @@ class Map_Mgr(Model):
         if switch:
             if self.spotlight_mode:
                 self._start_spotlight_mode()
-            # self._reapply_zone()
+            self._reapply_zone()
 
     def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None):
         if oversampling_rate is None:
