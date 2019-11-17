@@ -461,6 +461,8 @@ class Symmetry_Manager(Model):
     # spotlight
     SPOTLIGHT_UPDATE_THRESHOLD = 0.1
     ATOMIC_SYM_EXTRA_RADIUS = 3
+    # SESSION_ENDURING=False
+    SESSION_SAVE=False
     def __init__(self, model, mtzfile=None,
         spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
@@ -1031,6 +1033,7 @@ class AtomicSymmetryModel(Model):
     '''
     Finds and draws local symmetry atoms for an atomic structure
     '''
+    SESSION_SAVE=False
     def __init__(self, parent, radius = 15,
         dim_colors_to = 0.4, backbone_mode = 'CA trace', live = True, debug=False):
         self._debug = debug

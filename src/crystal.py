@@ -992,6 +992,7 @@ class XmapSet(Model):
     DEFAULT_SOLID_MAP_COLOR = [0,1.0,1.0,0.4] # Transparent cyan
     DEFAULT_DIFF_MAP_COLORS = [[1.0,0,0,1.0],[0,1.0,0,1.0]] #Solid red and green
 
+    SESSION_SAVE=False
 
     def __init__(self, session, crystal, datasets = None,
                  live_scrolling = True, display_radius = 12,

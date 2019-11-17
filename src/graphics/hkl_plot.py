@@ -34,6 +34,7 @@ def test_hkl_plot(session, datafile, scale=1.0):
     return plot
 
 class HKL_Plot_3D(Model):
+    SESSION_SAVE=False
     def __init__(self, name, session, hkls, vals, scale_to=None, dim_scale=2.0, highlight_negatives=True):
         super().__init__(name, session)
         self._values = vals

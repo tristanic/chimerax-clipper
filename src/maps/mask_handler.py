@@ -189,7 +189,7 @@ class VolumeMask(Volume):
     '''
     Manages a binary mask defining displayed regions for other surfaces.
     '''
-
+    SESSION_SAVE=False
     def __init__(self, session, coords, step, radius, pad=0):
         import numpy
 
@@ -247,6 +247,7 @@ class VolumeMask(Volume):
 from chimerax.core.state import State
 
 class ZoneMask(State):
+    SESSION_SAVE=False
     def __init__(self, surface, mgr, max_components):
         self.surface = surface
         self.mgr = mgr

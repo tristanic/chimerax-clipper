@@ -27,7 +27,7 @@ class MapSet_Base(Model):
     Base class for XmapSet_Live, XmapSet_Static and NXmapSet. Provides basic
     methods for visualisation, masking etc.
     '''
-
+    SESSION_SAVE=False
     # Default contour levels and colours for generic maps. Override in the
     # derived class if you wish
 

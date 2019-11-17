@@ -27,6 +27,7 @@ class MapHandler_Base(Volume):
     Base class for all Clipper map objects for use in ChimeraX.
     '''
     pickable=False
+    SESSION_SAVE=False
     def __init__(self, mapset, name, data, is_difference_map=False):
         session = mapset.session
         data.change_callbacks.clear()
@@ -119,6 +120,7 @@ class FastVolumeSurface(VolumeSurface):
     C++ level. Should become obsolete once something similar is implemented in
     ChimeraX itself.
     '''
+    SESSION_SAVE=False
     def __init__(self, volume, level, rgba=(1.0, 1.0, 1.0, 1.0)):
         if rgba is None:
             rgba = (1.0,1.0,1.0,1.0)

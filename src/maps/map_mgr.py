@@ -72,6 +72,8 @@ class Map_Mgr(Model):
     '''
     Top-level manager for all maps associated with a model.
     '''
+
+    SESSION_SAVE=False
     def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0):
         cm = self._mgr = crystal_manager
         super().__init__('Map Manager', cm.session)

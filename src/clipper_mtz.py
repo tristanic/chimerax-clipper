@@ -28,6 +28,7 @@ def calculate_shannon_rate(resolution, voxel_size):
     return resolution.limit/(2*voxel_size)
 
 class ReflectionDataContainer(Model):
+    SESSION_SAVE=False
     '''
     A container class to hold a set of reciprocal-space data, and
     defining the methods to access and use it. A sub-class of the
@@ -120,7 +121,7 @@ class ReflectionData_Node(Model):
     #     # self.datasets = datasets
     #     for name, data in datasets.items():
     #         self.add([data])
-
+    SESSION_SAVE=False
     @property
     def datasets(self):
         return dict((m.name, m) for m in self.child_models())
@@ -140,6 +141,7 @@ class ReflectionData(Model):
     contain methods common to both (e.g. drawing of reciprocal-space
     reflections).
     '''
+    SESSION_SAVE=False
     def __init__(self, name, session, data):
         '''
         Args:
