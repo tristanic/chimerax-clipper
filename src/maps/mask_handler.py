@@ -27,15 +27,14 @@ class Zone_Mgr:
         if pad is None:
             pad = radius
         self.structure = None
+        self._symmetry_map = {}
+        self._atoms = atoms
         if atoms is not None:
             self.structure = self._unique_structure(atoms)
         self._structure_change_handler = None
         self.session = session
         self._step = grid_step
         self._radius = radius
-        self._atoms = atoms
-        self._transforms = transforms
-        self._transform_indices = transform_indices
         self._coords = coords
         self._pad = pad
         self.threshold=interpolation_threshold
@@ -46,18 +45,18 @@ class Zone_Mgr:
     @property
     def coords(self):
         if self._atoms is not None:
-            coords = self._atoms.coords
-            tf, ind = self._transforms, self._transform_indices
-            if tf is not None and ind is not None:
+            if not len(self._symmetry_map):
+                return self._atoms.coords
+            else:
                 import numpy
-                for i in numpy.unique(ind):
-                    mask = (ind==i)
-                    coords[mask] = tf[i]*coords[mask]
-            return coords
+                coords = numpy.concatenate([tf*(atoms.coords) for atoms, tf in self._symmetry_map.values()])
+                # print('Transformed coords: {}'.format(coords)')
+                return coords
         return self._coords
 
     @coords.setter
     def coords(self, coords):
+        self._symmetry_map.clear()
         self.stop_tracking_changes()
         if self.coords is not None:
             prev_coord_len = len(self.coords)
@@ -79,6 +78,7 @@ class Zone_Mgr:
     def atoms(self, atoms):
         self._coords = None
         self._atoms = atoms
+        self._symmetry_map.clear()
         self.stop_tracking_changes()
         self.structure = self._unique_structure(atoms)
         self.start_tracking_changes()
@@ -88,15 +88,20 @@ class Zone_Mgr:
         self.update_needed(resize_box=True)
 
     @property
-    def sym_atoms(self):
-        return (self._atoms, self._transforms, self._transform_indices)
+    def symmetry_map(self):
+        return self._symmetry_map
 
-    @sym_atoms.setter
-    def sym_atoms(self, sym_info):
+    def set_symmetry_map(self, atoms, transforms, transform_indices):
         self._coords=None
-        self._atoms, self._transforms, self._transform_indices = sym_info
+        self._atoms = atoms
+        import numpy
+        unique_indices = numpy.unique(transform_indices)
+        self._symmetry_map.clear()
+        for i in unique_indices:
+            mask = (transform_indices==i)
+            self._symmetry_map[i] = (atoms[mask],transforms[i])
         self.stop_tracking_changes()
-        self.structure = self._unique_structure(self._atoms)
+        self.structure = self._unique_structure(atoms)
         self.start_tracking_changes()
         self.update_needed(resize_box=True)
 

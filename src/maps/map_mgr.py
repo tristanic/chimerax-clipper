@@ -351,7 +351,7 @@ class Map_Mgr(Model):
         response to atom movements.
         '''
         zm = self._zone_mgr
-        zm.sym_atoms = (atoms, transforms, transform_indices)
+        zm.set_symmetry_map(atoms, transforms, transform_indices)
         zm.radius = mask_radius
         zm.pad = extra_padding
         self.triggers.activate_trigger('cover coords',
