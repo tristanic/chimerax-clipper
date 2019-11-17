@@ -208,7 +208,7 @@ py::class_<HKL_data<C>> declare_HKL_data(py::module &m, const std::string &class
         .def(py::self ^ py::self)
         .def(!py::self)
         ;
-    return theclass;
+    return std::move(theclass);
 } //declare_HKL_data
 
 template<class T>
