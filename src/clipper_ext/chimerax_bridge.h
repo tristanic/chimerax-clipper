@@ -62,6 +62,9 @@ clipper::Atom_list clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_
     {
         auto cxa = cxatoms[i];
         if (ignore_hydrogens && cxa->element().number()==1) continue;
+        // Unknown atoms have element number 0.
+        if (cxa->element().number()==0) continue;
+
         const auto& altlocs = cxa->alt_locs();
         if (altlocs.size())
         {
@@ -102,6 +105,8 @@ clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxato
                 {
                     auto cxa = cxatoms[i];
                     if (ignore_hydrogens && cxa->element().number()==1) continue;
+                    // Unknown atoms have element number 0
+                    if (cxa->element().number()==0) continue;
                     auto altlocs = cxa->alt_locs();
                     if (altlocs.size())
                     {

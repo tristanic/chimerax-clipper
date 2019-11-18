@@ -40,7 +40,7 @@ class EDcalc_mask_vdw: public EDcalc_base<T>
 public:
     EDcalc_mask_vdw( const ftype grid_radius = 3.0,
                      const ftype probe_radius = 1.0,
-                     const ftype shrink_radius = 1.1, 
+                     const ftype shrink_radius = 1.1,
                      const size_t n_threads = 1)
         : grid_radius_(grid_radius), probe_radius_(probe_radius),
           shrink_radius_(shrink_radius), n_threads_(n_threads)
@@ -71,8 +71,15 @@ private:
     // be less than 1% of its maximum.
     T cutoff_radius( const Atom& a) const
     {
-        T atom_radius = data::vdw_radii.at(a.element().c_str());
-        return std::max(atom_radius * (0.4 + 1.5 * pow(a.u_iso(), 0.5)), 3.0);
+        try {
+            T atom_radius = data::vdw_radii.at(a.element().c_str());
+            return std::max(atom_radius * (0.4 + 1.5 * pow(a.u_iso(), 0.5)), 3.0);
+        } catch (std::out_of_range& err) {
+            std::stringstream msg;
+            msg << "No van der Waals definition for element name " << a.element().c_str() << "!";
+            throw std::out_of_range(msg.str());
+            return 0.0;
+        }
     }
 };
 
