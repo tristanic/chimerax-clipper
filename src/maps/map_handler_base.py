@@ -27,7 +27,6 @@ class MapHandler_Base(Volume):
     Base class for all Clipper map objects for use in ChimeraX.
     '''
     pickable=False
-    SESSION_SAVE=False
     def __init__(self, mapset, name, data, is_difference_map=False):
         session = mapset.session
         data.change_callbacks.clear()
@@ -113,6 +112,7 @@ class MapHandler_Base(Volume):
         return s
 
 
+
 from chimerax.map.volume import VolumeSurface
 class FastVolumeSurface(VolumeSurface):
     '''
@@ -120,11 +120,12 @@ class FastVolumeSurface(VolumeSurface):
     C++ level. Should become obsolete once something similar is implemented in
     ChimeraX itself.
     '''
+    pickable=False
     SESSION_SAVE=False
-    def __init__(self, volume, level, rgba=(1.0, 1.0, 1.0, 1.0)):
+    def __init__(self, volume, level, rgba=(1.0, 1.0, 1.0, 1.0), mesh=False):
         if rgba is None:
             rgba = (1.0,1.0,1.0,1.0)
-        super().__init__(volume, level, rgba)
+        super().__init__(volume, level, rgba, mesh)
         self._update_needed = False
 
     def _postprocess(self, varray, narray, tarray, rendering_options, level):
@@ -195,6 +196,21 @@ class FastVolumeSurface(VolumeSurface):
             sct.start_compute, (numpy.asfortranarray(v.matrix()), level, det, vertex_transform.matrix, normal_transform.matrix, False, True),
             sct.ready,
             self._use_fast_thread_result, (rendering_options,))
+
+    def take_snapshot(self, session, flags):
+        data = VolumeSurface.take_snapshot(self, session, flags)
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        v = data['volume']
+        if v is None:
+            return None
+        s = FastVolumeSurface(v, data['level'], data['rgba'], data.get('show_mesh', False))
+        if v._style_when_shown == 'image':
+            s.display = False
+        v._surfaces.append(s)
+        return s
 
 class XmapHandler_Base(MapHandler_Base):
     '''
