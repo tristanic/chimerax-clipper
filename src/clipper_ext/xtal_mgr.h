@@ -261,7 +261,7 @@ public:
     void add_xmap(const std::string& name,
         const ftype& bsharp, bool is_difference_map=false,
         bool exclude_missing_reflections=false,
-        bool exclude_free_reflections=true, bool fill_with_fcalc=true);
+        bool exclude_free_reflections=true, bool fill_with_fcalc=true, size_t num_threads=1);
 
     void delete_xmap(const std::string& name) { maps_.erase(name); }
 
@@ -469,7 +469,7 @@ public:
     inline size_t n_maps() const { deletion_guard(); return mgr_->n_maps(); }
     std::vector<std::string> map_names() const { deletion_guard(); return mgr_->map_names(); }
 
-    inline void bulk_solvent_optimization_needed() { deletion_guard(); mgr_->bulk_solvent_optimization_needed(); } 
+    inline void bulk_solvent_optimization_needed() { deletion_guard(); mgr_->bulk_solvent_optimization_needed(); }
     inline const ftype& bulk_frac() { deletion_guard(); return mgr_->bulk_frac(); }
     inline const ftype& bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
 

@@ -519,7 +519,7 @@ void
 Xtal_mgr_base::add_xmap(const std::string& name,
     const ftype& bsharp, bool is_difference_map,
     bool exclude_missing_reflections,
-    bool exclude_free_reflections, bool fill_with_fcalc)
+    bool exclude_free_reflections, bool fill_with_fcalc, size_t num_threads)
 {
     if (!coeffs_initialized())
         throw std::logic_error("You need to calculate base coefficients before "
@@ -536,13 +536,19 @@ Xtal_mgr_base::add_xmap(const std::string& name,
                             exclude_missing_reflections, exclude_free_reflections, fill_with_fcalc));
     // Create a copy for thread-safe calculations
 
-    recalculate_map(name);
+    recalculate_map(name, num_threads);
 } // add_xmap
 
 void
 Xtal_mgr_base::recalculate_map(const std::string& name, size_t num_threads)
 {
-    recalculate_map(maps_.at(name), num_threads);
+    try {
+        recalculate_map(maps_.at(name), num_threads);
+    } catch (std::out_of_range& exc) {
+        std::stringstream msg;
+        msg << "Could not find map with name " << name << "!";
+        throw std::out_of_range(msg.str());
+    }
 } // recalculate_map
 
 void
@@ -760,18 +766,24 @@ Xtal_thread_mgr::apply_new_maps()
         throw std::logic_error("You haven't generated any new maps yet! Call "
             "recalculate_all() first.");
     master_thread_result_.get();
-    for (auto& it: xmap_thread_results_)
-    {
-        auto& source = it.second;
-        auto& target = mgr_->maps_.at(it.first);
-        source.coeffs_.swap(target.coeffs_);
-        source.xmap_.swap(target.xmap_);
-        source.map_stats_.swap(target.map_stats_);
+    try {
+        for (auto& it: xmap_thread_results_)
+        {
+            auto& source = it.second;
+            auto& target = mgr_->maps_.at(it.first);
+            source.coeffs_.swap(target.coeffs_);
+            source.xmap_.swap(target.xmap_);
+            source.map_stats_.swap(target.map_stats_);
+        }
+        // for (const auto& it: xmap_thread_results_)
+        //     mgr_.maps_.at(it.first).xmap() = it.second.xmap();
+        // xmap_thread_results_.clear();
+        ready_ = false;
+    } catch (std::out_of_range& err){
+        std::stringstream msg;
+        msg << "Something went wrong when applying new maps!";
+        throw std::out_of_range(msg.str());
     }
-    // for (const auto& it: xmap_thread_results_)
-    //     mgr_.maps_.at(it.first).xmap() = it.second.xmap();
-    // xmap_thread_results_.clear();
-    ready_ = false;
 } // apply_new_maps
 
 void
@@ -850,7 +862,7 @@ Xtal_thread_mgr::add_xmap(const std::string& name,
     deletion_guard();
     finalize_threads_if_necessary();
     mgr_->add_xmap(name, bsharp, is_difference_map,
-        exclude_missing_reflections, exclude_free_reflections, fill_with_fcalc);
+        exclude_missing_reflections, exclude_free_reflections, fill_with_fcalc, num_threads_);
     xmap_thread_results_.emplace(name, mgr_->maps_[name]);
 
 }

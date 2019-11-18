@@ -67,7 +67,8 @@ void declare_xtal_mgr(py::module& m)
             py::arg("is_difference_map")=true,
             py::arg("exclude_missing_reflections")=false,
             py::arg("exclude_free_reflections")=true,
-            py::arg("fill_with_fcalc")=true)
+            py::arg("fill_with_fcalc")=true,
+            py::arg("num_threads")=1)
         .def("recalculate_map", (void (Class::*)(const std::string&, size_t)) &Class::recalculate_map,
             py::arg("name"), py::arg("num_threads")=1)
         // Get a reference to the managed xmap of a given name
