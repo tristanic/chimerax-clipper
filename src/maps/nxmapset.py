@@ -147,6 +147,33 @@ class NXmapHandler(MapHandler_Base):
         self._original_volume.delete()
         super().delete()
 
+    def take_snapshot(self, session, flags):
+        from chimerax.map import Volume
+        from chimerax.core.models import Model
+        from chimerax.map.session import state_from_map
+        data = {
+            'original volume': Volume.take_snapshot(self, session, flags),
+            'model state': Model.take_snapshot(self, session, flags),
+            'volume state': state_from_map(self),
+            'is difference map': self._is_difference_map,
+            'mapset': self._mapset
+        }
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.map import Volume
+        ov = Volume.restore_snapshot(session, data['original volume'])
+        if ov is None:
+            return None
+        v = NXmapHandler(data['mapset'], ov, data['is difference map'])
+        from chimerax.core.models import Model
+        Model.set_state_from_snapshot(v)
+        from chimerax.map.session import set_map_state
+        set_map_state(data['volume state'], v)
+        v._drawings_need_update()
+        return v
+
 _corners = numpy.array([(x,y,z) for x in (-1,1) for y in (-1,1) for z in (-1,1)])
 def _find_box_corners(center, radius, xyz_to_ijk_transform):
     corners = xyz_to_ijk_transform*(center+radius*_corners)
