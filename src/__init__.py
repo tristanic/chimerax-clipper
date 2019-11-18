@@ -134,4 +134,10 @@ class _ClipperBundle(BundleAPI):
         return save_structure_factors(session, path, models=models,
             preserve_input=preserve_input, save_map_coeffs=save_map_coeffs)
 
+    # get_class() is used for saving/restoring tools, but Clipper doesn't define
+    # any.
+    @staticmethod
+    def get_class(class_name):
+        return None
+
 bundle_api = _ClipperBundle()
