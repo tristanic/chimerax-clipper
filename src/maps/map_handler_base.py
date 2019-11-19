@@ -22,7 +22,7 @@
 from chimerax.map import Volume
 import numpy
 
-class MapHandler_Base(Volume):
+class MapHandlerBase(Volume):
     '''
     Base class for all Clipper map objects for use in ChimeraX.
     '''
@@ -212,7 +212,7 @@ class FastVolumeSurface(VolumeSurface):
         v._surfaces.append(s)
         return s
 
-class XmapHandler_Base(MapHandler_Base):
+class XmapHandlerBase(MapHandlerBase):
     '''
     Base class for XmapHandler_Static and XmapHandler_Live
     '''

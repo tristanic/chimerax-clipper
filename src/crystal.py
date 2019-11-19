@@ -220,17 +220,17 @@ class CrystalStructure(Model):
       |
       -- reciprocal space data (ReflectionDataContainer)
       |    |
-      |    -- Free Flags (ReflectionData_FreeFlags)
+      |    -- Free Flags (ReflectionDataFreeFlags)
       |    |
-      |    -- Experimental (ReflectionData_Node)
+      |    -- Experimental (ReflectionDataNode)
       |    |    |
-      |    |    -- F/SigF (ReflectionData_Exp)
+      |    |    -- F/SigF (ReflectionDataExp)
       |    |    |
       |    |    -- ...
       |    |
-      |    -- Calculated (ReflectionData_Calc)
+      |    -- Calculated (ReflectionDataCalc)
       |         |
-      |         -- 2mFo-DFc (ReflectionData_Calc)
+      |         -- 2mFo-DFc (ReflectionDataCalc)
       |         |
       |         -- ...
       |
@@ -900,8 +900,8 @@ def set_to_default_cartoon(session, model = None):
     except:
         return
 
-#TODO: update Surface_Zone class to handle symmetry atoms
-class Surface_Zone:
+#TODO: update SurfaceZone class to handle symmetry atoms
+class SurfaceZone:
     '''
     Add this as a property to a Volume object to provide it with the
     necessary information to update its triangle mask after re-contouring.
@@ -1002,7 +1002,7 @@ class XmapSet(Model):
             session:
                 The ChimeraX session
             datasets:
-                An iterable of ReflectionData_Calc objects
+                An iterable of ReflectionDataCalc objects
             crystal:
                 The CrystalStructure object this object will be subordinate to.
             live_scrolling:
@@ -1048,7 +1048,7 @@ class XmapSet(Model):
         self._box_initialized = False
         # Object storing the parameters required for masking (used after
         # adjusting contours)
-        self._surface_zone = Surface_Zone(display_radius, None, None)
+        self._surface_zone = SurfaceZone(display_radius, None, None)
         # Is the map box moving with the centre of rotation?
         self._live_scrolling = False
         # Radius of the sphere in which the map will be displayed when
@@ -1265,7 +1265,7 @@ class XmapSet(Model):
         Add a new XmapHandler based on the given reflections and phases.
         Args:
             dataset:
-                a ReflectionData_Calc object.
+                a ReflectionDataCalc object.
             is_difference_map:
                 Decides whether this map is to be treated as a difference
                 map (with positive and negative contours) or a standard

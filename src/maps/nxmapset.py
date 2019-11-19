@@ -20,9 +20,9 @@
 # of these is redistributed under its own license terms.
 
 import numpy
-from .mapset_base import MapSet_Base
+from .mapset_base import MapSetBase
 
-class NXmapSet(MapSet_Base):
+class NXmapSet(MapSetBase):
     '''
     Manages real-space maps. The most important difference between these and
     crystallographic maps is that there is no guarantee that two maps will have
@@ -102,8 +102,8 @@ class NXmapSet(MapSet_Base):
 
 
 
-from .map_handler_base import MapHandler_Base
-class NXmapHandler(MapHandler_Base):
+from .map_handler_base import MapHandlerBase
+class NXmapHandler(MapHandlerBase):
     '''
     Real-space equivalent to XmapHandler_Static. Doesn't actually use any of
     the clipper engine, but provides a unified interface.

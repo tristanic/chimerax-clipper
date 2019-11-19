@@ -30,10 +30,10 @@ def generate_fcalc(container, atoms, fsigfdata, target=None):
             - A :class:`chimerax.Atoms` object containing all atoms to include
               in the calculation.
         * fsigfdata:
-            - A :class:`ReflectionData_Exp` object holding the observed
+            - A :class:`ReflectionDataExp` object holding the observed
               structure factors
         * target:
-            - A :class:`ReflectionData_Calc` object, or None. If not None, any
+            - A :class:`ReflectionDataCalc` object, or None. If not None, any
               data in the existing
     '''
     session = fsigfdata.session
@@ -43,9 +43,9 @@ def generate_fcalc(container, atoms, fsigfdata, target=None):
     clipper_atoms = atom_list_from_sel(atoms)
 
     if target is None:
-        from .clipper_mtz import ReflectionData_Calc
+        from .clipper_mtz import ReflectionDataCalc
         from .clipper_python.data64 import HKL_data_F_phi_double
-        target = ReflectionData_Calc('Fcalc', session,
+        target = ReflectionDataCalc('Fcalc', session,
             HKL_data_F_phi_double(hkls), is_difference_map=False)
     fcalc = target.data
     from .clipper_python import SFcalc_obs_bulk_double
@@ -64,9 +64,9 @@ def generate_map_coeffs(container, fsigf, fcalc, free_r_flags):
     SFweight_spline_double(best_coeffs, diff_coeffs, phiw, fsigf.data, fcalc.data, free_r_flags.data)
 
     ret = []
-    from .clipper_mtz import ReflectionData_Calc
-    ret.append(ReflectionData_Calc('2FOFCWT, PH2FOFCWT', session, best_coeffs, is_difference_map=False))
-    ret.append(ReflectionData_Calc('FOFCWT, PHFOFCWT', session, diff_coeffs, is_difference_map=True))
+    from .clipper_mtz import ReflectionDataCalc
+    ret.append(ReflectionDataCalc('2FOFCWT, PH2FOFCWT', session, best_coeffs, is_difference_map=False))
+    ret.append(ReflectionDataCalc('FOFCWT, PHFOFCWT', session, diff_coeffs, is_difference_map=True))
     return ret
     # for b in sharpening_factors:
     #     if b == 0:

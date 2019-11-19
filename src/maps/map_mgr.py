@@ -21,7 +21,7 @@
 
 from chimerax.core.models import Model
 
-class Surface_Zone:
+class SurfaceZone:
     '''
     Add this as a property to a Volume object to provide it with the
     necessary information to update its triangle mask after re-contouring.
@@ -68,7 +68,7 @@ class Surface_Zone:
     #         zone.surface_zone(s, spoints, distance, auto_update=True)
 
 
-class Map_Mgr(Model):
+class MapMgr(Model):
     '''
     Top-level manager for all maps associated with a model.
     '''
@@ -168,8 +168,8 @@ class Map_Mgr(Model):
 
     @property
     def all_xtal_maps(self):
-        from .map_handler_base import XmapHandler_Base
-        return [m for m in self.all_models() if isinstance(m, XmapHandler_Base)]
+        from .map_handler_base import XmapHandlerBase
+        return [m for m in self.all_models() if isinstance(m, XmapHandlerBase)]
 
     @property
     def all_non_xtal_maps(self):

@@ -22,7 +22,7 @@
 import numpy
 from chimerax.core.models import Model
 
-class MapSet_Base(Model):
+class MapSetBase(Model):
     '''
     Base class for XmapSet_Live, XmapSet_Static and NXmapSet. Provides basic
     methods for visualisation, masking etc.

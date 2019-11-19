@@ -19,4 +19,4 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
-from .hkl_plot import HKL_Plot_3D, test_hkl_plot
+from .hkl_plot import HKLPlot3D, test_hkl_plot

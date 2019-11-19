@@ -20,11 +20,11 @@
 # of these is redistributed under its own license terms.
 
 import numpy
-from .mapset_base import MapSet_Base
+from .mapset_base import MapSetBase
 
 
 
-class XmapSet_Box_Params:
+class XmapSetBoxParams:
     def __init__(self, origin_xyz=None, origin_grid=None, dim=None):
         self.origin_grid = origin_grid
         self.origin_xyz = origin_xyz
@@ -75,7 +75,7 @@ class XmapSet_Box_Params:
 
 
 _pad_base = numpy.array([-1,1], numpy.int)
-class XmapSet(MapSet_Base):
+class XmapSet(MapSetBase):
     '''
     Handles the organisation, visualisation and re-calculation (where
     applicable) of crystallographic maps. Two general types of maps are
@@ -109,7 +109,7 @@ class XmapSet(MapSet_Base):
 
         Args:
             * manager:
-                - the master `Map_Mgr` object
+                - the master `MapMgr` object
             * crystal_data:
                 - a ReflectionDataContainer object holding all the data for a
                   single crystal
@@ -193,7 +193,7 @@ class XmapSet(MapSet_Base):
         self._delayed_recalc_handler = None
         self._show_r_factors = show_r_factors
 
-        self._box_params = XmapSet_Box_Params()
+        self._box_params = XmapSetBoxParams()
         if self.spotlight_mode:
             self._box_changed_cb('init', (self.spotlight_center, self.display_radius))
         else:
@@ -716,9 +716,9 @@ class XmapSet(MapSet_Base):
 
 
 
-from .map_handler_base import XmapHandler_Base
+from .map_handler_base import XmapHandlerBase
 
-class XmapHandler_Static(XmapHandler_Base):
+class XmapHandler_Static(XmapHandlerBase):
     '''
     An XmapHandler_Static is in effect a resizable window into a periodic
     crystallographic map. The actual map data (a clipper Xmap object) is
@@ -778,7 +778,7 @@ class XmapHandler_Static(XmapHandler_Base):
 
 
 
-class XmapHandler_Live(XmapHandler_Base):
+class XmapHandler_Live(XmapHandlerBase):
     '''
     An XmapHandler_Live is in effect a resizable window into a periodic
     crystallographic map. The actual map data (a clipper Xmap object) is

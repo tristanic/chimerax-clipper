@@ -19,6 +19,6 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
-from .map_mgr import Map_Mgr
+from .map_mgr import MapMgr
 from .xmapset import XmapSet, XmapHandler_Static, XmapHandler_Live
 from .nxmapset import NXmapSet, NXmapHandler

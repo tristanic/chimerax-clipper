@@ -53,28 +53,28 @@ class ReflectionDataContainer(Model):
         self.shannon_rate = shannon_rate
 
         if free[0] is not None:
-            self.free_flags = ReflectionData_FreeFlags(free[0], self.session, free[1])
+            self.free_flags = ReflectionDataFreeFlags(free[0], self.session, free[1])
             self.add([self.free_flags])
 
         self._experimental_data = None
         if len(exp[0]):
             dsets = []
             for name, data in zip(*exp):
-                    dsets.append(ReflectionData_Exp(name, self.session, data))
+                    dsets.append(ReflectionDataExp(name, self.session, data))
             self.experimental_data.add(dsets)
 
         self._calculated_data = None
         if len(calc[0]):
             dsets = []
             for name, data in zip(*calc):
-                    dsets.append(ReflectionData_Calc(name, self.session, data))
+                    dsets.append(ReflectionDataCalc(name, self.session, data))
             self.calculated_data.add(dsets)
 
     @property
     def experimental_data(self):
         ed = self._experimental_data
         if ed is None or ed.deleted:
-            ed = self._experimental_data=ReflectionData_Node('Experimental', self.session)
+            ed = self._experimental_data=ReflectionDataNode('Experimental', self.session)
             self.add([ed])
         return ed
 
@@ -82,7 +82,7 @@ class ReflectionDataContainer(Model):
     def calculated_data(self):
         cd = self._calculated_data
         if cd is None or cd.deleted:
-            cd = self._calculated_data=ReflectionData_Node('Calculated', self.session)
+            cd = self._calculated_data=ReflectionDataNode('Calculated', self.session)
             self.add([cd])
         return cd
 
@@ -110,7 +110,7 @@ class ReflectionDataContainer(Model):
                 self.spacegroup, self.cell, self.resolution, self.shannon_rate)
         return self._grid_sampling
 
-class ReflectionData_Node(Model):
+class ReflectionDataNode(Model):
     '''
     Container class to hold a subset of reflection data within a
     ReflectionDataContainer tree. Typically the subset will be either
@@ -137,7 +137,7 @@ class ReflectionData_Node(Model):
 
 class ReflectionData(Model):
     '''
-    Prototype for ReflectionData_Exp and ReflectionData_Calc. Should
+    Prototype for ReflectionDataExp and ReflectionDataCalc. Should
     contain methods common to both (e.g. drawing of reciprocal-space
     reflections).
     '''
@@ -166,19 +166,19 @@ class ReflectionData(Model):
 
 
 
-class ReflectionData_FreeFlags(ReflectionData):
+class ReflectionDataFreeFlags(ReflectionData):
     '''Holds the array of free flags.'''
     pass
 
 
-class ReflectionData_Exp(ReflectionData):
+class ReflectionDataExp(ReflectionData):
     '''
     Holds one set of experimental reflection data (e.g. F/sigF, I/sigI),
     etc.
     '''
     pass
 
-class ReflectionData_Calc(ReflectionData):
+class ReflectionDataCalc(ReflectionData):
     '''Holds one set of calculated reflections and phases.'''
     def __init__(self, name, session, data, is_difference_map = None):
         '''

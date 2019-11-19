@@ -156,10 +156,10 @@ def get_symmetry_handler(structure, create=False, auto_add_to_session=False):
 
 def _get_symmetry_handler(structure, create=False):
     p = structure.parent
-    if isinstance(p, Symmetry_Manager):
+    if isinstance(p, SymmetryManager):
             return p
     if create:
-        return Symmetry_Manager(structure)
+        return SymmetryManager(structure)
     return None
 
 def get_map_mgr(structure, create=False, auto_add_to_session=False):
@@ -169,8 +169,8 @@ def get_map_mgr(structure, create=False, auto_add_to_session=False):
     return None
 
 def is_crystal_map(volume):
-    from .maps.map_handler_base import XmapHandler_Base
-    return isinstance(volume, XmapHandler_Base)
+    from .maps.map_handler_base import XmapHandlerBase
+    return isinstance(volume, XmapHandlerBase)
 
 def symmetry_from_model_metadata(model):
     '''
@@ -419,7 +419,7 @@ def apply_scene_positions(model):
         # model.atoms.coords = p*model.atoms.coords
         from chimerax.core.geometry import Place
         model.position = Place()
-        if isinstance(model.parent, Symmetry_Manager):
+        if isinstance(model.parent, SymmetryManager):
             model.parent.position = Place()
 
 
@@ -453,7 +453,7 @@ class Unit_Cell(clipper_python.Unit_Cell):
         super().__init__(atom_list, cell, spacegroup, grid_sampling, padding)
 
 
-class Symmetry_Manager(Model):
+class SymmetryManager(Model):
     '''
     Handles crystallographic symmetry and maps for an atomic model.
     '''
@@ -467,7 +467,7 @@ class Symmetry_Manager(Model):
         spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
         set_lighting_to_simple=True, debug=False):
-        if isinstance(model.parent, Symmetry_Manager):
+        if isinstance(model.parent, SymmetryManager):
             raise RuntimeError('This model already has a symmetry manager!')
         name = 'Data manager ({})'.format(model.name)
         session = model.session
@@ -488,7 +488,7 @@ class Symmetry_Manager(Model):
             self.triggers = TriggerSet()
 
         trigger_names = (
-            # Fires when Symmetry_Manager is in spotlight mode and the centre of
+            # Fires when SymmetryManager is in spotlight mode and the centre of
             # rotation moves by more than the minimum distance from its previous
             # location
             'spotlight moved',
@@ -681,11 +681,11 @@ class Symmetry_Manager(Model):
     @property
     def map_mgr(self):
         ''' Master manager handling all maps associated with this model.'''
-        from .maps import Map_Mgr
+        from .maps import MapMgr
         for m in self.child_models():
-            if isinstance(m, Map_Mgr):
+            if isinstance(m, MapMgr):
                 return m
-        return Map_Mgr(self)
+        return MapMgr(self)
 
     @property
     def has_symmetry(self):
@@ -1016,6 +1016,12 @@ class Symmetry_Manager(Model):
         # model.parent.add([m])
         m.display = True
 
+    def take_snapshot(self, session, flags):
+        data = {
+
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
 
 def _get_special_positions_model(m):
     for cm in m.child_models():

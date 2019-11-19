@@ -138,24 +138,24 @@ class _ClipperBundle(BundleAPI):
     # any.
     @staticmethod
     def get_class(class_name):
-        from .symmetry import Symmetry_Manager, AtomicSymmetryModel
-        from .graphics.hkl_plot import HKL_Plot_3D
+        from .symmetry import SymmetryManager, AtomicSymmetryModel
+        from .graphics.hkl_plot import HKLPlot3D
         from .maps import (
-            XmapSet, Map_Mgr, XmapHandler_Static,
+            XmapSet, MapMgr, XmapHandler_Static,
             XmapHandler_Live, NXmapSet, NXmapHandler
             )
         from .maps.map_handler_base import FastVolumeSurface
         from .maps.mask_handler import VolumeMask, ZoneMask
         from .clipper_mtz import (
-            ReflectionDataContainer, ReflectionData_Node, ReflectionData,
-            ReflectionData_FreeFlags, ReflectionData_Exp, ReflectionData_Calc,
+            ReflectionDataContainer, ReflectionDataNode, ReflectionData,
+            ReflectionDataFreeFlags, ReflectionDataExp, ReflectionDataCalc,
         )
         ct = {
-            'Symmetry_Manager':     Symmetry_Manager,
+            'SymmetryManager':     SymmetryManager,
             'AtomicSymmetryModel':  AtomicSymmetryModel,
-            'HKL_Plot_3D':          HKL_Plot_3D,
+            'HKLPlot3D':          HKLPlot3D,
             'XmapSet':              XmapSet,
-            'Map_Mgr':              Map_Mgr,
+            'MapMgr':              MapMgr,
             'XmapHandler_Static':   XmapHandler_Static,
             'XmapHandler_Live':     XmapHandler_Live,
             'NXmapSet':             NXmapSet,
@@ -164,11 +164,11 @@ class _ClipperBundle(BundleAPI):
             'VolumeMask':           VolumeMask,
             'ZoneMask':             ZoneMask,
             'ReflectionDataContainer': ReflectionDataContainer,
-            'ReflectionData_Node':  ReflectionData_Node,
+            'ReflectionDataNode':  ReflectionDataNode,
             'ReflectionData':       ReflectionData,
-            'ReflectionData_FreeFlags': ReflectionData_FreeFlags,
-            'ReflectionData_Exp':   ReflectionData_Exp,
-            'ReflectionData_Calc':  ReflectionData_Calc
+            'ReflectionDataFreeFlags': ReflectionDataFreeFlags,
+            'ReflectionDataExp':   ReflectionDataExp,
+            'ReflectionDataCalc':  ReflectionDataCalc
         }
         return ct.get(class_name)
 

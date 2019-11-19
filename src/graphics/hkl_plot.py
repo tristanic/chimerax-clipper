@@ -29,11 +29,11 @@ def test_hkl_plot(session, datafile, scale=1.0):
     fsigf = rdc.experimental_data.datasets['FOBS, SIGFOBS'].data.data
     hkls = fsigf[0]
     data = fsigf[1]
-    plot = HKL_Plot_3D('fsigf', session, hkls, data, dim_scale=scale, highlight_negatives=True)
+    plot = HKLPlot3D('fsigf', session, hkls, data, dim_scale=scale, highlight_negatives=True)
     session.models.add([plot])
     return plot
 
-class HKL_Plot_3D(Model):
+class HKLPlot3D(Model):
     SESSION_SAVE=False
     def __init__(self, name, session, hkls, vals, scale_to=None, dim_scale=2.0, highlight_negatives=True):
         super().__init__(name, session)
@@ -58,11 +58,11 @@ class HKL_Plot_3D(Model):
             scale_to = scale_to[numpy.logical_not(numpy.isnan(scale_to))]
             real_vals /= numpy.abs(scale_to).max()
         self._axes = _HKL_Axes(axis_length=dim_scale*(hkls.max()-hkls.min()))
-        self._data_plot = _HKL_Plot_3D('data', hkls, real_vals, dim_scale=dim_scale, highlight_negatives=highlight_negatives)
+        self._data_plot = _HKLPlot3D('data', hkls, real_vals, dim_scale=dim_scale, highlight_negatives=highlight_negatives)
         self.add_drawing(self._axes)
         self.add_drawing(self._data_plot)
 
-class _HKL_Plot_3D(Drawing):
+class _HKLPlot3D(Drawing):
     def __init__(self, name, hkls, vals, dim_scale = 2.0, highlight_negatives = True):
         super().__init__(name)
         from chimerax.surface.shapes import sphere_geometry2
