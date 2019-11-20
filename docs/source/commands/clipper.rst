@@ -113,7 +113,7 @@ which are already initialised into the ChimeraX-Clipper data structure.
 clipper isolate
 ---------------
 
-Syntax: clipper isolate *atoms* [**surroundDistance** *number* (5.0)]
+Syntax: clipper isolate *atoms* [**surroundDistance** *number* (0.0)]
 [**contextDistance** *number* (5.0)] [**maskRadius** *number* (3.0)]
 [**hideSurrounds** *true/false* (true)] [**focus** *true/false* (false)]
 [**includeSymmetry** *true/false* (true)]

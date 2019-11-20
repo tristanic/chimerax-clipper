@@ -111,7 +111,7 @@ def associate_volumes(session, volumes, to_model=None):
     session.models.add([mgr.crystal_mgr])
 
 def isolate(session, atoms,
-        surround_distance=5,
+        surround_distance=0,
         context_distance=5,
         mask_radius=3,
         hide_surrounds=True,
