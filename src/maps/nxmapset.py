@@ -108,6 +108,7 @@ class NXmapHandler(MapHandlerBase):
     Real-space equivalent to XmapHandler_Static. Doesn't actually use any of
     the clipper engine, but provides a unified interface.
     '''
+    SESSION_SAVE=False
     def __init__(self, mapset, volume, is_difference_map=False):
         '''
         Takes ownership of the data from an existing Volume object.

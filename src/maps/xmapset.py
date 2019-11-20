@@ -89,7 +89,7 @@ class XmapSet(MapSetBase):
 
     STANDARD_HIGH_CONTOUR=0.5
     STANDARD_LOW_CONTOUR = 0.65
-
+    SESSION_SAVE=False
 
     _default_live_xmap_params = {
         '2mFo-DFc': {'b_sharp': 0, 'is_difference_map': False, 'display': True},
@@ -728,6 +728,7 @@ class XmapHandler_Static(XmapHandlerBase):
     tracking and filling a box around the centre of rotation, and static display
     of a given region.
     '''
+    SESSION_SAVE=False
     def __init__(self, mapset, name, f_phi_data,
         is_difference_map=False):
         '''
@@ -787,6 +788,7 @@ class XmapHandler_Live(XmapHandlerBase):
     as needed. Mothods are provided for live recalculation, tracking and filling
     a box around the centre of rotation, and static display of a given region.
     '''
+    SESSION_SAVE=False
     def __init__(self, mapset, name,
         is_difference_map=False):
         '''

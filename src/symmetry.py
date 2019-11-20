@@ -462,7 +462,7 @@ class SymmetryManager(Model):
     SPOTLIGHT_UPDATE_THRESHOLD = 0.1
     ATOMIC_SYM_EXTRA_RADIUS = 3
     # SESSION_ENDURING=False
-    SESSION_SAVE=False
+    # SESSION_SAVE=False
     def __init__(self, model, mtzfile=None,
         spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
@@ -1017,11 +1017,31 @@ class SymmetryManager(Model):
         m.display = True
 
     def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        session.logger.warning('Session saving for ChimeraX-Clipper objects is '
+            'not yet fully implemented. Your atomic model will be saved, but '
+            'the symmetry and volume management framework will not.')
         data = {
-
+            'model state': Model.take_snapshot(self, session, flags)
         }
         from chimerax.core.state import CORE_STATE_VERSION
         data['version']=CORE_STATE_VERSION
+        # self._snapshot_model_hides = self.structure.atoms.hides
+        # self.structure.atoms.hides &=~HIDE_ISOLDE
+        # session.triggers.add_handler('end save session', self._end_save_session_cb)
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.core.models import Model
+        m = Model.restore_snapshot(session, data['model state'])
+        m.name = '(Placeholder) '+m.name
+        return m
+
+    # def _end_save_session_cb(self, *_):
+    #     self.structure.atoms.hides = self._snapshot_model_hides
+    #     from chimerax.core.triggerset import DEREGISTER
+    #     return DEREGISTER
 
 def _get_special_positions_model(m):
     for cm in m.child_models():
@@ -1075,6 +1095,8 @@ class AtomicSymmetryModel(Model):
         self._model_swap_handler = self.manager.triggers.add_handler(
                                         'model replaced', self._model_swap_cb)
         self.live_scrolling = live
+        self._save_session_handler = session.triggers.add_handler('begin save session',
+            self._start_save_session_cb)
 
     def added_to_session(self, session):
         super().added_to_session(session)
@@ -1226,6 +1248,7 @@ class AtomicSymmetryModel(Model):
                 self.manager.triggers.remove_handler(h)
         if not self.structure.deleted:
             self.unhide_all_atoms()
+        self.session.triggers.remove_handler(self._save_session_handler)
         super().delete()
 
     @property
@@ -1563,6 +1586,16 @@ class AtomicSymmetryModel(Model):
                 bd.colors = colors.astype(numpy.uint8)
             else:
                 bd.display = False
+
+    def _start_save_session_cb(self, *_):
+        self._session_save_hides = self.structure.atoms.hides
+        self.unhide_all_atoms()
+        self.session.triggers.add_handler('end save session', self._end_save_session_cb)
+
+    def _end_save_session_cb(self, *_):
+        self.structure.atoms.hides = self._session_save_hides
+        from chimerax.core.triggerset import DEREGISTER
+        return DEREGISTER
 
     def _update_ribbon_graphics(self):
         rd = self._ribbon_drawing
