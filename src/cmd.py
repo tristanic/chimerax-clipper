@@ -166,7 +166,8 @@ def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
         BoolArg, FloatArg,
-        OpenFileNameArg, SaveFileNameArg
+        OpenFileNameArg, SaveFileNameArg,
+        create_alias
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
 
@@ -239,3 +240,7 @@ def register_clipper_cmd(logger):
             'viewing mode, use "clipper spotlight".')
     )
     register('clipper isolate', isol_desc, isolate, logger=logger)
+
+def register_cview_cmd(logger):
+    from chimerax.core.commands import create_alias
+    create_alias('cview', 'view $*; cofr center showpivot true', logger=logger)

@@ -436,6 +436,7 @@
     <!-- <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor CIF :: sfcif :: Reflection data :: .cif :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Open :: Structure factor CIF :: sfcif :: false :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier> -->
     <ChimeraXClassifier>ChimeraX :: Command :: clipper :: General :: Command-line control of Clipper plugin for symmetry and map visualisation</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: cview :: General :: Re-center view on a selection, and set view mode to centerOfView with pivot indicator</ChimeraXClassifier>
 ]
   </Classifiers>
 

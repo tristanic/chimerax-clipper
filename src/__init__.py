@@ -115,6 +115,8 @@ class _ClipperBundle(BundleAPI):
         from chimerax.clipper import cmd
         if command_name == 'clipper':
             cmd.register_clipper_cmd(logger)
+        elif command_name == 'cview':
+            cmd.register_cview_cmd(logger)
 
     @staticmethod
     def open_file(session, path, format_name, structure_model=None,
