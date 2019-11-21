@@ -29,7 +29,6 @@ class MapHandlerBase(Volume):
     pickable=False
     def __init__(self, mapset, name, data, is_difference_map=False):
         session = mapset.session
-        data.change_callbacks.clear()
         super().__init__(session, data)
         self.name = name
         ms = self._mapset = mapset

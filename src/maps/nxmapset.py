@@ -114,11 +114,14 @@ class NXmapHandler(MapHandlerBase):
         Takes ownership of the data from an existing Volume object.
         The input volume will be closed.
         '''
-        self._original_volume = volume
-        super().__init__(mapset, volume.name, volume.data,
+        data = volume.data
+        session = volume.session
+        if volume in session.models.list():
+            session.models.remove([volume])
+        name = volume.name
+        volume.delete()
+        super().__init__(mapset, name, data,
             is_difference_map=is_difference_map)
-        if volume in self.session.models.list():
-            self.session.models.remove([volume])
 
 
     def _box_changed_cb(self, name, params):
@@ -144,9 +147,6 @@ class NXmapHandler(MapHandlerBase):
     def expand_to_cover_coords(self, coords, padding):
         self.new_region(*self.bounding_region(coords, padding=padding, step=[1,1,1]))
 
-    def delete(self):
-        self._original_volume.delete()
-        super().delete()
 
     def take_snapshot(self, session, flags):
         from chimerax.map import Volume
