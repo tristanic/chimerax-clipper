@@ -272,17 +272,21 @@ class MapMgr(Model):
                 self._start_spotlight_mode()
             self._reapply_zone()
 
-    def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None):
+    def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None,
+            auto_choose_reflection_data=True):
         if oversampling_rate is None:
             oversampling_rate = self._default_oversampling_rate
-        return self.add_xmapset_from_file(mtzfile, oversampling_rate)
+        return self.add_xmapset_from_file(mtzfile, oversampling_rate,
+            auto_choose_reflection_data)
 
-    def add_xmapset_from_file(self, sffile, oversampling_rate=None):
+    def add_xmapset_from_file(self, sffile, oversampling_rate=None,
+            auto_choose_reflection_data=True):
         if oversampling_rate is None:
             oversampling_rate = self._default_oversampling_rate
         from ..clipper_mtz import ReflectionDataContainer
         mtzdata = ReflectionDataContainer(self.session, sffile,
-            shannon_rate = oversampling_rate)
+            shannon_rate = oversampling_rate,
+            auto_choose_reflection_data=auto_choose_reflection_data)
         cm = self.crystal_mgr
         if not cm.has_symmetry:
             self.session.logger.info('(CLIPPER) NOTE: No symmetry information found '

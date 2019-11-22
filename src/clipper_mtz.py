@@ -36,7 +36,7 @@ class ReflectionDataContainer(Model):
     hierarchy making it easily visible to the user.
     '''
     def __init__(self, session, hklfile, shannon_rate = 2.0,
-        free_flag_label = None):
+        free_flag_label = None, auto_choose_reflection_data=True):
         '''
         This class should hold the information that's common to all
         the data contained in its children (e.g. the HKLinfo object,
@@ -46,7 +46,9 @@ class ReflectionDataContainer(Model):
         import os
         self.filename = os.path.basename(hklfile)
         Model.__init__(self, 'Reflection Data', session)
-        hklinfo, free, exp, calc = load_hkl_data(session, hklfile, free_flag_label=free_flag_label)
+        hklinfo, free, exp, calc = load_hkl_data(session, hklfile,
+            free_flag_label=free_flag_label,
+            auto_choose_reflection_data=auto_choose_reflection_data)
         self._hklinfo = hklinfo
         self._grid_sampling = None
 
