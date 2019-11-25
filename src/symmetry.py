@@ -159,7 +159,7 @@ def _get_symmetry_handler(structure, create=False):
     if isinstance(p, SymmetryManager):
             return p
     if create:
-        return SymmetryManager(structure)
+        return SymmetryManager(structure.session, model=structure)
     return None
 
 def get_map_mgr(structure, create=False, auto_add_to_session=False):
@@ -200,7 +200,7 @@ def simple_p1_box(model, resolution=3):
     spacegroup = Spacegroup(Spgr_descr(sym_str, Spgr_descr.TYPE.HM))
     res = Resolution(resolution)
     grid_sampling=Grid_sampling(spacegroup, cell, res)
-    return cell, spacegroup, grid_sampling, False
+    return cell, spacegroup, grid_sampling, res, False
 
 
 def symmetry_from_model_metadata_mmcif(model):
@@ -277,7 +277,7 @@ def symmetry_from_model_metadata_mmcif(model):
     spacegroup = Spacegroup(spgr_descr)
     resolution = Resolution(res)
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
-    return cell, spacegroup, grid_sampling, True
+    return cell, spacegroup, grid_sampling, resolution, True
 
 def parse_symops_from_pdb_header(remarks):
     # '''
@@ -406,7 +406,7 @@ def symmetry_from_model_metadata_pdb(model):
     spacegroup = Spacegroup(spgr_descr)
     resolution = Resolution(float(res))
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
-    return cell, spacegroup, grid_sampling, True
+    return cell, spacegroup, grid_sampling, resolution, True
 
 def apply_scene_positions(model):
     '''
@@ -463,25 +463,30 @@ class SymmetryManager(Model):
     ATOMIC_SYM_EXTRA_RADIUS = 3
     # SESSION_ENDURING=False
     # SESSION_SAVE=False
-    def __init__(self, model, mtzfile=None,
+    def __init__(self, session, model=None, mtzfile=None,
         spotlight_mode = True, spotlight_radius=12,
         hydrogens='polar', ignore_model_symmetry=False,
         set_lighting_to_simple=True, debug=False):
-        if isinstance(model.parent, SymmetryManager):
-            raise RuntimeError('This model already has a symmetry manager!')
-        name = 'Data manager ({})'.format(model.name)
-        session = model.session
+        if model is not None:
+            if isinstance(model.parent, SymmetryManager):
+                raise RuntimeError('This model already has a symmetry manager!')
+            name = model.name
+        else:
+            name = 'N/A'
+        name = 'Data manager ({})'.format(name)
+        #session = model.session
         if set_lighting_to_simple:
             from chimerax.std_commands import lighting
             lighting.lighting(session, preset='simple')
 
-        self._last_box_center = session.main_view.center_of_rotation
+
         super().__init__(name, session)
+        self._last_box_center = session.view.center_of_rotation
+        self._session_restore = False
         self._debug = debug
-        self._structure = model
-        self._anisou_sanity_check(model.atoms)
         self._stepper = None
         self._last_covered_selection = None
+        self._hydrogen_mode = hydrogens
 
         if not hasattr(self, 'triggers'):
             from chimerax.core.triggerset import TriggerSet
@@ -514,8 +519,38 @@ class SymmetryManager(Model):
         for t in trigger_names:
             self.triggers.add_trigger(t)
 
+
+
+        self._atomic_symmetry_model = None
+
+        self.initialized=False
+        if model is not None:
+            self.add_model(model, ignore_model_symmetry=ignore_model_symmetry,
+                spotlight_mode=spotlight_mode)
+
+        if mtzfile is not None:
+            if model is None:
+                raise RuntimeError('If providing a structure factor file during '
+                    'initialisation, an atomic model must also be provided.')
+            mmgr = self.map_mgr
+            mmgr.add_xmapset_from_mtz(mtzfile)
+
+
+    def add_model(self, model, ignore_model_symmetry = False, spotlight_mode=True,
+            spotlight_radius=12, debug=False):
         self._structure_change_handler = model.triggers.add_handler(
             'changes', self._structure_change_cb)
+        if self.structure is not None and not self._session_restore:
+            raise RuntimeError('This SymmetryManager already has an atomic '
+                'structure associated with it! To swap for a new one, use '
+                'swap_model() instead.')
+        self.name = 'Data manager ({})'.format(model.name)
+        self._last_box_center = model.atoms.coords.mean(axis=0)
+
+        self._anisou_sanity_check(model.atoms)
+        if model.parent != self:
+            apply_scene_positions(model)
+            self._transplant_model(model)
 
         if ignore_model_symmetry:
             f = simple_p1_box
@@ -523,41 +558,20 @@ class SymmetryManager(Model):
         else:
             f = symmetry_from_model_metadata
             args=[model]
-        self.cell, self.spacegroup, self.grid, self._has_symmetry = f(*args)
-
+        self.cell, self.spacegroup, self.grid, self.resolution, self._has_symmetry = f(*args)
         mmgr = self.map_mgr
-
-        self._atomic_symmetry_model = None
         self.spotlight_mode = spotlight_mode
-
-        if mtzfile is not None:
-            mmgr.add_xmapset_from_mtz(mtzfile)
-
-        cell = self.cell
-        spacegroup = self.spacegroup
-        grid = self.grid
-
-        uc = self._unit_cell = Unit_Cell(model.atoms, cell, spacegroup, grid)
-
+        uc = self._unit_cell = Unit_Cell(model.atoms, self.cell, self.spacegroup, self.grid)
         self._atomic_symmetry_model = AtomicSymmetryModel(self,
             radius = spotlight_radius, live = spotlight_mode, debug=debug)
-        self.spotlight_radius = spotlight_radius
-
-        self._update_handler = session.triggers.add_handler('new frame',
+        self.spotlight_radius=spotlight_radius
+        self._update_handler = self.session.triggers.add_handler('new frame',
             self.update)
-
-        self._hydrogen_mode = hydrogens
-
         id = model.id
-        #session.models.remove([model])
-        self.initialized=False
-        apply_scene_positions(model)
-        self._transplant_model(model)
-        #self.add([model])
-        # session.models.add([self])
         self.initialized=True
-        # if id is not None and len(id) == 1:
-        #     session.models.assign_id(self, id)
+        if not self._session_restore:
+            self.set_default_atom_display(mode=self._hydrogen_mode)
+
 
     def _structure_change_cb(self, trigger_name, changes):
         if 'aniso_u changed' in changes[1].atom_reasons():
@@ -568,19 +582,21 @@ class SymmetryManager(Model):
         from chimerax.clipper.sanity_check import remove_invalid_anisou
         remove_invalid_anisou(self.session, atoms)
 
-    def add_symmetry_info(self, cell, spacegroup, grid_sampling):
+    def add_symmetry_info(self, cell, spacegroup, grid_sampling, resolution):
         if self.has_symmetry:
             from chimerax.core.errors import UserError
             raise UserError('This manager already has crystallographic symmetry information!')
         self.cell = cell
         self.spacegroup = spacegroup
         self.grid = grid_sampling
+        self.resolution = resolution
         self._unit_cell = Unit_Cell(self.structure.atoms, cell, spacegroup, grid_sampling)
         self.has_symmetry = True
 
     def added_to_session(self, session):
         super().added_to_session(session)
-        self.set_default_atom_display(mode=self._hydrogen_mode)
+        if self.structure is not None:
+            self.set_default_atom_display(mode=self._hydrogen_mode)
         from .mousemodes import initialize_clipper_mouse_modes
         initialize_clipper_mouse_modes(session)
 
@@ -588,14 +604,15 @@ class SymmetryManager(Model):
         '''
         Swap out the current atomic model for a new one.
         '''
-        old_model = self._structure
+        old_model = self.structure
+        if old_model is None:
+            return self.add_model(new_model)
         old_id = old_model.id
         old_model.triggers.remove_handler(self._structure_change_handler)
         self.session.models.remove([old_model])
         self._transplant_model(new_model)
         # self.add([new_model])
         self.session.models.assign_id(new_model,old_id)
-        self._structure = new_model
         if keep_old:
             self.session.models.add([old_model])
         else:
@@ -676,7 +693,11 @@ class SymmetryManager(Model):
     @property
     def structure(self):
         '''The atomic model managed by this symmetry manager.'''
-        return self._structure
+        from chimerax.atomic import AtomicStructure
+        for c in self.child_models():
+            if type(c)==AtomicStructure:
+                return c
+        return None
 
     @property
     def map_mgr(self):
@@ -1022,7 +1043,11 @@ class SymmetryManager(Model):
             'not yet fully implemented. Your atomic model will be saved, but '
             'the symmetry and volume management framework will not.')
         data = {
-            'model state': Model.take_snapshot(self, session, flags)
+            'model state': Model.take_snapshot(self, session, flags),
+            # 'resolution': self.resolution.limit,
+            # 'cell dim': self.cell.dim,
+            # 'cell angles': self.cell.angles_deg,
+            # 'spacegroup hall symbol': sh.spacegroup.symbol_hall,
         }
         from chimerax.core.state import CORE_STATE_VERSION
         data['version']=CORE_STATE_VERSION
@@ -1033,10 +1058,25 @@ class SymmetryManager(Model):
 
     @staticmethod
     def restore_snapshot(session, data):
-        from chimerax.core.models import Model
-        m = Model.restore_snapshot(session, data['model state'])
-        m.name = '(Placeholder) '+m.name
-        return m
+        sh = SymmetryManager(session)
+        Model.set_state_from_snapshot(sh, session, data['model state'])
+        session.triggers.add_handler('end restore session', sh._end_restore_session_cb)
+        return sh
+
+        # from chimerax.core.models import Model
+        # m = Model.restore_snapshot(session, data['model state'])
+        # m.name = '(Placeholder) '+m.name
+        # return m
+
+    def _end_restore_session_cb(self, *_):
+        self._session_restore=True
+        if self.structure is not None:
+            self.add_model(self.structure)
+        self._session_restore=False
+        from chimerax.core.triggerset import DEREGISTER
+        return DEREGISTER
+
+
 
     # def _end_save_session_cb(self, *_):
     #     self.structure.atoms.hides = self._snapshot_model_hides
@@ -1246,7 +1286,7 @@ class AtomicSymmetryModel(Model):
         for h in (bh, mh, sh):
             if h is not None:
                 self.manager.triggers.remove_handler(h)
-        if not self.structure.deleted:
+        if self.structure is not None:
             self.unhide_all_atoms()
         self.session.triggers.remove_handler(self._save_session_handler)
         super().delete()

@@ -73,13 +73,11 @@ class MapMgr(Model):
     Top-level manager for all maps associated with a model.
     '''
 
-    SESSION_SAVE=False
-    def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0):
+    # SESSION_SAVE=False
+    def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0,
+            auto_add = True):
         cm = self._mgr = crystal_manager
         super().__init__('Map Manager', cm.session)
-        self._live_xmapsets = []
-        self._static_xmapsets = []
-        self._nxmapsets = []
         self._default_oversampling_rate=default_oversampling_rate
 
         self._zone_mgr = None
@@ -128,7 +126,8 @@ class MapMgr(Model):
 
 
         # self.session.triggers.add_handler('frame drawn', self._first_init_cb)
-        cm.add([self])
+        if auto_add:
+            cm.add([self])
 
     # def added_to_session(self, session):
     #     super().added_to_session(session)
@@ -292,7 +291,8 @@ class MapMgr(Model):
             self.session.logger.info('(CLIPPER) NOTE: No symmetry information found '
                 'in model. Using symmetry from MTZ file.')
             cm = self.crystal_mgr
-            cm.add_symmetry_info(mtzdata.cell, mtzdata.spacegroup, mtzdata.grid_sampling)
+            cm.add_symmetry_info(mtzdata.cell, mtzdata.spacegroup, mtzdata.grid_sampling,
+                mtzdata.resolution)
 
         elif not self.symmetry_matches(mtzdata):
             raise RuntimeError('Symmetry info from MTZ file does not match '
@@ -438,3 +438,23 @@ class MapMgr(Model):
             except:
                 continue
         super().delete()
+
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'symmetry manager': self._mgr,
+            'model state': Model.take_snapshot(self, session, flags)
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.core.models import Model
+        sh = data['symmetry manager']
+        if sh is None:
+            return None
+        mmgr = MapMgr(sh, auto_add=False)
+        Model.set_state_from_snapshot(mmgr, session, data['model state'])
+        return mmgr
