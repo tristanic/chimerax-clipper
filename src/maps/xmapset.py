@@ -152,8 +152,9 @@ class XmapSet(MapSetBase):
                   and R-free will be reported to the status bar every time maps
                   are recalculated
         '''
+        import os
         super().__init__(manager, 'Crystallographic maps ({})'.format(
-            crystal_data.filename))
+            os.path.basename(crystal_data.filename)))
 
         session = self.session
 

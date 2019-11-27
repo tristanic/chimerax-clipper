@@ -28,14 +28,14 @@ def calculate_shannon_rate(resolution, voxel_size):
     return resolution.limit/(2*voxel_size)
 
 class ReflectionDataContainer(Model):
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
     '''
     A container class to hold a set of reciprocal-space data, and
     defining the methods to access and use it. A sub-class of the
     ChimeraX Model class allowing it to be loaded into the model
     hierarchy making it easily visible to the user.
     '''
-    def __init__(self, session, hklfile, shannon_rate = 2.0,
+    def __init__(self, session, hklfile=None, shannon_rate = 2.0,
         free_flag_label = None, auto_choose_reflection_data=True):
         '''
         This class should hold the information that's common to all
@@ -43,29 +43,36 @@ class ReflectionDataContainer(Model):
         the Cell, Spacegroup and Grid_sampling objects, the Unit_Cell,
         etc.
         '''
-        import os
-        self.filename = os.path.basename(hklfile)
         Model.__init__(self, 'Reflection Data', session)
-        hklinfo, free, exp, calc = load_hkl_data(session, hklfile,
+        self.filename = None
+        self.shannon_rate = shannon_rate
+        self._hklinfo = None
+        self._grid_sampling = None
+
+        if hklfile is not None:
+            self._init_from_hkl_file(hklfile, free_flag_label, auto_choose_reflection_data)
+
+
+    def _init_from_hkl_file(self, hklfile, free_flag_label, auto_choose_reflection_data):
+        import os
+        self.filename = os.path.abspath(hklfile)
+        hklinfo, free, exp, calc = load_hkl_data(self.session, hklfile,
             free_flag_label=free_flag_label,
             auto_choose_reflection_data=auto_choose_reflection_data)
         self._hklinfo = hklinfo
         self._grid_sampling = None
 
-        self.shannon_rate = shannon_rate
 
         if free[0] is not None:
-            self.free_flags = ReflectionDataFreeFlags(free[0], self.session, free[1])
-            self.add([self.free_flags])
+            free_flags = ReflectionDataFreeFlags(free[0], self.session, free[1])
+            self.add([free_flags])
 
-        self._experimental_data = None
         if len(exp[0]):
             dsets = []
             for name, data in zip(*exp):
                     dsets.append(ReflectionDataExp(name, self.session, data))
             self.experimental_data.add(dsets)
 
-        self._calculated_data = None
         if len(calc[0]):
             dsets = []
             for name, data in zip(*calc):
@@ -73,19 +80,28 @@ class ReflectionDataContainer(Model):
             self.calculated_data.add(dsets)
 
     @property
+    def free_flags(self):
+        for c in self.child_models():
+            if isinstance(c, ReflectionDataFreeFlags):
+                return c
+        return None
+
+    @property
     def experimental_data(self):
-        ed = self._experimental_data
-        if ed is None or ed.deleted:
-            ed = self._experimental_data=ReflectionDataNode('Experimental', self.session)
-            self.add([ed])
+        for c in self.child_models():
+            if isinstance(c, ReflectionDataNode) and c.name=='Experimental':
+                return c
+        ed = ReflectionDataNode('Experimental', self.session)
+        self.add([ed])
         return ed
 
     @property
     def calculated_data(self):
-        cd = self._calculated_data
-        if cd is None or cd.deleted:
-            cd = self._calculated_data=ReflectionDataNode('Calculated', self.session)
-            self.add([cd])
+        for c in self.child_models():
+            if isinstance(c, ReflectionDataNode) and c.name=='Calculated':
+                return c
+        cd = ReflectionDataNode('Calculated', self.session)
+        self.add([cd])
         return cd
 
     @property
@@ -112,6 +128,38 @@ class ReflectionDataContainer(Model):
                 self.spacegroup, self.cell, self.resolution, self.shannon_rate)
         return self._grid_sampling
 
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'model state':          Model.take_snapshot(self, session, flags),
+            'original filename':    self.filename,
+            'hall symbol':          self.spacegroup.symbol_hall,
+            'resolution':           self.resolution.limit,
+            'cell dim':             self.cell.dim,
+            'cell angles':          self.cell.angles_deg,
+            'shannon rate':         self.shannon_rate
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.core.models import Model
+        rdc = ReflectionDataContainer(session)
+        Model.set_state_from_snapshot(rdc, session, data['model state'])
+        rdc.filename = data['original filename']
+        from chimerax.clipper.clipper_python import (
+            Resolution, Spgr_descr, Spacegroup, Cell_descr, Cell, HKL_info
+        )
+        res = Resolution(data['resolution'])
+        cell = Cell(Cell_descr(*data['cell dim'], *data['cell angles']))
+        spgr_descr = Spgr_descr(data['hall symbol'], Spgr_descr.Hall)
+        rdc._hklinfo = HKL_info(Spacegroup(spgr_descr), cell, res, True)
+        return rdc
+
+
+
 class ReflectionDataNode(Model):
     '''
     Container class to hold a subset of reflection data within a
@@ -123,7 +171,7 @@ class ReflectionDataNode(Model):
     #     # self.datasets = datasets
     #     for name, data in datasets.items():
     #         self.add([data])
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
     @property
     def datasets(self):
         return dict((m.name, m) for m in self.child_models())
@@ -137,13 +185,29 @@ class ReflectionDataNode(Model):
     def __len__(self):
         return len(self.datasets)
 
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'model state':          Model.take_snapshot(self, session, flags),
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        rdn = ReflectionDataNode('', session)
+        Model.set_state_from_snapshot(rdn, session, data['model state'])
+        return rdn
+
+
 class ReflectionData(Model):
     '''
     Prototype for ReflectionDataExp and ReflectionDataCalc. Should
     contain methods common to both (e.g. drawing of reciprocal-space
     reflections).
     '''
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
     def __init__(self, name, session, data):
         '''
         Args:
@@ -166,11 +230,46 @@ class ReflectionData(Model):
     def dtype(self):
         return type(self.data)
 
+    @property
+    def container(self):
+        return self.parent.parent
+
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'container':            self.container,
+            'model state':          Model.take_snapshot(self, session, flags),
+            'hkl data':             self.data.data,
+            'hkl data type':        self.dtype,
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @classmethod
+    def restore_snapshot(cls, session, data):
+        from chimerax.core.models import Model
+        dtype = data['hkl data type']
+        container = data['container']
+        hklinfo = container.hklinfo
+        hkldata = data['hkl data']
+        clipper_array = dtype(hklinfo)
+        clipper_array.set_data(*hkldata)
+        rd = cls('', session, clipper_array)
+        Model.set_state_from_snapshot(rd, session, data['model state'])
+        return rd
+
+
+
+
 
 
 class ReflectionDataFreeFlags(ReflectionData):
     '''Holds the array of free flags.'''
-    pass
+
+    @property
+    def container(self):
+        return self.parent
 
 
 class ReflectionDataExp(ReflectionData):

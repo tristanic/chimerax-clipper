@@ -153,11 +153,11 @@ class _ClipperBundle(BundleAPI):
             ReflectionDataFreeFlags, ReflectionDataExp, ReflectionDataCalc,
         )
         ct = {
-            'SymmetryManager':     SymmetryManager,
+            'SymmetryManager':      SymmetryManager,
             'AtomicSymmetryModel':  AtomicSymmetryModel,
-            'HKLPlot3D':          HKLPlot3D,
+            'HKLPlot3D':            HKLPlot3D,
             'XmapSet':              XmapSet,
-            'MapMgr':              MapMgr,
+            'MapMgr':               MapMgr,
             'XmapHandler_Static':   XmapHandler_Static,
             'XmapHandler_Live':     XmapHandler_Live,
             'NXmapSet':             NXmapSet,
@@ -165,13 +165,31 @@ class _ClipperBundle(BundleAPI):
             'FastVolumeSurface':    FastVolumeSurface,
             'VolumeMask':           VolumeMask,
             'ZoneMask':             ZoneMask,
-            'ReflectionDataContainer': ReflectionDataContainer,
-            'ReflectionDataNode':  ReflectionDataNode,
-            'ReflectionData':       ReflectionData,
-            'ReflectionDataFreeFlags': ReflectionDataFreeFlags,
-            'ReflectionDataExp':   ReflectionDataExp,
-            'ReflectionDataCalc':  ReflectionDataCalc
+            'ReflectionDataContainer':  ReflectionDataContainer,
+            'ReflectionDataNode':       ReflectionDataNode,
+            'ReflectionData':           ReflectionData,
+            'ReflectionDataFreeFlags':  ReflectionDataFreeFlags,
+            'ReflectionDataExp':        ReflectionDataExp,
+            'ReflectionDataCalc':       ReflectionDataCalc,
+            'HKL_data_F_sigF_float':    HKL_data_F_sigF,
+            'HKL_data_ABCD_float':      HKL_data_ABCD,
+            'HKL_data_D_sigD_float':    HKL_data_D_sigD,
+            'HKL_data_E_sigE_float':    HKL_data_E_sigE,
+            'HKL_data_F_phi_float':     HKL_data_F_phi,
+            'HKL_data_F_sigF_ano_float':HKL_data_F_sigF_ano,
+            'HKL_data_I_sigI_float':    HKL_data_I_sigI,
+            'HKL_data_I_sigI_ano_float':HKL_data_I_sigI_ano,
+            'HKL_data_Phi_fom_float':   HKL_data_Phi_fom,
+            'HKL_data_Flag':            HKL_data_Flag,
+            'HKL_data_Flag_bool':       HKL_data_Flag_bool,
         }
         return ct.get(class_name)
+
+
+
+
+
+
+
 
 bundle_api = _ClipperBundle()
