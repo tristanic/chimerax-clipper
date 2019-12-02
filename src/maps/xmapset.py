@@ -89,13 +89,13 @@ class XmapSet(MapSetBase):
 
     STANDARD_HIGH_CONTOUR=0.5
     STANDARD_LOW_CONTOUR = 0.65
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
 
     _default_live_xmap_params = {
         '2mFo-DFc': {'b_sharp': 0, 'is_difference_map': False, 'display': True},
         'mFo-DFc': {'b_sharp': 0, 'is_difference_map': True, 'display': True},
     }
-    def __init__(self, manager, crystal_data,
+    def __init__(self, manager, crystal_data = None,
         use_live_maps = True,
         use_static_maps = True,
         fsigf_name=None,
@@ -103,7 +103,8 @@ class XmapSet(MapSetBase):
         exclude_free_reflections=False,
         fill_with_fcalc=False,
         exclude_missing_reflections=False,
-        show_r_factors=True):
+        show_r_factors=True,
+        auto_add_to_session=True):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -153,11 +154,47 @@ class XmapSet(MapSetBase):
                   are recalculated
         '''
         import os
+        if crystal_data is not None:
+            data_name = os.path.basename(crystal_data.filename)
+        else:
+            data_name = ''
         super().__init__(manager, 'Crystallographic maps ({})'.format(
-            os.path.basename(crystal_data.filename)))
+            data_name))
 
         session = self.session
 
+
+        trigger_names = (
+            'maps recalculated',
+        )
+        for t in trigger_names:
+            self.triggers.add_trigger(t)
+        self._show_r_factors = show_r_factors
+
+        xm = self._live_xmap_mgr = None
+        self._live_update = False
+        self._recalc_needed = False
+        self._model_changes_handler = None
+        self._model_swap_handler = None
+        self._delayed_recalc_handler = None
+
+        self._box_params = XmapSetBoxParams()
+        self._maps_initialized=False
+
+        if crystal_data is not None:
+            self.add([crystal_data])
+            self.init_maps(use_static_maps, use_live_maps,
+            fsigf_name, bsharp_vals, exclude_free_reflections,
+            fill_with_fcalc, exclude_missing_reflections)
+        if auto_add_to_session:
+            manager.add([self])
+
+
+    def init_maps(self, use_static_maps=True, use_live_maps=True,
+            fsigf_name=None, bsharp_vals=None, exclude_free_reflections=False,
+            fill_with_fcalc=False, exclude_missing_reflections=False):
+        if self._maps_initialized:
+            raise RuntimeError('Maps have already been initialised!')
         from .. import (
             HKL_data_F_sigF, HKL_data_F_sigF_ano,
             HKL_data_I_sigI, HKL_data_I_sigI_ano
@@ -166,16 +203,9 @@ class XmapSet(MapSetBase):
             HKL_data_F_sigF, HKL_data_F_sigF_ano,
             HKL_data_I_sigI, HKL_data_I_sigI_ano
         )
+        session = self.session
 
-        trigger_names = (
-            'maps recalculated',
-        )
-        for t in trigger_names:
-            self.triggers.add_trigger(t)
-
-        self._crystal_data = crystal_data
-        self.add([crystal_data])
-
+        crystal_data = self.crystal_data
 
         # Since the Unit_Cell class does much of its work in grid coordinates,
         # each XmapSet object needs its own Unit_Cell instance (since there is
@@ -186,15 +216,6 @@ class XmapSet(MapSetBase):
             self.grid, 5)
         # Work out if we have experimental data, and launch the live data
         # manager if so.
-        xm = self._live_xmap_mgr = None
-        self._live_update = False
-        self._recalc_needed = False
-        self._model_changes_handler = None
-        self._model_swap_handler = None
-        self._delayed_recalc_handler = None
-        self._show_r_factors = show_r_factors
-
-        self._box_params = XmapSetBoxParams()
         if self.spotlight_mode:
             self._box_changed_cb('init', (self.spotlight_center, self.display_radius))
         else:
@@ -274,7 +295,7 @@ class XmapSet(MapSetBase):
                 xmap = self.add_static_xmap(dataset)
                 if xmap.is_probably_fcalc_map():
                     xmap.display = False
-        manager.add([self])
+        self._maps_initialized=True
 
 
     @property
@@ -294,8 +315,19 @@ class XmapSet(MapSetBase):
         return [m for m in self.child_models() if isinstance(m, XmapHandler_Static)]
 
     @property
+    def crystal_data(self):
+        from ..clipper_mtz import ReflectionDataContainer
+        for m in self.child_models():
+            if type(m) == ReflectionDataContainer:
+                return m
+        return None
+
+    @property
     def free_flags(self):
-        return self._crystal_data.free_flags
+        cdata = self.crystal_data
+        if cdata is None:
+            return None
+        return cdata.free_flags
 
     @property
     def show_r_factors(self):
@@ -351,27 +383,39 @@ class XmapSet(MapSetBase):
 
     @property
     def experimental_data(self):
-        return self._crystal_data.experimental_data.datasets
+        if self.crystal_data is not None:
+            return self.crystal_data.experimental_data.datasets
+        return None
 
     @property
     def hklinfo(self):
-        return self._crystal_data.hklinfo
+        if self.crystal_data is not None:
+            return self.crystal_data.hklinfo
+        return None
 
     @property
     def cell(self):
-        return self._crystal_data.cell
+        if self.crystal_data is not None:
+            return self.crystal_data.cell
+        return None
 
     @property
     def spacegroup(self):
-        return self._crystal_data.spacegroup
+        if self.crystal_data is not None:
+            return self.crystal_data.spacegroup
+        return None
 
     @property
     def resolution(self):
-        return self._crystal_data.resolution.limit
+        if self.crystal_data is not None:
+            return self.crystal_data.resolution.limit
+        return None
 
     @property
     def grid(self):
-        return self._crystal_data.grid_sampling
+        if self.crystal_data is not None:
+            return self.crystal_data.grid_sampling
+        return None
 
     @property
     def unit_cell(self):
@@ -715,6 +759,31 @@ class XmapSet(MapSetBase):
             self._r_factor_label.delete()
             self._r_factor_label = None
 
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'crystal manager': self._mgr,
+            'model state': Model.take_snapshot(self, session, flags)
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.core.models import Model
+        cm = data['crystal manager']
+        if cm is None:
+            return None
+        xmapset = XmapSet(cm, auto_add_to_session=False)
+        Model.set_state_from_snapshot(xmapset, session, data['model state'])
+        session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
+        return xmapset
+
+    def _end_restore_session_cb(self, *_):
+        self.init_maps()
+        from chimerax.core.triggerset import DEREGISTER
+        return DEREGISTER
 
 
 from .map_handler_base import XmapHandlerBase
@@ -835,6 +904,8 @@ class XmapHandler_Live(XmapHandlerBase):
         print('Deleting {}'.format(self.name))
         self.xmap_mgr.delete_xmap(self._map_name)
         super().delete()
+
+
 
 def map_potential_recommended_bsharp(resolution):
     '''

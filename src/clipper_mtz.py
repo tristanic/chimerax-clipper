@@ -185,6 +185,9 @@ class ReflectionDataNode(Model):
     def __len__(self):
         return len(self.datasets)
 
+    def __bool__(self):
+        return True
+
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
         data = {
