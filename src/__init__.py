@@ -19,6 +19,13 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
+def _version():
+    import pkg_resources
+    return pkg_resources.require('ChimeraX-Clipper')[0].version
+
+__version__ = _version()
+
+
 from .main import *
 # General objects
 from .clipper_python import (
