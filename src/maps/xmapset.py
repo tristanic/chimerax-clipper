@@ -180,6 +180,7 @@ class XmapSet(MapSetBase):
 
         self._box_params = XmapSetBoxParams()
         self._maps_initialized=False
+        self._f_sigf_data_name = None
 
         if crystal_data is not None:
             self.add([crystal_data])
@@ -242,9 +243,12 @@ class XmapSet(MapSetBase):
                         'Performing French & Wilson scaling to convert to amplitudes...')
                     from chimerax.clipper.reflection_tools import french_wilson_analytical
                     fsigf_data = french_wilson_analytical(fsigf.data)
+                    from ..clipper_mtz import ReflectionDataExp
+                    fsigf = ReflectionDataExp('French and Wilson Amplitudes', self.session, fsigf_data)
+                    crystal_data.experimental_data.add([fsigf])
                 else:
                     fsigf_data = fsigf.data
-
+                self._f_sigf_data_name = fsigf.name
                 self._launch_live_xmap_mgr(crystal_data, fsigf_data)
                 if bsharp_vals is None:
                     bsharp_vals = [viewing_recommended_bsharp(self.resolution)]
@@ -498,13 +502,22 @@ class XmapSet(MapSetBase):
         style=None,
         transparency=0.0,
         contour=None,
-        display=True):
+        display=True,
+        auto_add_to_session=True):
         '''
         Add a "live" crystallographic map, calculated from atomic positions and
         experimental x-ray reflection data. The map will be automatically
         recalculated in the background whenever changes are made to the atomic
         model.
         '''
+        rebuild_args = {
+            'b_sharp':                      b_sharp,
+            'is_difference_map':            is_difference_map,
+            'exclude_missing_reflections':  exclude_missing_reflections,
+            'exclude_free_reflections':     exclude_free_reflections,
+            'fill_with_fcalc':              fill_with_fcalc,
+        }
+
         xm = self._live_xmap_mgr
         if xm is None:
             raise RuntimeError('This crystal dataset has no experimental amplitudes!')
@@ -520,12 +533,14 @@ class XmapSet(MapSetBase):
             style=style,
             transparency=transparency,
             contour=contour)
-        self.add([new_handler])
-        if display:
-            new_handler.show()
-            self.master_map_mgr.rezone_needed()
-        else:
-            new_handler.display=False
+        new_handler._rebuild_args = rebuild_args
+        if auto_add_to_session:
+            self.add([new_handler])
+            if display:
+                new_handler.show()
+                self.master_map_mgr.rezone_needed()
+            else:
+                new_handler.display=False
         return new_handler
 
     def add_static_xmap(self, dataset,
@@ -533,7 +548,8 @@ class XmapSet(MapSetBase):
         color=None,
         style=None,
         contour=None,
-        display=True):
+        display=True,
+        auto_add_to_session=True):
         '''
         Add a crystallographic map based on pre-calculated amplitudes and
         phases. This map will remain unchanged no matter what happens to the
@@ -553,12 +569,13 @@ class XmapSet(MapSetBase):
             style=style,
             contour=contour
             )
-        self.add([new_handler])
-        if display:
-            new_handler.show()
-            self.master_map_mgr.rezone_needed()
-        else:
-            new_handler.display=False
+        if auto_add_to_session:
+            self.add([new_handler])
+            if display:
+                new_handler.show()
+                self.master_map_mgr.rezone_needed()
+            else:
+                new_handler.display=False
         return new_handler
 
     def save_mtz(self, filename, save_input_data=True, save_output_fobs=True,
@@ -763,7 +780,9 @@ class XmapSet(MapSetBase):
         from chimerax.core.models import Model
         data = {
             'crystal manager': self._mgr,
-            'model state': Model.take_snapshot(self, session, flags)
+            'model state': Model.take_snapshot(self, session, flags),
+            'F/sigF': self._f_sigf_data_name,
+            'live update': self.live_update,
         }
         from chimerax.core.state import CORE_STATE_VERSION
         data['version']=CORE_STATE_VERSION
@@ -777,11 +796,25 @@ class XmapSet(MapSetBase):
             return None
         xmapset = XmapSet(cm, auto_add_to_session=False)
         Model.set_state_from_snapshot(xmapset, session, data['model state'])
+        xmapset._f_sigf_data_name = data['F/sigF']
+        xmapset._session_restore_live_update = data['live update']
         session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
         return xmapset
 
     def _end_restore_session_cb(self, *_):
-        self.init_maps()
+        if self.crystal_data is not None and self._f_sigf_data_name is not None:
+            for fsigf in self.all_models():
+                if fsigf.name == self._f_sigf_data_name:
+                    break
+            self._launch_live_xmap_mgr(self.crystal_data, fsigf.data)
+            for m in self.child_models():
+                if isinstance(m, XmapHandler_Live):
+                    self._live_xmap_mgr.add_xmap(m._map_name, **m._rebuild_args)
+                    m._session_restore=False
+            self.live_update = self._session_restore_live_update
+        self.recalc_needed()
+        self._mgr.rezone_needed()
+
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
@@ -798,7 +831,7 @@ class XmapHandler_Static(XmapHandlerBase):
     tracking and filling a box around the centre of rotation, and static display
     of a given region.
     '''
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
     def __init__(self, mapset, name, f_phi_data,
         is_difference_map=False):
         '''
@@ -815,6 +848,7 @@ class XmapHandler_Static(XmapHandlerBase):
         '''
         name = '(STATIC) '+name
         self._mapset = mapset
+        self._f_phi_data = f_phi_data
         from .. import Xmap
 
         xmap = self._xmap = Xmap(self.spacegroup, self.cell, self.grid)
@@ -847,6 +881,35 @@ class XmapHandler_Static(XmapHandlerBase):
             return True
         return False
 
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        from chimerax.map.session import state_from_map
+        data = {
+            'model state':  Model.take_snapshot(self, session, flags),
+            'volume state': state_from_map(self),
+            'is difference map': self._is_difference_map,
+            'mapset': self._mapset,
+            'F/phi': self._f_phi_data,
+            'version':  1,
+        }
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        mapset = data['mapset']
+        if mapset is None:
+            return None
+        xmh = mapset.add_static_xmap(data['F/phi'],
+            is_difference_map=data['is difference map'],
+            auto_add_to_session=False)
+        from chimerax.core.models import Model
+        from chimerax.map.session import set_map_state
+        Model.set_state_from_snapshot(xmh, session, data['model state'])
+        set_map_state(data['volume state'], xmh)
+        xmh._drawings_need_update()
+        return xmh
+
+
 
 
 class XmapHandler_Live(XmapHandlerBase):
@@ -860,7 +923,7 @@ class XmapHandler_Live(XmapHandlerBase):
     '''
     SESSION_SAVE=False
     def __init__(self, mapset, name,
-        is_difference_map=False):
+        is_difference_map=False, session_restore=False):
         '''
         Args:
             mapset:
@@ -872,7 +935,8 @@ class XmapHandler_Live(XmapHandlerBase):
         '''
         self._map_name = name
         name = '(LIVE) '+name
-        super().__init__(mapset, name, is_difference_map=is_difference_map)
+        super().__init__(mapset, name, is_difference_map=is_difference_map,
+            session_restore=session_restore)
         self._mgr_handlers.append(
             (mapset,
             mapset.triggers.add_handler('maps recalculated', self._map_recalc_cb
@@ -885,6 +949,8 @@ class XmapHandler_Live(XmapHandlerBase):
 
     @property
     def xmap(self):
+        if self.xmap_mgr is None:
+            return None
         return self.xmap_mgr.get_xmap_ref(self._map_name)
 
     @property
@@ -904,6 +970,34 @@ class XmapHandler_Live(XmapHandlerBase):
         print('Deleting {}'.format(self.name))
         self.xmap_mgr.delete_xmap(self._map_name)
         super().delete()
+
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        from chimerax.map.session import state_from_map
+        data = {
+            'model state':  Model.take_snapshot(self, session, flags),
+            'volume state': state_from_map(self),
+            'mapset': self._mapset,
+            'map name': self._map_name,
+            'version':  1,
+        }
+        data['kwargs'] = self._rebuild_args
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        mapset = data['mapset']
+        xmh = XmapHandler_Live(mapset, data['map name'],
+            data['kwargs']['is_difference_map'], session_restore=True)
+        xmh._rebuild_args = data['kwargs']
+        #xmh = mapset.add_live_xmap('', **data['kwargs'], auto_add_to_session=False)
+        from chimerax.core.models import Model
+        from chimerax.map.session import set_map_state
+        Model.set_state_from_snapshot(xmh, session, data['model state'])
+        set_map_state(data['volume state'], xmh)
+        xmh._drawings_need_update()
+        return xmh
+
 
 
 

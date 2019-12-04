@@ -120,7 +120,7 @@ class FastVolumeSurface(VolumeSurface):
     ChimeraX itself.
     '''
     pickable=False
-    SESSION_SAVE=False
+    #SESSION_SAVE=False
     def __init__(self, volume, level, rgba=(1.0, 1.0, 1.0, 1.0), mesh=False):
         if rgba is None:
             rgba = (1.0,1.0,1.0,1.0)
@@ -202,10 +202,12 @@ class FastVolumeSurface(VolumeSurface):
 
     @staticmethod
     def restore_snapshot(session, data):
-        v = data['volume']
+        v = data.get('volume')
         if v is None:
             return None
         s = FastVolumeSurface(v, data['level'], data['rgba'], data.get('show_mesh', False))
+        from chimerax.core.models import Model
+        Model.set_state_from_snapshot(s, session, data['model state'])
         if v._style_when_shown == 'image':
             s.display = False
         v._surfaces.append(s)
@@ -216,7 +218,8 @@ class XmapHandlerBase(MapHandlerBase):
     Base class for XmapHandler_Static and XmapHandler_Live
     '''
     def __init__(self, mapset, name,
-            is_difference_map = False):
+            is_difference_map = False, session_restore=False):
+        self._session_restore = session_restore
         self._mapset = mapset
         self._name = name
         bp = mapset.box_params
@@ -322,6 +325,11 @@ class XmapHandlerBase(MapHandlerBase):
     def _fill_volume_data(self, target, start_grid_coor):
         from .. import Coord_grid
         xmap = self.xmap
+        if xmap is None:
+            if self._session_restore:
+                target[:] = 0
+                return
+            raise RuntimeError('Attempted to fill volume from a non-existent Xmap!')
         from ..util import available_cores
         xmap.export_section_numpy(Coord_grid(start_grid_coor), target, available_cores())
 
