@@ -100,6 +100,24 @@ class NXmapSet(MapSetBase):
         for v in self:
             v.expand_to_cover_coords(coords, padding)
 
+    def take_snapshot(self, session, flags):
+        from chimerax.core.models import Model
+        data = {
+            'model state':          Model.take_snapshot(self, session, flags),
+            'manager':              self._mgr,
+        }
+        from chimerax.core.state import CORE_STATE_VERSION
+        data['version']=CORE_STATE_VERSION
+        return data
+
+    @staticmethod
+    def restore_snapshot(session, data):
+        from chimerax.core.models import Model
+        nxs = NXmapSet(data['manager'], '')
+        Model.set_state_from_snapshot(nxs, session, data['model state'])
+        nxs.master_map_mgr.rezone_needed()
+        return nxs
+
 
 
 from .map_handler_base import MapHandlerBase
@@ -108,18 +126,28 @@ class NXmapHandler(MapHandlerBase):
     Real-space equivalent to XmapHandler_Static. Doesn't actually use any of
     the clipper engine, but provides a unified interface.
     '''
-    SESSION_SAVE=False
-    def __init__(self, mapset, volume, is_difference_map=False):
+    #SESSION_SAVE=False
+    def __init__(self, mapset, volume=None, data=None, name=None,
+            is_difference_map=False):
         '''
         Takes ownership of the data from an existing Volume object.
         The input volume will be closed.
         '''
-        data = volume.data
-        session = volume.session
-        if volume in session.models.list():
-            session.models.remove([volume])
-        name = volume.name
-        volume.delete()
+        if volume is None and data is None:
+            raise RuntimeError('Must provide either a Volume or a GridData '
+                'instance!')
+        if volume is not None and data is not None:
+            raise RuntimeError('Cannot provide both volume and data')
+        session = mapset.session
+        if volume is not None:
+            data = volume.data
+            if volume in session.models.list():
+                session.models.remove([volume])
+            name = volume.name
+            volume.delete()
+        else:
+            if name is None:
+                name = "Unnamed map"
         super().__init__(mapset, name, data,
             is_difference_map=is_difference_map)
 
@@ -151,27 +179,29 @@ class NXmapHandler(MapHandlerBase):
     def take_snapshot(self, session, flags):
         from chimerax.map import Volume
         from chimerax.core.models import Model
-        from chimerax.map.session import state_from_map
+        # from chimerax.map.session import state_from_map
         data = {
-            'original volume': Volume.take_snapshot(self, session, flags),
-            'model state': Model.take_snapshot(self, session, flags),
-            'volume state': state_from_map(self),
+            'volume state': Volume.take_snapshot(self, session, flags),
+            # 'original volume': Volume.take_snapshot(self, session, flags),
+            # 'model state': Model.take_snapshot(self, session, flags),
+            # 'volume state': state_from_map(self),
             'is difference map': self._is_difference_map,
-            'mapset': self._mapset
+            'mapset': self._mapset,
+            'version':  1,
         }
         return data
 
     @staticmethod
     def restore_snapshot(session, data):
-        from chimerax.map import Volume
-        ov = Volume.restore_snapshot(session, data['original volume'])
-        if ov is None:
+        ov_data = data['volume state']
+        grid_data = ov_data['grid data state'].grid_data
+        if grid_data is None:
             return None
-        v = NXmapHandler(data['mapset'], ov, data['is difference map'])
+        v = NXmapHandler(data['mapset'], data=grid_data, is_difference_map=data['is difference map'])
         from chimerax.core.models import Model
-        Model.set_state_from_snapshot(v)
+        Model.set_state_from_snapshot(v, session, ov_data['model state'])
         from chimerax.map.session import set_map_state
-        set_map_state(data['volume state'], v)
+        set_map_state(ov_data['volume state'], v)
         v._drawings_need_update()
         return v
 
