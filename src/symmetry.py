@@ -1039,9 +1039,6 @@ class SymmetryManager(Model):
 
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
-        session.logger.warning('Session saving for ChimeraX-Clipper objects is '
-            'not yet fully implemented. Your atomic model will be saved, but '
-            'the symmetry and volume management framework will not.')
         data = {
             'model state': Model.take_snapshot(self, session, flags),
             # 'resolution': self.resolution.limit,
