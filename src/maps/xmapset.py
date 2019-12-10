@@ -921,7 +921,7 @@ class XmapHandler_Live(XmapHandlerBase):
     as needed. Mothods are provided for live recalculation, tracking and filling
     a box around the centre of rotation, and static display of a given region.
     '''
-    SESSION_SAVE=False
+    SESSION_SAVE=True
     def __init__(self, mapset, name,
         is_difference_map=False, session_restore=False):
         '''

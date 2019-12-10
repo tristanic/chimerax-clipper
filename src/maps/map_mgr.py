@@ -457,4 +457,10 @@ class MapMgr(Model):
             return None
         mmgr = MapMgr(sh, auto_add=False)
         Model.set_state_from_snapshot(mmgr, session, data['model state'])
+        session.triggers.add_handler('end restore session', mmgr._end_restore_session_cb)
         return mmgr
+
+    def _end_restore_session_cb(self, *_):
+        self._reapply_zone()
+        from chimerax.core.triggerset import DEREGISTER
+        return DEREGISTER
