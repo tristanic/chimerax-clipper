@@ -41,6 +41,9 @@ class Zone_Mgr:
         self._mask = None
         self._update_needed = False
         self._resize_box = True
+        from chimerax.core.triggerset import TriggerSet
+        self.triggers = TriggerSet()
+        self.triggers.add_trigger('atom coords updated')
 
     @property
     def coords(self):
@@ -69,6 +72,10 @@ class Zone_Mgr:
             self.update_needed(resize_box=False)
         else:
             self.update_needed(resize_box=True)
+
+        # Clear all handlers
+        self.triggers.delete_trigger('atom coords updated')
+        self.triggers.add_trigger('atom coords updated')
 
     @property
     def atoms(self):
@@ -189,6 +196,7 @@ class Zone_Mgr:
             return DEREGISTER
         if 'coord changed' in changes[1].atom_reasons():
             self.update_needed()
+            self.triggers.activate_trigger('atom coords updated', None)
 
 class VolumeMask(Volume):
     '''
@@ -253,14 +261,27 @@ from chimerax.core.state import State
 
 class ZoneMask(State):
     SESSION_SAVE=False
-    def __init__(self, surface, mgr, max_components):
+    def __init__(self, surface, mgr, max_components, time_per_remask = 0.5):
         self.surface = surface
         self.mgr = mgr
         self.max_components = max_components
+        self._time_per_remask = time_per_remask
+        from time import time
+        self._last_remask_time = time()
         self.set_surface_mask()
 
     def __call__(self):
         self.set_surface_mask()
+
+    def _coord_update_cb(self, *_):
+        from time import time
+        current_time = time()
+        if current_time - self._last_remask_time > self._time_per_remask:
+            self.set_surface_mask()
+            from chimerax.core.triggerset import DEREGISTER
+            return DEREGISTER
+
+
 
     def set_surface_mask(self):
         surface = self.surface
@@ -282,7 +303,10 @@ class ZoneMask(State):
             from chimerax.surface import dust
             dust.show_only_largest_blobs(surface, True, self.max_components)
         surface.auto_remask_triangles = self
-
+        if self.mgr.atoms is not None:
+            self.mgr.triggers.add_handler('atom coords updated', self._coord_update_cb)
+        from time import time
+        self._last_remask_time = time()
 
     def take_snapshot(self, session, flags):
         data = {
