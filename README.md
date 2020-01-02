@@ -21,7 +21,7 @@ make docs
 make app-install
 ```
 - In windows, "make" is only available in a CygWin or MinGW environment. To build from the Windows console, use the make_win.bat
-  and make_docs.bat batch files:
+  and make_docs.bat batch files (you may need to edit these to set the path to the ChimeraX executable):
 ```
 make_win clean app-install
 make_docs
