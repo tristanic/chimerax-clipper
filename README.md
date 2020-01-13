@@ -8,15 +8,23 @@ First of all, make sure you need to! Release builds of ChimeraX-Clipper can be i
 
 - install [PyBind11](https://pybind11.readthedocs.io/en/stable/) - that is, make sure its headers are on your system path.
 - Download and install a recent *daily build* of ChimeraX (ChimeraX-Clipper is *not* guaranteed to work with older versions). For Linux, either of the "RedHat 7" or "Generic Linux" build is recommended.
-- Make sure you have the correct compiler: for Linux with either of the above builds, you'll need GCC 4.9 (available in RedHat devtoolset-3). For Mac, you'll need to install Xcode. For Windows, you'll need Visual Studio 2015).
+- Make sure you have the correct compiler: for Linux with either of the above builds, you'll need GCC 4.9 (available in RedHat devtoolset-3). For Mac, you'll need to install Xcode. For Windows, you'll need Visual Studio 2015). 
 - In Linux or MacOS, assuming ChimeraX is installed in the default location (/opt/UCSF/ChimeraX-daily for Linux, /Applications/ChimeraX.app for MacOS) run:
 ```
 make clean
 make app-install
 ```
-- In Windows, it's slightly more complicated. Start ChimeraX, then go to the shell (Tools/General/Shell) and change to the chimerax-clipper base directory (the shell uses unix-style commands, even in Windows). Then, on the ChimeraX command line (that is, the single bar under the GUI, *not* the shell), type:
+- Since the documentation is generated using Sphinx, it needs to be generated *after* you've already installed the bundle once. 
+  To regenerate and install the documentation, run:
 ```
-devel clean .
-devel install .
+make docs
+make app-install
+```
+- In windows, "make" is only available in a CygWin or MinGW environment. To build from the Windows console, use the make_win.bat
+  and make_docs.bat batch files (you may need to edit these to set the path to the ChimeraX executable):
+```
+make_win clean app-install
+make_docs
+make_win app-install
 ```
   Restart ChimeraX before using the plugin.
