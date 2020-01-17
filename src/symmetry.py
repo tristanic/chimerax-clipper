@@ -261,29 +261,30 @@ def symmetry_from_model_metadata_mmcif(model):
     from .clipper_python import Cell_descr, Cell, Spgr_descr, Spacegroup, Resolution, Grid_sampling
 
     spgr_dict = dict((key.lower(), data.lower()) for (key, data) in zip(spgr_headers, spgr_data))
-    spgr_str = spgr_dict['int_tables_number']
+    spgr_str = spgr_dict['space_group_name_h-m'].upper()
     if spgr_str != '?':
-        spgr_dtype = Spgr_descr.TYPE.Number
-    else:
-        spgr_str = spgr_dict['space_group_name_h-m'].upper()
+        if spgr_str.startswith('H'):
+            xspgr_str = _space_group_hm_synonym(spgr_str)
+            if xspgr_str is None:
+                print('WARNING: Hermann-Maguin space group symbol "{}" was not recognised. Ignoring.'.format(spgr_str))
+                spgr_str = '?'
+            else:
+                spgr_str = xspgr_str
+        if ':' in spgr_str:
+            spgr_dtype = Spgr_descr.TYPE.XHM
+        else:
+            spgr_dtype = Spgr_descr.TYPE.HM
+    if spgr_str =='?':
+        spgr_str = spgr_dict['space_group_name_hall'].upper()
         if spgr_str != '?':
-            if spgr_str.startswith('H'):
-                xspgr_str = _space_group_hm_synonym(spgr_str)
-                if xspgr_str is None:
-                    print('WARNING: Hermann-Maguin space group symbol "{}" was not recognised. Ignoring.'.format(spgr_str))
-                    spgr_str = '?'
-                else:
-                    spgr_str = xspgr_str
-            if ':' in spgr_str:
-                spgr_dtype = Spgr_descr.TYPE.XHM
-            else:
-                spgr_dtype = Spgr_descr.TYPE.HM
-        if spgr_str =='?':
-            spgr_str = spgr_dict['space_group_name_hall'].upper()
-            if spgr_str != '?':
-                spgr_dtype = Spgr_descr.TYPE.Hall
-            else:
-                raise TypeError('No space group information available!')
+            spgr_dtype = Spgr_descr.TYPE.Hall
+
+    if spgr_str == '?':
+        spgr_str = spgr_dict['int_tables_number']
+        if spgr_str != '?':
+            spgr_dtype = Spgr_descr.TYPE.Number
+        else:
+            raise TypeError('No space group information available!')
 
 
     cell_descr = Cell_descr(*abc, *angles)
