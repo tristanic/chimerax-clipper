@@ -489,6 +489,7 @@ class XmapSet(MapSetBase):
                                   'surface_colors': color,
                                   'square_mesh': False,
                                   'transparency_factor': transparency,
+                                  'flip_normals': True,
                                   })
         xmap_handler.set_display_style(style)
 
