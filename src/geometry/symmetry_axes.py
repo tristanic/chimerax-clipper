@@ -41,7 +41,7 @@ def crystallographic_symmetry_axis_and_screw_translation(place):
     if constant_point is None:
         return (None, None, None, None)
 
-    angle = abs(round(degrees(angle)))
+    angle = abs(round(angle))
     if angle==0:
         # Pure translation
         return None
@@ -50,6 +50,7 @@ def crystallographic_symmetry_axis_and_screw_translation(place):
             'which is not compatible with crystallographic symmetry. '
             'In real crystals, only rotations yielding 2, 3, 4 or 6-fold '
             'symmetry are possible.').format(angle)
+        raise RuntimeError(err_str)
     fold_symmetry = 360 // angle
 
     return constant_point, axis_direction, screw_component, fold_symmetry
@@ -82,6 +83,12 @@ def sym_axis_drawing_screw(unit_cell, place, constant_point, axis_direction, scr
     print('Screw axes not yet implemented!')
     return None
 
+_symmetry_colors = {
+    2:  [255, 128, 128, 255],
+    3:  [128, 255, 255, 255],
+    4:  [128, 255, 128, 255],
+    6:  [255, 255, 128, 255],
+}
 def sym_axis_drawing_standard(unit_cell, place, constant_point, axis_direction, screw_component, fold_symmetry):
     plane_points, plane_normals = unit_cell_planes(unit_cell)
     from chimerax.core.geometry import ray_segment
@@ -102,7 +109,7 @@ def sym_axis_drawing_standard(unit_cell, place, constant_point, axis_direction, 
     cylinder_rotations(xyz0, xyz1, numpy.array([0.2]), rot44)
     rot44[:,3,:3] = 0.5*(xyz0+xyz1)
     d.positions = Places(opengl_array=rot44)
-
+    d.color = _symmetry_colors[fold_symmetry]
 
     # d.position = Place(axes=place.axes(), origin = constant_point + (f0+f1/2)*axis_direction)
     return d
