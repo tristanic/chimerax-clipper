@@ -2,7 +2,7 @@
 # @Date:   17-Jan-2020
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 17-Jan-2020
+# @Last modified time: 21-Jan-2020
 # @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 # @Copyright: 2016-2019 Tristan Croll
 
@@ -14,7 +14,9 @@ def rotation_axis_and_angle_3x3(rot33):
     from math import degrees
     rnorm = numpy.linalg.norm(r)
     angle = degrees(rnorm)
-    return (r/rnorm, angle)
+    if rnorm > 0:
+        r = r/rnorm
+    return (r, angle)
 
 def rotation_screw_axis_and_angle_affine(place):
     import numpy
