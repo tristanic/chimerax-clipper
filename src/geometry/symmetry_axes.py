@@ -2,7 +2,7 @@
 # @Date:   16-Jan-2020
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 21-Jan-2020
+# @Last modified time: 04-Feb-2020
 # @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 # @Copyright: 2016-2019 Tristan Croll
 
@@ -27,7 +27,7 @@ def unit_cell_corners(unit_cell, fractional_coords=False, pad=0):
         corners[i] = coord.as_numpy()
     return numpy.array(corners)
 
-def unit_cell_box_drawing(unit_cell_corners, corner_radius=1.0, origin_radius=2.0, cylinder_radius=0.3):
+def unit_cell_box_drawing(unit_cell_corners, corner_radius=1.0, origin_radius=2.0, cylinder_radius=0.2):
     from chimerax.core.graphics import Drawing
     md = Drawing('Unit cell box')
     cd = Drawing('Corners')
@@ -92,6 +92,9 @@ def plane_intersections_in_unit_cell(axis_defs, plane_points, plane_normals):
     unique_intersections = set()
     import numpy
     from fractions import Fraction
+
+    box_min = numpy.min(plane_points, axis=0)
+    box_max = numpy.max(plane_points, axis=0)
     for (origin, direction) in axis_defs:
         #print('Current direction: {}'.format(numpy.round(direction, 4)))
         for u in [0]:# (-1, 0, 1):
@@ -101,11 +104,11 @@ def plane_intersections_in_unit_cell(axis_defs, plane_points, plane_normals):
                     #print('Current origin: {}'.format(numpy.round(current_origin, 4)))
                     intersections = plane_intersections(current_origin, direction, plane_points, plane_normals)
                     #print('Intersections: {}'.format([numpy.round(i, 4) for i in intersections]))
-                    f_intersections = [numpy.array([float(Fraction(c).limit_denominator(24)) for c in coord]) for coord in intersections]
+                    f_intersections = [numpy.array([float(Fraction(c).limit_denominator(48)) for c in coord]) for coord in intersections]
                     #print('Massaged intersections: {}'.format([numpy.round(f, 4) for f in f_intersections]))
                     in_box = []
                     for intersection in f_intersections:
-                        if numpy.all(numpy.logical_and(intersection>=0, intersection<=1)):
+                        if numpy.all(numpy.logical_and(intersection>=box_min, intersection<=box_max)):
                             in_box.append(intersection)
                     if len(in_box) > 0:
                         uis = frozenset([tuple(i) for i in in_box])
@@ -147,6 +150,9 @@ def crystallographic_symmetry_axis_and_screw_translation(place, unit_cell, fract
         raise RuntimeError(err_str)
     fold_symmetry = 360 // angle
 
+    if sum(axis_direction)<0:
+        axis_direction = -axis_direction
+
     if fractional_coords:
         from chimerax.clipper.clipper_python import Coord_orth
         cell = unit_cell.cell
@@ -154,38 +160,118 @@ def crystallographic_symmetry_axis_and_screw_translation(place, unit_cell, fract
         #print('Direction in orthographic coords: {}'.format(axis_direction))
         axis_direction = Coord_orth(axis_direction*100).coord_frac(cell).as_numpy()
         #print('Direction in fractional coords: {}'.format(axis_direction))
-        screw_component = Coord_orth(screw_component).coord_frac(cell).as_numpy()
+
+        screw_component = Coord_orth(screw_component).coord_frac(cell).lattice_copy_zero().as_numpy()
 
     return constant_point, axis_direction, screw_component, fold_symmetry
 
 def unit_cell_and_sym_axes(session, unit_cell):
+    cell = unit_cell.cell
     from chimerax.core.models import Model
-    m = Model('Unit cell and symmetry', session)
-    from chimerax.core.geometry import Places
+    from chimerax.core.geometry import Places, Place
     from collections import defaultdict
     import numpy
+    from math import sqrt
+    from fractions import Fraction
+    from chimerax.clipper.clipper_python import (
+        Coord_frac, Coord_orth, RTop_frac, Vec3_double as Vec3, Symop,
+        Mat33_double as Mat33
+        )
+
     axis_defs = defaultdict(lambda: list())
 
-    from chimerax.clipper.clipper_python import Coord_frac
-    box_origin_frac = unit_cell.origin.coord_frac(unit_cell.grid)-Coord_frac([1,1,1])
-    box_origin_xyz = box_origin_frac.coord_orth(unit_cell.cell).as_numpy()
-    box_size = unit_cell.grid.dim*3
+    m = Model('Unit cell and symmetry', session)
 
-    syms = Places(place_array = unit_cell.all_symops_in_box(box_origin_xyz, box_size).all_matrices_orth(unit_cell.cell, '3x4'))
+    # box_origin_frac = unit_cell.origin.coord_frac(unit_cell.grid)-Coord_frac([1,1,1])
+    # box_origin_xyz = box_origin_frac.coord_orth(cell).as_numpy()
+    box_size = unit_cell.grid.dim*3
+    syms = unit_cell.symops
+
+    #syms = Places(place_array = unit_cell.all_symops_in_box(box_origin_xyz, box_size).all_matrices_orth(unit_cell.cell, '3x4'))
 
     #syms = Places(place_array = unit_cell.symops.all_matrices_orth(unit_cell.cell, '3x4'))
+    identity = Mat33.identity()
 
-    for s in syms:
-        constant_point, axis_direction, screw_component, fold_symmetry = \
-            crystallographic_symmetry_axis_and_screw_translation(s, unit_cell, fractional_coords=True)
-        if constant_point is None:
+    # Need to check all operators covering a 3x3 unit cell block to ensure we
+    # get them all. Generate all possible length-3 combinations of -1, 0 and 1
+    u=v=w = numpy.linspace(-1,1,3)
+    frac_offsets = numpy.array(numpy.meshgrid(u,v,w)).T.reshape(-1,3)
+    frac_offsets = [Vec3(f) for f in frac_offsets]
+
+    rot44 = numpy.identity(4)
+
+    for sym_index, s in enumerate(syms):
+        if s.rot.equals(identity, 1e-6):
+            # No rotation, therefore no symmetry axis
             continue
-        from fractions import Fraction
-        screw_component = Fraction(numpy.linalg.norm(screw_component)).limit_denominator(12) # LCM of 1,2,3,4 and 6
-        axis_defs[(fold_symmetry, float(screw_component))].append([constant_point, axis_direction])
+
+        rot = s.rot
+        trn = s.trn
+
+        ss = Symop(s)
+
+        so = ss.rtop_orth(cell)
+        pr = Place(axes=so.rot.as_numpy().T)
+        if pr.is_identity(tolerance=1e-5):
+            continue
+        central_axis, angle = pr.rotation_axis_and_angle()
+        central_axis /= numpy.linalg.norm(central_axis)
+        angle = abs(round(angle))
+        if angle==0:
+            # Pure translation
+            continue
+        if angle not in (60, 90, 120, 180):
+            err_str = ('This transform has a rotation angle of {} degrees, '
+                'which is not compatible with crystallographic symmetry. '
+                'In real crystals, only rotations yielding 2, 3, 4 or 6-fold '
+                'symmetry are possible.').format(angle)
+            raise RuntimeError(err_str)
+        fold_symmetry = 360 // angle
+
+        ca_frac = Coord_orth(100*central_axis).coord_frac(cell).unit()
+
+
+        #screw_component = Coord_orth(so.screw_translation).coord_frac(cell)
+        # screw_component_orth = numpy.dot(so.trn.as_numpy(), central_axis) * central_axis
+        # screw_component = Coord_orth(screw_component_orth).coord_frac(cell).lattice_copy_zero()
+        #screw_component = Coord_frac((Vec3.dot(ss.trn, ca_frac) * ca_frac)).lattice_copy_zero()
+        #print('Symop: {}, symmetry: {}, fractional_translation: {}, central_axis_orth: {}, central_axis_frac: {}, screw_component_frac: {}'.format(
+        #    sym_index, fold_symmetry, ss.trn.as_numpy(), central_axis, ca_frac, screw_component))
+
+        # screw_mag = numpy.linalg.norm(screw_component.as_numpy())
+        # print('Screw magnitude before normalisation: {}'.format(screw_mag))
+        # # if screw_mag > 1/12:
+        # #     print('Non-zero screw translation vector: {} along axis: {} for fractional transform number {}: {}'.format(screw_component, central_axis, sym_index, s))
+        # screw_mag = numpy.linalg.norm([float(Fraction(s).limit_denominator(12)) for s in screw_component.as_numpy()])*sqrt(3) # LCM of possible fractional screw translations 1/(2,3,4 or 6)
+        # print('Screw magnitude after normalisation: {}'.format(screw_mag))
+
+        for offset in frac_offsets:
+            this_trn = trn+offset
+
+            tf = RTop_frac(rot, this_trn).rtop_orth(unit_cell.cell)
+            trn_orth = tf.trn.as_numpy()
+            screw_orth = numpy.dot(trn_orth, central_axis)*central_axis
+            perp_orth = trn_orth-screw_orth
+
+            # Remove any whole-unit-cell translation component
+            screw_frac = Coord_orth(screw_orth).coord_frac(cell).lattice_copy_zero().as_numpy()
+            normalised_screw_frac = [Fraction(s).limit_denominator(12) for s in screw_frac]
+            normalised_screw_frac_float = numpy.array([float(s) for s in normalised_screw_frac])
+            screw_mag = numpy.linalg.norm(normalised_screw_frac_float)
+
+            rot44[:3,:3] = tf.rot.as_numpy()
+            rot44[:3,3] = perp_orth
+
+            origin, slope = rotation_axis(rot44)
+
+            origin = Coord_orth(origin).coord_frac(cell).as_numpy()
+            slope = Coord_orth(slope*100).coord_frac(cell).as_numpy()
+
+
+            axis_defs[(fold_symmetry, screw_mag)].append([origin, slope])
 
     plane_points, plane_normals = unit_cell_planes(unit_cell, fractional_coords=True, pad=0.001)
-    plane_points = [pp[0] for pp in plane_points]
+    plane_points = numpy.array([pp[0] for pp in plane_points])
 
     for (fold_symmetry, screw_component), axes in axis_defs.items():
         uvw0, uvw1 = plane_intersections_in_unit_cell(axes, plane_points, plane_normals)
@@ -201,7 +287,31 @@ def unit_cell_and_sym_axes(session, unit_cell):
     bd = unit_cell_box_drawing(unit_cell_corners(unit_cell))
     m.add_drawing(bd)
 
-    return m
+    return m, axis_defs
+
+def is_true_screw_axis(trn_frac, axis_frac):
+    '''
+    Does the given transform have a true crystallographic screw axis (i.e. in
+    fractional coordinates), or is it only screw in Cartesian coordinates due
+    to the presence of non-orthogonal cell axes?
+    '''
+
+
+def rotation_axis(rot44):
+    import numpy
+    eigvals, eigvecs = numpy.linalg.eig(rot44)
+    unit_eigvals = numpy.argwhere(numpy.logical_and(
+        numpy.isreal(eigvals), numpy.isclose(eigvals.real, 1))
+    ).ravel()
+    real_eigvecs = [eigvecs[:,i].T.real for i in unit_eigvals]
+    for ev in real_eigvecs:
+        if ev[3] != 0:
+            origin = (ev/ev[3])[:3]
+        else:
+            slope = ev[:3]
+
+    return origin, slope
+
 
 
 def sym_axis_drawing(fold_symmetry, screw_component, axyz0, axyz1):
@@ -209,9 +319,6 @@ def sym_axis_drawing(fold_symmetry, screw_component, axyz0, axyz1):
         return sym_axis_drawing_screw(fold_symmetry, screw_component, axyz0, axyz1)
     return sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1)
 
-def sym_axis_drawing_screw(fold_symmetry, screw_component, axyz0, axyz1):
-    print('Screw axes not yet implemented!')
-    return None
 
 _symmetry_colors = {
     2:  [[255,255,255,255],[255, 128, 128, 255]],
@@ -219,8 +326,34 @@ _symmetry_colors = {
     4:  [[255,255,255,255],[128, 255, 128, 255],[255,255,255,255],[128,255,128,255]],
     6:  [[255,255,255,255],[128,128,255,255],[255, 255, 128, 255],[255,255,255,255],[128,128,255,255],[255, 255, 128, 255]],
 }
-def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, radius=0.3):
+
+def sym_axis_drawing_screw(fold_symmetry, screw_component, axyz0, axyz1, base_radius=0.3):
+    '''
+    Just draw as a dashed cylinder for now.
+    '''
     import numpy
+    from chimerax.surface.shapes import dashed_cylinder_geometry
+    from chimerax.core.geometry import Places, cylinder_rotations, rotation
+    n = len(axyz0)
+    radius = base_radius*(1+0.1*fold_symmetry)
+    radii = numpy.ones(n, numpy.float32)*radius
+
+    rot44 = numpy.empty([n,4,4], numpy.float32)
+    cylinder_rotations(axyz0, axyz1, radii, rot44)
+    rot44[:,3,:3] = 0.5*(axyz0+axyz1)
+
+    from chimerax.core.graphics import Drawing
+    d = Drawing('{}-fold screw axis'.format(fold_symmetry))
+    d.set_geometry(*dashed_cylinder_geometry(segments=15))
+    d.color = _symmetry_colors[fold_symmetry][1]
+    d.positions = Places(opengl_array=rot44)
+    return d
+
+
+
+def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, base_radius=0.3):
+    import numpy
+    radius = base_radius*(1+0.1*fold_symmetry)
     n = len(axyz0)
     radii = numpy.ones(n, numpy.float32)*radius
     from chimerax.core.geometry import Places, cylinder_rotations, rotation
@@ -229,7 +362,6 @@ def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, radius=0.3):
     rot44[:,3,:3] = 0.5*(axyz0+axyz1)
 
 
-    # d.clip_cap=True
     vertices = []
     normals = []
     triangles = []
@@ -257,7 +389,6 @@ def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, radius=0.3):
     d = Drawing('{}-fold symmetry axis'.format(fold_symmetry))
     d.set_geometry(vertices, normals, triangles)
     d.set_vertex_colors(colors)
-    #d.clip_cap = True
 
     d.positions = Places(opengl_array=rot44)
 

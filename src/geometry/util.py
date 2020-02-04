@@ -2,7 +2,7 @@
 # @Date:   17-Jan-2020
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 21-Jan-2020
+# @Last modified time: 31-Jan-2020
 # @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 # @Copyright: 2016-2019 Tristan Croll
 
@@ -18,10 +18,12 @@ def rotation_axis_and_angle_3x3(rot33):
         r = r/rnorm
     return (r, angle)
 
+
+
 def rotation_screw_axis_and_angle_affine(place):
     import numpy
     rot33 = place.axes().T
-    central_axis, angle = rotation_axis_and_angle_3x3(rot33)
+    central_axis, angle = place.rotation_axis_and_angle()
     if numpy.isclose(angle, 0):
         return (None, None, None, None)
 
