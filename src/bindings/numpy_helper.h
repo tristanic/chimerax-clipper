@@ -24,10 +24,12 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 
+#include <clipper/clipper.h>
+
 #include <vector>
 
 namespace py=pybind11;
-
+using namespace clipper;
 
 // check that the given Numpy array matches expected dimensions, and throw an
 // error if not. direction is true for incoming, false for outgoing.
@@ -89,7 +91,7 @@ void array_as_numpy_1d(const C& v, int n, py::array_t<T> target)
 }
 
 
-template<class C, typename T>
+template <class C, typename T>
 void fill_array_from_numpy_1d(C& v, int n, py::array_t<T> arr)
 {
     check_numpy_array_shape(arr, {n}, true);
@@ -99,7 +101,7 @@ void fill_array_from_numpy_1d(C& v, int n, py::array_t<T> arr)
         v[i] = ptr[i];
 }
 
-template<class HKLdtype, class dtype>
+template <class HKLdtype, class dtype>
 py::array_t<dtype> hkl_data_export_numpy(const HKLdtype& self, const int& size)
 {
     auto ret = py::array_t<dtype>(size);
@@ -108,10 +110,27 @@ py::array_t<dtype> hkl_data_export_numpy(const HKLdtype& self, const int& size)
     return ret;
 } // hkl_data_export_numpy
 
-template<class HKLdtype, class dtype>
+template <class HKLdtype, class dtype>
 void hkl_data_import_numpy(HKLdtype& self, const int& size, py::array_t<dtype> vals)
 {
     check_numpy_array_shape(vals, {size}, true);
     dtype* ptr = (dtype*)vals.request().ptr;
     self.data_import(ptr);
 } // hkl_data_import_numpy
+
+template <typename T>
+std::unique_ptr<Vec3<T>> new_vec3_from_numpy(py::array_t<T> vals)
+{
+    check_numpy_array_shape(vals, {3}, true);
+    return std::unique_ptr<Vec3<T>>(new Vec3<T>(vals.at(0), vals.at(1), vals.at(2)));
+}
+
+template <typename T>
+std::unique_ptr<Mat33<T>> new_mat33_from_numpy(py::array_t<T> vals)
+{
+    check_numpy_array_shape(vals, {3,3}, true);
+    auto r = vals.template unchecked<2>();
+    return std::unique_ptr<Mat33<T>>(new Mat33<T>(
+        r(0,0),r(0,1),r(0,2),r(1,0),r(1,1),r(1,2),r(2,0),r(2,1),r(2,2)
+    ));
+}

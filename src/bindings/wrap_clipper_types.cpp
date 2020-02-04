@@ -43,9 +43,7 @@ void init_vec3(py::module &m, const std::string& dtype)
         // From a numpy array
         .def(py::init([](py::array_t<T> vals)
         {
-            check_numpy_array_shape(vals, {3}, true);
-            T* ptr = (T*)vals.request().ptr;
-            return std::unique_ptr<Class>(new Class(ptr[0], ptr[1], ptr[2]));
+            return new_vec3_from_numpy(vals);
         }))
         .def(py::init<const Vec3<ftype32>&>())
         .def(py::init<const Vec3<ftype64>&>())
@@ -54,41 +52,14 @@ void init_vec3(py::module &m, const std::string& dtype)
         .def("__getitem__", [](const Class& self, const int& i){ return self[i]; })
         .def("as_numpy", [](const Class& self) { return array_as_numpy_1d<Class, T>(self, 3); })
         .def("as_numpy", [](const Class& self, py::array_t<T> target) { array_as_numpy_1d(self, 3, target); })
-        // .def("as_numpy", [](const Class& self) -> py::array_t<T>
-        //     {
-        //         auto result = py::array_t<T>(3);
-        //         auto buf=result.request();
-        //         T* ptr = (T*)buf.ptr;
-        //         for (size_t i=0; i<3; ++i) {
-        //             ptr[i] = self[i];
-        //         }
-        //         return result;
-        //     })
-        // .def("as_numpy", [](const Class& self, py::array_t<T> result)
-        //     {
-        //         check_numpy_array_shape(result, {3}, false);
-        //         auto buf = result.request();
-        //         T* ptr = (T*)buf.ptr;
-        //         for(size_t i=0; i<3; ++i)
-        //             ptr[i] = self[i];
-        //     })
         .def("__setitem__", [](Class& self, const int& i, const T& val) { self[i] = val; })
         .def("from_numpy", [](Class& self, py::array_t<T> vals) { fill_array_from_numpy_1d<Class, T>(self, 3, vals); })
-        // .def("from_numpy", [](Class& self, py::array_t<T> vals)
-        //     {
-        //         check_numpy_array_shape(vals, {3}, true);
-        //         auto buf = vals.request();
-        //         T* ptr = (T*)buf.ptr;
-        //         for (size_t i=0; i<3; ++i)
-        //             self[i] = ptr[i];
-        //     })
         .def("unit", &Class::unit)
         .def_static("zero", &Class::zero)
         .def_static("null", &Class::null)
         .def("is_null", &Class::is_null)
         .def_static("dot", &Class::dot)
         .def_static("cross", &Class::cross)
-        //.def("__repr__", [](const Class& self) { return self.format().c_str(); })
         .def("__str__", [](const Class& self) { return self.format().c_str(); })
         .def("format", &Class::format)
         .def("__iadd__", &Class::operator+=)
@@ -115,11 +86,7 @@ void init_mat33(py::module &m, const std::string& dtype)
         // From a 3x3 numpy array
         .def(py::init([](py::array_t<T> vals)
         {
-            check_numpy_array_shape(vals, {3,3}, true);
-            auto buf = vals.request();
-            T* ptr = (T*)buf.ptr;
-            return std::unique_ptr<Class>(new Class(
-                ptr[0],ptr[1],ptr[2],ptr[3],ptr[4],ptr[5],ptr[6],ptr[7],ptr[8]));
+            return new_mat33_from_numpy(vals);
         }))
         .def(py::init<const Mat33<ftype32>&>())
         .def(py::init<const Mat33<ftype64>&>())
@@ -159,7 +126,6 @@ void init_mat33(py::module &m, const std::string& dtype)
                 for (size_t j=0; j<3; ++j)
                     self(i,j) = *ptr++;
         })
-        //.def("__repr__", [](const Class& self) { return self.format().c_str(); })
         .def("__str__", [](const Class& self) { return self.format().c_str(); })
         .def_static("identity", &Class::identity)
         .def_static("null", &Class::null)
@@ -194,7 +160,6 @@ void init_mat33sym(py::module &m, const std::string& dtype)
             return std::unique_ptr<Class>(new Class(
                 ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5]));
         }))
-        //.def("__repr__", [](const Class& self){ return self.format().c_str(); })
         .def("__str__", [](const Class& self){ return self.format().c_str(); })
         .def_static("identity", &Class::identity)
         .def_static("null", &Class::null)
@@ -245,6 +210,12 @@ void init_rtop(py::module &m, const std::string& dtype)
         .def(py::init<>())
         .def(py::init<const Mat33<T>&>())
         .def(py::init<const Mat33<T>&, const Vec3<T>&>())
+        .def(py::init([](py::array_t<T> rot, py::array_t<T> trn)
+        {
+            auto r = new_mat33_from_numpy(rot);
+            auto t = new_vec3_from_numpy(trn);
+            return std::unique_ptr<Class>(new Class(*r, *t));
+        }))
         .def("inverse", &Class::inverse)
         .def("equals", &Class::equals)
         .def_property("rot",

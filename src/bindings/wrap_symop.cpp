@@ -40,6 +40,12 @@ py::class_<RTop_frac, RTop<ftype>>(m, "RTop_frac")
     .def(py::init<const Mat33<>&>())
     .def(py::init<const String&>())
     .def(py::init<const Mat33<>&, const Vec3<>&>())
+    .def(py::init([](py::array_t<ftype> rot, py::array_t<ftype> trn)
+    {
+        auto r = new_mat33_from_numpy(rot);
+        auto t = new_vec3_from_numpy(trn);
+        return std::unique_ptr<RTop_frac>(new RTop_frac(*r, *t));
+    }))
     .def("rtop_orth", &RTop_frac::rtop_orth)
     .def("inverse", &RTop_frac::inverse)
     .def_static("identity", &RTop_frac::identity)

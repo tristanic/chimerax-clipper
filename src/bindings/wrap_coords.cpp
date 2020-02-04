@@ -72,6 +72,12 @@ py::class_<RTop_orth, RTop<ftype>>(m, "RTop_orth")
     .def(py::init<const std::vector<Coord_orth>&, const std::vector<Coord_orth>&>())
     .def(py::init<const std::vector<Coord_orth>&, const std::vector<Coord_orth>&, const std::vector<ftype>&>())
     .def(py::init<const Atom_list&, const Atom_list&>())
+    .def(py::init([](py::array_t<ftype> rot, py::array_t<ftype> trn)
+    {
+        auto r = new_mat33_from_numpy(rot);
+        auto t = new_vec3_from_numpy(trn);
+        return std::unique_ptr<RTop_orth>(new RTop_orth(*r, *t));
+    }))
     .def("rtop_frac", &RTop_orth::rtop_frac)
     .def_property_readonly("inverse", &RTop_orth::inverse)
     .def("axis_coordinate_near", &RTop_orth::axis_coordinate_near)
