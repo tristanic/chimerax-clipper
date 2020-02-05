@@ -261,7 +261,7 @@ def symmetry_from_model_metadata_mmcif(model):
     from .clipper_python import Cell_descr, Cell, Spgr_descr, Spacegroup, Resolution, Grid_sampling
 
     spgr_dict = dict((key.lower(), data.lower()) for (key, data) in zip(spgr_headers, spgr_data))
-    spgr_str = spgr_dict['space_group_name_h-m'].upper()
+    spgr_str = spgr_dict['space_group_name_h-m'].capitalize()
     if spgr_str != '?':
         if spgr_str.startswith('H'):
             xspgr_str = _space_group_hm_synonym(spgr_str)
@@ -275,7 +275,7 @@ def symmetry_from_model_metadata_mmcif(model):
         else:
             spgr_dtype = Spgr_descr.TYPE.HM
     if spgr_str =='?':
-        spgr_str = spgr_dict['space_group_name_hall'].upper()
+        spgr_str = spgr_dict['space_group_name_hall'].capitalize()
         if spgr_str != '?':
             spgr_dtype = Spgr_descr.TYPE.Hall
 
@@ -362,7 +362,7 @@ def symmetry_from_model_metadata_pdb(model):
             abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
             angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
             if symstr is None:
-                symstr = cryst1[55:67].upper()
+                symstr = cryst1[55:67].capitalize()
                 if symstr.startswith('H'):
                     x_symstr = _space_group_hm_synonym(symstr)
                     if x_symstr is None:
