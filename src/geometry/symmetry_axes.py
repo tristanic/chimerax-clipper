@@ -2,7 +2,7 @@
 # @Date:   16-Jan-2020
 # @Email:  tic20@cam.ac.uk
 # @Last modified by:   tic20
-# @Last modified time: 04-Feb-2020
+# @Last modified time: 05-Feb-2020
 # @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 # @Copyright: 2016-2019 Tristan Croll
 
@@ -104,7 +104,7 @@ def plane_intersections_in_unit_cell(axis_defs, plane_points, plane_normals):
                     #print('Current origin: {}'.format(numpy.round(current_origin, 4)))
                     intersections = plane_intersections(current_origin, direction, plane_points, plane_normals)
                     #print('Intersections: {}'.format([numpy.round(i, 4) for i in intersections]))
-                    f_intersections = [numpy.array([float(Fraction(c).limit_denominator(48)) for c in coord]) for coord in intersections]
+                    f_intersections = [numpy.array([float(Fraction(c).limit_denominator(24)) for c in coord]) for coord in intersections]
                     #print('Massaged intersections: {}'.format([numpy.round(f, 4) for f in f_intersections]))
                     in_box = []
                     for intersection in f_intersections:
@@ -287,7 +287,7 @@ def unit_cell_and_sym_axes(session, unit_cell):
     bd = unit_cell_box_drawing(unit_cell_corners(unit_cell))
     m.add_drawing(bd)
 
-    return m, axis_defs
+    return m
 
 def is_true_screw_axis(trn_frac, axis_frac):
     '''

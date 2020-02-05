@@ -161,6 +161,38 @@ class XmapSetsArg(AtomSpecArg):
         xmapsets = [m for m in models if type(m) == XmapSet]
         return xmapsets, text, rest
 
+def draw_symmetry(session, models):
+    logger = session.logger
+    from chimerax.clipper.symmetry import SymmetryManager
+    from chimerax.clipper.geometry import unit_cell_and_sym_axes
+    for m in models:
+        if isinstance(m.parent, SymmetryManager):
+            unit_cell = m.parent.unit_cell
+            has_symmetry_manager=True
+        else:
+            has_symmetry_manager=False
+            from chimerax.clipper.symmetry import symmetry_from_model_metadata, Unit_Cell
+            try:
+                cell, spacegroup, grid, resolution, has_symmetry = symmetry_from_model_metadata(m)
+            except Exception as e:
+                warn_str = ('Failed to read symmetry information for model {}. '
+                'Attempt returned the following error message: \n{}').format(
+                    m.id_string, str(e)
+                )
+                logger.warning(warn_str)
+                continue
+            if not has_symmetry:
+                logger.info('Model {} has no symmetry information. Skipping.').format(m.id_string)
+                continue
+            unit_cell = Unit_Cell(m.atoms, cell, spacegroup, grid)
+        sym_drawing = unit_cell_and_sym_axes(session, unit_cell)
+        if has_symmetry_manager:
+            # Add the drawing to the symmetry manager so it's bundled with the model
+            m.parent.add([sym_drawing])
+        else:
+            # Just add it at the top level
+            sym_drawing.name += '({})'.format(m.id_string)
+            session.models.add([sym_drawing])
 
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
@@ -240,6 +272,15 @@ def register_clipper_cmd(logger):
             'viewing mode, use "clipper spotlight".')
     )
     register('clipper isolate', isol_desc, isolate, logger=logger)
+
+    sym_desc = CmdDesc(
+        required=[('models', StructuresArg)],
+        synopsis=('Draw the unit cell and all symmetry axes for the given '
+            'crystal structures. NOTE: this tool is still a work in progress.'
+        )
+    )
+    register('clipper symmetry', sym_desc, draw_symmetry, logger=logger)
+
 
 def register_cview_cmd(logger):
     from chimerax.core.commands import create_alias
