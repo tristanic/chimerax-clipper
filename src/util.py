@@ -97,23 +97,30 @@ def guess_suitable_contour(volume, model, mask_radius=3, atom_radius_scale = 0.5
 
     from .symmetry import is_crystal_map
     is_xmap = is_crystal_map(volume)
-    if is_xmap:
-        sh = volume.manager.crystal_mgr
 
+    sh = volume.manager.crystal_mgr
+
+    if is_xmap:
         spotlight_mode = sh.spotlight_mode
         # Expand the map to cover the whole model
-        sh.isolate_and_cover_selection(model.atoms, focus=False)
+        sh.isolate_and_cover_selection(model.atoms, mask_radius=mask_radius, focus=False)
+        zmgr = volume.manager.zone_mgr
+        # Mask updating normally happens asynchronously, so we need to force it
+        # here.
+        zmgr._update_mask()
+        mask = zmgr.mask
+    else:
+        from chimerax.clipper.maps.mask_handler import VolumeMask
+        coords = model.atoms[model.atoms.element_names !='H'].coords
+        mask = VolumeMask(volume.session, coords, 1.5, mask_radius)
 
     vv = volume.data.voxel_volume()
     mv = _model_volume(model, radius_scale=atom_radius_scale)
 
-    from chimerax.core.geometry import find_close_points
-    grid_coords = volume.grid_points(volume.scene_position)
+    mask_points = mask.interpolate_on_grid(volume)[0].ravel()
+    close_i = numpy.where(mask_points==1)[0]
 
-    data = numpy.array(volume.data.matrix(), order='C')
-    close_i = find_close_points(model.atoms.scene_coords, grid_coords, mask_radius)[1]
-    close_vals = data.ravel()[close_i]
-
+    close_vals = volume.data.full_matrix().ravel()[close_i]
 
     target_percentile = (1-mv/(vv*len(close_i)))*100
     level = numpy.percentile(close_vals, target_percentile)

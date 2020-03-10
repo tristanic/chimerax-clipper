@@ -170,6 +170,7 @@ class Zone_Mgr:
             self._update_mask()
         return (self.mask.interpolated_values(vertices) >= self.threshold)
 
+
     def _unique_structure(self, atoms):
         us = atoms.unique_structures
         if len(us) != 1:

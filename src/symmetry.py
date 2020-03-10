@@ -180,6 +180,10 @@ def is_crystal_map(volume):
     from .maps.map_handler_base import XmapHandlerBase
     return isinstance(volume, XmapHandlerBase)
 
+def is_managed_map(volume):
+    from .maps.map_handler_base import MapHandlerBase
+    return isinstance(volume, MapHandlerBase)
+
 def symmetry_from_model_metadata(model):
     '''
     Create crystallographic symmetry objects based on the information in the
