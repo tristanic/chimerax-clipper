@@ -10,7 +10,7 @@
 
 
 
-<BundleInfo name="ChimeraX-Clipper" version="0.11.1" package="chimerax.clipper"
+<BundleInfo name="ChimeraX-Clipper" version="0.11.2" package="chimerax.clipper"
   	    minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
 
   <!-- Additional information about bundle source -->
