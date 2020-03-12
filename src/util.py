@@ -114,15 +114,24 @@ def guess_suitable_contour(volume, model, mask_radius=3, atom_radius_scale = 0.5
         coords = model.atoms[model.atoms.element_names !='H'].coords
         mask = VolumeMask(volume.session, coords, 1.5, mask_radius)
 
-    vv = volume.data.voxel_volume()
+    vv = mask.data.voxel_volume()
     mv = _model_volume(model, radius_scale=atom_radius_scale)
 
-    mask_points = mask.interpolate_on_grid(volume)[0].ravel()
-    close_i = numpy.where(mask_points==1)[0]
 
-    close_vals = volume.data.full_matrix().ravel()[close_i]
+    mask_vals = mask.data.full_matrix().ravel()
+    close_coords = mask.grid_points(model.position.inverse())[mask_vals==1]
 
-    target_percentile = (1-mv/(vv*len(close_i)))*100
+    close_vals = volume.interpolated_values(close_coords)
+
+    cv = vv*len(close_vals)
+    if cv > mv:
+        target_percentile = (1-mv/cv)*100
+    else:
+        warn_str = ('The volume of the map covering the model is smaller than '
+            'the model itself (is the model properly docked in the map?). '
+            'Chosen contour levels may not be optimal.')
+        session.logger.warning(warn_str)
+        target_percentile = 90
     level = numpy.percentile(close_vals, target_percentile)
 
     if is_xmap:
