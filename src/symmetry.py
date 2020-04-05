@@ -1716,7 +1716,7 @@ class SymAtomsDrawing(structure.AtomsDrawing):
     def update_selection(self):
         pass
 
-from chimerax.core.graphics import Pick
+from chimerax.graphics import Pick
 
 class PickedSymAtom(Pick):
     def __init__(self, atom, distance, sym):
@@ -1874,7 +1874,7 @@ def focus_on_selection(session, view, atoms, clip = True):
 
 
 def _copy_ribbon_drawing(master_drawing, target_drawing, dim_factor):
-    from chimerax.core.graphics import Drawing
+    from chimerax.graphics import Drawing
     d = master_drawing
     t = target_drawing
     def recursively_add_drawings(fromd, tod, dim_factor):

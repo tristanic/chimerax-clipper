@@ -19,7 +19,7 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
-from chimerax.core.graphics import Drawing
+from chimerax.graphics import Drawing
 from chimerax.core.models import Model
 
 def test_hkl_plot(session, datafile, scale=1.0):

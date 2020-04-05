@@ -28,7 +28,7 @@ def unit_cell_corners(unit_cell, fractional_coords=False, pad=0):
     return numpy.array(corners)
 
 def unit_cell_box_drawing(unit_cell_corners, corner_radius=1.0, origin_radius=2.0, cylinder_radius=0.2):
-    from chimerax.core.graphics import Drawing
+    from chimerax.graphics import Drawing
     md = Drawing('Unit cell box')
     cd = Drawing('Corners')
     ed = Drawing('Edges')
@@ -342,7 +342,7 @@ def sym_axis_drawing_screw(fold_symmetry, screw_component, axyz0, axyz1, base_ra
     cylinder_rotations(axyz0, axyz1, radii, rot44)
     rot44[:,3,:3] = 0.5*(axyz0+axyz1)
 
-    from chimerax.core.graphics import Drawing
+    from chimerax.graphics import Drawing
     d = Drawing('{}-fold screw axis'.format(fold_symmetry))
     d.set_geometry(*dashed_cylinder_geometry(segments=15))
     d.color = _symmetry_colors[fold_symmetry][1]
@@ -385,7 +385,7 @@ def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, base_radius=0.3):
 
 
 
-    from chimerax.core.graphics import Drawing
+    from chimerax.graphics import Drawing
     d = Drawing('{}-fold symmetry axis'.format(fold_symmetry))
     d.set_geometry(vertices, normals, triangles)
     d.set_vertex_colors(colors)

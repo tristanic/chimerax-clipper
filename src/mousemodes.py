@@ -71,7 +71,7 @@ class Z_Shift_CofR(MouseMode):
     def __init__(self, session):
         self._step_multiplier = 1
         super().__init__(session)
-        from chimerax.core.graphics import Drawing
+        from chimerax.graphics import Drawing
         d = self._drawing = Drawing('Depth Indicator')
         d.set_geometry(*self._drawing_geometry())
         d.display = False
@@ -178,7 +178,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         if fc is not None:
             return fc
         else:
-            from chimerax.core.graphics.clipping import CameraClipPlane
+            from chimerax.graphics.clipping import CameraClipPlane
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
@@ -198,7 +198,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         if nc is not None:
             return nc
         else:
-            from chimerax.core.graphics.clipping import CameraClipPlane
+            from chimerax.graphics.clipping import CameraClipPlane
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
