@@ -554,8 +554,10 @@ class SymmetryManager(Model):
 
 
 
-        self._atomic_symmetry_model = None
 
+        self._update_handler = None
+        self._structure_remove_handler = None
+        self._swapping_model = False
         self.initialized=False
         if model is not None:
             self.add_model(model, ignore_model_symmetry=ignore_model_symmetry,
@@ -580,10 +582,6 @@ class SymmetryManager(Model):
         self.name = 'Data manager ({})'.format(model.name)
         self._last_box_center = model.atoms.coords.mean(axis=0)
 
-        self._anisou_sanity_check(model.atoms)
-        if model.parent != self:
-            apply_scene_positions(model)
-            self._transplant_model(model)
 
         if ignore_model_symmetry:
             f = simple_p1_box
@@ -595,13 +593,25 @@ class SymmetryManager(Model):
         mmgr = self.map_mgr
         self.spotlight_mode = spotlight_mode
         uc = self._unit_cell = Unit_Cell(model.atoms, self.cell, self.spacegroup, self.grid)
-        self._atomic_symmetry_model = AtomicSymmetryModel(self,
-            radius = spotlight_radius, live = spotlight_mode, debug=debug)
+        # self._atomic_symmetry_model = AtomicSymmetryModel(self,
+        #     radius = spotlight_radius, live = spotlight_mode, debug=debug)
         self.spotlight_radius=spotlight_radius
-        self._update_handler = self.session.triggers.add_handler('new frame',
-            self.update)
+        if self._update_handler is None:
+            self._update_handler = self.session.triggers.add_handler('new frame',
+                self.update)
         id = model.id
+        self._anisou_sanity_check(model.atoms)
+        if model.parent != self:
+            apply_scene_positions(model)
+            self._transplant_model(model)
+        # "Touch" the atomic_symmetry_model to ensure it's created
+        self.atomic_symmetry_model
+
         self.initialized=True
+        if self._structure_remove_handler is None:
+            self._structure_remove_handler = self.session.triggers.add_handler(
+                'remove models', self._structure_remove_cb
+            )
         if not self._session_restore:
             self.set_default_atom_display(mode=self._hydrogen_mode)
 
@@ -633,12 +643,23 @@ class SymmetryManager(Model):
         from .mousemodes import initialize_clipper_mouse_modes
         initialize_clipper_mouse_modes(session)
 
+    def _structure_remove_cb(self, trigger_name, removed_models):
+        if self.structure is None and not self._swapping_model:
+            print('Deleting atomic symmetry model...')
+            if self.atomic_symmetry_model is not None:
+                asm = self.atomic_symmetry_model
+                self.session.models.remove([asm])
+                asm.delete()
+
+
     def swap_model(self, new_model, keep_old = False):
         '''
         Swap out the current atomic model for a new one.
         '''
+        self._swapping_model = True
         old_model = self.structure
         if old_model is None:
+            self._swapping_model=False
             return self.add_model(new_model)
         old_id = old_model.id
         old_model.triggers.remove_handler(self._structure_change_handler)
@@ -658,6 +679,7 @@ class SymmetryManager(Model):
         self.session.triggers.add_handler('frame drawn', redraw_cb)
         self._anisou_sanity_check(new_model.atoms)
         self.triggers.activate_trigger('model replaced', new_model)
+        self._swapping_model = False
         return new_model
 
     def swap_model_from_file(self, filename, keep_old=False):
@@ -813,7 +835,12 @@ class SymmetryManager(Model):
 
     @property
     def atomic_symmetry_model(self):
-        return self._atomic_symmetry_model
+        for m in self.child_models():
+            if isinstance(m, AtomicSymmetryModel):
+                return m
+        if self.structure is not None:
+            return AtomicSymmetryModel(self, self.spotlight_radius, live=self.spotlight_mode, debug=self._debug)
+        return None
 
     @property
     def atomic_sym_radius(self):
@@ -858,6 +885,9 @@ class SymmetryManager(Model):
         if self._update_handler is not None:
             self.session.triggers.remove_handler(self._update_handler)
             self._update_handler = None
+        if self._structure_remove_handler is not None:
+            self.session.triggers.remove_handler(self._structure_remove_handler)
+            self._structure_remove_handler = None
         super().delete()
 
     def update(self, *_, force=False):
@@ -1669,7 +1699,7 @@ class AtomicSymmetryModel(Model):
 
     def _update_ribbon_graphics(self):
         rd = self._ribbon_drawing
-        prd = self.structure._ribbon_drawing
+        prd = self.structure._ribbons_drawing
         position_indices = self._current_ribbon_syms
         tfs = self._current_tfs[position_indices]
         from chimerax.core.geometry import Places
@@ -1777,7 +1807,7 @@ class SymRibbonDrawing(Drawing):
 
     @property
     def master_ribbon(self):
-        return self.structure._ribbon_drawing
+        return self.structure._ribbons_drawing
 
     @property
     def dim_factor(self):
@@ -1786,7 +1816,7 @@ class SymRibbonDrawing(Drawing):
     @dim_factor.setter
     def dim_factor(self, factor):
         self._dim_factor = factor
-        self.update
+        self.update()
 
     def first_intercept(self, mxyz1, mxyz2, exclude=None):
         return None
