@@ -84,15 +84,21 @@ def save_structure_factors(session, path, models=None, preserve_input=False,
 
 
 def spotlight(session, models=None, enable=True, radius=None):
-    from chimerax.clipper.symmetry import get_symmetry_handler
+    from chimerax.clipper.symmetry import get_symmetry_handler, SymmetryManager
     if models is None:
         from chimerax.atomic import AtomicStructure
         models = session.models.list(type=AtomicStructure)
+        sym_mgrs = session.models.list(type=SymmetryManager)
+        models = [m for m in models if m.parent not in sym_mgrs]
+        models = models+sym_mgrs
         create = False
     else:
         create = True
     for m in models:
-        sh = get_symmetry_handler(m, create=create, auto_add_to_session=True)
+        if isinstance(m, SymmetryManager):
+            sh = m
+        else:
+            sh = get_symmetry_handler(m, create=create, auto_add_to_session=True)
         if sh is not None:
             sh.spotlight_mode=enable
             if radius is not None:
@@ -160,6 +166,26 @@ class XmapSetsArg(AtomSpecArg):
         models = aspec.evaluate(session).models
         xmapsets = [m for m in models if type(m) == XmapSet]
         return xmapsets, text, rest
+
+class AtomicStructuresOrSymmetryMgrsArg(AtomSpecArg):
+    name = "a models specifier"
+
+    @classmethod
+    def parse(cls, text, session):
+        '''
+        Returns any AtomicStructures or SymmetryManagers found in the selection.
+        If an AtomicStructure is already managed by a SymmetryManager, only the
+        SymmetryManager will be included
+        '''
+        from .symmetry import SymmetryManager
+        from chimerax.atomic import AtomicStructure
+        aspec, text, rest = super().parse(text, session)
+        models = aspec.evaluate(session).models
+        sym_mgrs = [m for m in models if isinstance(m, SymmetryManager)]
+        structures = [m for m in models if isinstance(m, AtomicStructure) and
+            m.parent not in sym_mgrs]
+        return structures+sym_mgrs, text, rest
+
 
 def draw_symmetry(session, models):
     logger = session.logger
@@ -232,7 +258,7 @@ def register_clipper_cmd(logger):
 
     spot_desc = CmdDesc(
         optional=[
-            ('models', StructuresArg),
+            ('models', AtomicStructuresOrSymmetryMgrsArg),
         ],
         keyword=[
             ('radius', FloatArg),
