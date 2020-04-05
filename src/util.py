@@ -50,15 +50,17 @@ def set_to_default_cartoon(session, model = None):
         atoms = model.atoms
         atoms.displays=False
         atoms[atoms.idatm_types!='HC'].displays=True
-        arg = atomspec.AtomSpecArg('thearg')
-        aspec= arg.parse('#' + model.id_string, session)[0]
-    cartoon.cartoon(session, atoms = aspec, suppress_backbone_display=False)
-    cartoon.cartoon_style(session, atoms = aspec, width=0.4, thickness=0.1, arrows_helix=True, arrow_scale = 2)
+        # arg = atomspec.AtomSpecArg('thearg')
+        # aspec= arg.parse('#' + model.id_string, session)[0]
+    cartoon.cartoon(session, atoms = atoms, suppress_backbone_display=False)
+    cartoon.cartoon_style(session, atoms = atoms, width=0.4, thickness=0.1, arrows_helix=True, arrow_scale = 2)
     cartoon.cartoon_tether(session, structures=models, opacity=0)
     nucleotides(session, 'atoms')
     from chimerax.std_commands import color
-    color.color(session, model, color='bychain', target='ac')
-    color.color(session, model, color='byhetero', target='a')
+    from chimerax.core.objects import Objects
+    objects = Objects(models=models, atoms=atoms)
+    color.color(session, objects, color='bychain', target='ac')
+    color.color(session, objects, color='byhetero', target='a')
 
 
 def atom_list_from_sel(atom_list):
