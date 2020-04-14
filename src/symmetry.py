@@ -619,7 +619,15 @@ class SymmetryManager(Model):
     def _structure_change_cb(self, trigger_name, changes):
         if 'aniso_u changed' in changes[1].atom_reasons():
             self._anisou_sanity_check(changes[1].modified_atoms())
-        self.triggers.activate_trigger('atoms changed', changes)
+        from chimerax.atomic import get_triggers
+        self._current_changes = changes
+        get_triggers().add_handler('changes done', self._changes_done_cb)
+
+    def _changes_done_cb(self, *_):
+        self.triggers.activate_trigger('atoms changed', self._current_changes)
+        from chimerax.core.triggerset import DEREGISTER
+        return DEREGISTER
+
 
     def _anisou_sanity_check(self, atoms):
         from chimerax.clipper.sanity_check import remove_invalid_anisou
