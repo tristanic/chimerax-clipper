@@ -591,8 +591,8 @@ class SymmetryManager(Model):
             args=[model]
         self.cell, self.spacegroup, self.grid, self.resolution, self._has_symmetry = f(*args)
         mmgr = self.map_mgr
-        self.spotlight_mode = spotlight_mode
         uc = self._unit_cell = Unit_Cell(model.atoms, self.cell, self.spacegroup, self.grid)
+        self.spotlight_mode = spotlight_mode
         # self._atomic_symmetry_model = AtomicSymmetryModel(self,
         #     radius = spotlight_radius, live = spotlight_mode, debug=debug)
         self.spotlight_radius=spotlight_radius
