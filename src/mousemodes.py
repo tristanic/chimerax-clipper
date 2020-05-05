@@ -337,7 +337,7 @@ class SelectVolumeToContour(MouseMode):
             self._picked_volume.selected = False
 
 class ContourSelectedVolume(MouseMode):
-    def __init__(self, session, selector, symmetrical=True):
+    def __init__(self, session, selector, symmetrical=True, sensitivity=0.02):
         '''
         Modified volume contouring method which acts on a single volume
         at a time. By default, changes all contours towards/away from
@@ -358,8 +358,10 @@ class ContourSelectedVolume(MouseMode):
         super().__init__(session)
         # SelectVolumeToContour object telling us which volume to work on
         self.selector = selector
+        self.sensitivity = sensitivity
         self.symmetrical = symmetrical
         self.target_volume = None
+
 
 
     def wheel(self, event):
@@ -371,7 +373,7 @@ class ContourSelectedVolume(MouseMode):
                 sd = v.sigma
             else:
                 sd = v.mean_sd_rms()[1]
-            step = d/30 * sd
+            step = self.sensitivity * d * sd
             rep, levels = adjust_threshold_level(v, step, self.symmetrical)
             if rep != 'image':
                 lsig = tuple(l/sd for l in levels)

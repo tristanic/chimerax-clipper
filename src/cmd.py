@@ -220,6 +220,18 @@ def draw_symmetry(session, models):
             sym_drawing.name += '({})'.format(m.id_string)
             session.models.add([sym_drawing])
 
+
+def set_contour_sensitivity(session, sensitivity):
+    from .mousemodes import ContourSelectedVolume
+    mm = [b.mode for b in session.ui.mouse_modes.bindings if isinstance(b.mode, ContourSelectedVolume)]
+    if len(mm):
+        mm = mm[0]
+    else:
+        from chimerax.core.errors import UserError
+        raise UserError('Clipper is not yet initialised. Command ignored.')
+    mm.sensitivity = sensitivity
+
+
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
@@ -306,6 +318,14 @@ def register_clipper_cmd(logger):
         )
     )
     register('clipper symmetry', sym_desc, draw_symmetry, logger=logger)
+
+    set_contour_sensitivity_desc = CmdDesc(
+        required=[('sensitivity', FloatArg),],
+        synopsis=('Set the sensitivity of map contouring to the mouse scroll '
+            'wheel. Each "tick" of the wheel will change the contour by '
+            '(sensitivity * map standard deviation).')
+    )
+    register('clipper set contourSensitivity', set_contour_sensitivity_desc, set_contour_sensitivity)
 
 
 def register_cview_cmd(logger):
