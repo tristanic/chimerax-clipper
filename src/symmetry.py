@@ -1113,16 +1113,9 @@ class SymmetryManager(Model):
         from chimerax.core.models import Model
         data = {
             'model state': Model.take_snapshot(self, session, flags),
-            # 'resolution': self.resolution.limit,
-            # 'cell dim': self.cell.dim,
-            # 'cell angles': self.cell.angles_deg,
-            # 'spacegroup hall symbol': sh.spacegroup.symbol_hall,
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
-        # self._snapshot_model_hides = self.structure.atoms.hides
-        # self.structure.atoms.hides &=~HIDE_ISOLDE
-        # session.triggers.add_handler('end save session', self._end_save_session_cb)
+        from . import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -1132,11 +1125,6 @@ class SymmetryManager(Model):
         session.triggers.add_handler('end restore session', sh._end_restore_session_cb)
         return sh
 
-        # from chimerax.core.models import Model
-        # m = Model.restore_snapshot(session, data['model state'])
-        # m.name = '(Placeholder) '+m.name
-        # return m
-
     def _end_restore_session_cb(self, *_):
         self._session_restore=True
         if self.structure is not None:
@@ -1145,12 +1133,6 @@ class SymmetryManager(Model):
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
-
-
-    # def _end_save_session_cb(self, *_):
-    #     self.structure.atoms.hides = self._snapshot_model_hides
-    #     from chimerax.core.triggerset import DEREGISTER
-    #     return DEREGISTER
 
 def _get_special_positions_model(m):
     for cm in m.child_models():

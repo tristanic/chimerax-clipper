@@ -139,8 +139,8 @@ class ReflectionDataContainer(Model):
             'cell angles':          self.cell.angles_deg,
             'shannon rate':         self.shannon_rate
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from . import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -187,8 +187,8 @@ class ReflectionDataNode(Model):
         data = {
             'model state':          Model.take_snapshot(self, session, flags),
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from . import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -239,8 +239,8 @@ class ReflectionData(Model):
             'hkl data':             self.data.data,
             'hkl data type':        self.dtype,
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from . import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @classmethod

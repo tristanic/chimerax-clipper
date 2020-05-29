@@ -785,8 +785,8 @@ class XmapSet(MapSetBase):
             'F/sigF': self._f_sigf_data_name,
             'live update': self.live_update,
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -891,8 +891,9 @@ class XmapHandler_Static(XmapHandlerBase):
             'is difference map': self._is_difference_map,
             'mapset': self._mapset,
             'F/phi': self._f_phi_data,
-            'version':  1,
         }
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -980,9 +981,10 @@ class XmapHandler_Live(XmapHandlerBase):
             'volume state': state_from_map(self),
             'mapset': self._mapset,
             'map name': self._map_name,
-            'version':  1,
+            'kwargs': self._rebuild_args,
         }
-        data['kwargs'] = self._rebuild_args
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod

@@ -314,8 +314,11 @@ class ZoneMask(State):
             'surface':          self.surface,
             'mask':             self.mask,
             'max_components':   self.max_components,
-            'version':          1,
         }
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
+        return data
+
 
     @classmethod
     def restore_snapshot(cls, session, data):

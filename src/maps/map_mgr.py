@@ -445,8 +445,8 @@ class MapMgr(Model):
             'symmetry manager': self._mgr,
             'model state': Model.take_snapshot(self, session, flags)
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod

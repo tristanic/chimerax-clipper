@@ -106,8 +106,8 @@ class NXmapSet(MapSetBase):
             'model state':          Model.take_snapshot(self, session, flags),
             'manager':              self._mgr,
         }
-        from chimerax.core.state import CORE_STATE_VERSION
-        data['version']=CORE_STATE_VERSION
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
@@ -187,8 +187,9 @@ class NXmapHandler(MapHandlerBase):
             # 'volume state': state_from_map(self),
             'is difference map': self._is_difference_map,
             'mapset': self._mapset,
-            'version':  1,
         }
+        from .. import CLIPPER_STATE_VERSION
+        data['version']=CLIPPER_STATE_VERSION
         return data
 
     @staticmethod
