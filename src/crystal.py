@@ -580,7 +580,9 @@ class CrystalStructure(Model):
         coords = self.master_model.atoms.coords.astype(numpy.float32)
         display_mask = numpy.array([False]*len(coords))
         if not self.show_nonpolar_H:
-            h_mask = self.master_model.atoms.idatm_types != 'HC'
+            from .util import exclude_nonpolar_hydrogens
+            h_mask = exclude_nonpolar_hydrogens(self.master_model.atoms)
+            # h_mask = self.master_model.atoms.idatm_types != 'HC'
         for s in symops:
             this_model = self.sym_model_container[s]
             this_set = (coords, s.rtop_orth(self.cell).mat34.astype(numpy.float32))
@@ -711,7 +713,8 @@ class CrystalStructure(Model):
             self.master_model.atoms.names, numpy.array(
                 ['N','C','CA']))].displays = True
         if not self.show_nonpolar_H:
-            atoms = atoms.filter(atoms.idatm_types != 'HC')
+            from .util import exclude_nonpolar_hydrogens
+            atoms = atoms.filter(exclude_nonpolar_hydrogens(atoms))
         atoms.displays = True
         atoms.intra_bonds.radii = 0.2
         atoms.residues.ribbon_displays = True

@@ -29,6 +29,29 @@ def compiled_lib_extension():
         return "dylib"
     return "so"
 
+import os
+libdir = os.path.dirname(os.path.abspath(__file__))
+libfile = os.path.join(libdir, 'lib_util.'+compiled_lib_extension())
+from chimerax.atomic import molc
+
+_c_functions = molc.CFunctions(os.path.splitext(libfile)[0])
+c_function = _c_functions.c_function
+import ctypes
+
+def nonpolar_hydrogens(atoms):
+    import numpy
+    n = len(atoms)
+    mask = numpy.empty(n, numpy.bool)
+    f = c_function('is_nonpolar_hydrogen',
+        args=(ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_bool)),
+    )
+    f(atoms._c_pointers, n, molc.pointer(mask))
+    return mask
+
+def exclude_nonpolar_hydrogens(atoms):
+    import numpy
+    return numpy.logical_not(nonpolar_hydrogens(atoms))
+
 def available_cores():
     import os
     return max(os.cpu_count()-2, 1)
@@ -49,7 +72,8 @@ def set_to_default_cartoon(session, model = None):
         models = AtomicStructures([model])
         atoms = model.atoms
         atoms.displays=False
-        atoms[atoms.idatm_types!='HC'].displays=True
+        atoms[exclude_nonpolar_hydrogens(atoms)].displays=True
+        # atoms[atoms.idatm_types!='HC'].displays=True
         # arg = atomspec.AtomSpecArg('thearg')
         # aspec= arg.parse('#' + model.id_string, session)[0]
     cartoon.cartoon(session, atoms = atoms, suppress_backbone_display=False)

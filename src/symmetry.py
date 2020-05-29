@@ -747,7 +747,8 @@ class SymmetryManager(Model):
         hydrogens = atoms[atoms.element_names == 'H']
         hydrogens.displays = False
         if mode == 'polar':
-            hydrogens[hydrogens.idatm_types != 'HC'].displays = True
+            from .util import exclude_nonpolar_hydrogens
+            hydrogens[exclude_nonpolar_hydrogens(hydrogens)].displays = True
         elif mode == 'all':
             hydrogens.displays=True
         self._hydrogens = mode

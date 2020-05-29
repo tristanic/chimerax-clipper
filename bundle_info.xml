@@ -3,7 +3,7 @@
 @Date:   12-Dec-2019
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 11-May-2020
+@Last modified time: 23-May-2020
 @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 @Copyright: 2016-2019 Tristan Croll
 -->
@@ -380,6 +380,24 @@
       <Library>arrays</Library>
       <!-- <Library>stdc++</Library> -->
   </CLibrary>
+
+  <CLibrary name = "_util" usesNumpy="true">
+      <SourceFile>src/_util.cpp</SourceFile>
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <Library>atomstruct</Library>
+      <!-- <Library>arrays</Library> -->
+      <!-- <Library>stdc++</Library> -->
+  </CLibrary>
+
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
