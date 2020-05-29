@@ -3,8 +3,8 @@ import os
 _basedir = os.path.dirname(os.path.abspath(__file__))
 
 def test_xtal_mgr(session):
-    from chimerax.core.commands import open
-    m = open.open(session, os.path.join(_basedir, '3io0.pdb'))[0]
+    from chimerax.open_command.cmd import provider_open
+    m = provider_open(session, [os.path.join(_basedir, '3io0.pdb')])[0]
     from ..clipper_mtz import ReflectionDataContainer
     from .. import atom_list_from_sel
     from ..clipper_python.ext import Xtal_mgr

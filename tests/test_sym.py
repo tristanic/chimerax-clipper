@@ -1,8 +1,8 @@
 import numpy
 import os
 dpath = os.path.dirname(os.path.abspath(__file__))
-from chimerax.core.commands import open
-m = open.open(session, os.path.join(dpath, '5f4y.pdb')[0]
+from chimerax.open_command.cmd import provider_open
+m = provider_open(session, [os.path.join(dpath, '5f4y.pdb')])[0]
 from chimerax.clipper import CrystalStructure
 cs = CrystalStructure(session, m, os.path.join('5f4y_map_coeffs.mtz')
 from chimerax.clipper.crystal import _find_box_corner

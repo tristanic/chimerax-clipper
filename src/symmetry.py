@@ -695,8 +695,8 @@ class SymmetryManager(Model):
         Load a model from file, and replace the current coordinates with the
         result.
         '''
-        from chimerax.core import io
-        new_model = io.open_data(self.session, filename)[0][0]
+        from chimerax.open_command.cmd import provider_open
+        new_model = provider_open(self.session, [filename], _add_models=False)[0]
         return self.swap_model(new_model, keep_old=keep_old)
 
 

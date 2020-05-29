@@ -1,8 +1,8 @@
 # @Author: Tristan Croll
 # @Date:   01-Mar-2018
 # @Email:  tic20@cam.ac.uk
-# @Last modified by:   Tristan Croll
-# @Last modified time: 18-Apr-2018
+# @Last modified by:   tic20
+# @Last modified time: 26-May-2020
 # @License: Creative Commons BY-NC-SA 3.0, https://creativecommons.org/licenses/by-nc-sa/3.0/.
 # @Copyright: Copyright 2017-2018 Tristan Croll
 
@@ -11,9 +11,9 @@
 import numpy
 def test_clipper_sym(session, radius=12):
     import os
-    from chimerax.core.commands import open
+    from chimerax.open_command.cmd import provider_open
     libdir = os.path.abspath(os.path.dirname(__file__))
-    m = open.open(session, os.path.join(libdir,'3io0.pdb'))[0]
+    m = provider_open(session, [os.path.join(libdir,'3io0.pdb')])[0]
     m.atoms.displays = True
     from chimerax.std_commands import cofr
     cofr.cofr(session, method='center of view', show_pivot=True)
