@@ -378,7 +378,6 @@
       <LinkArgument platform="mac">-s</LinkArgument>
       <Library>atomstruct</Library>
       <Library>arrays</Library>
-      <!-- <Library>stdc++</Library> -->
   </CLibrary>
 
   <CLibrary name = "_util" usesNumpy="true">
@@ -394,8 +393,7 @@
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
       <LinkArgument platform="mac">-s</LinkArgument>
       <Library>atomstruct</Library>
-      <!-- <Library>arrays</Library> -->
-      <!-- <Library>stdc++</Library> -->
+      <Library>element</Library>
   </CLibrary>
 
 
