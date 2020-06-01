@@ -131,8 +131,7 @@ class _ClipperBundle(BundleAPI):
     @staticmethod
     def run_provider(session, name, mgr):
         if mgr == session.open_command:
-            if name in ('sfCIF', 'MTZ'):
-                return _sf_file_open_info()
+            return _sf_file_open_info()
         else:
             return _sf_file_save_info()
 
