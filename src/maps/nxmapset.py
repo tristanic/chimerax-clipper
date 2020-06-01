@@ -141,10 +141,11 @@ class NXmapHandler(MapHandlerBase):
         session = mapset.session
         if volume is not None:
             data = volume.data
-            if volume in session.models.list():
-                session.models.remove([volume])
             name = volume.name
-            volume.delete()
+            if volume in session.models.list():
+                session.models.close([volume])
+            else:
+                volume.delete()
         else:
             if name is None:
                 name = "Unnamed map"
