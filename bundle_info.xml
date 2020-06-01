@@ -3,7 +3,7 @@
 @Date:   12-Dec-2019
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 23-May-2020
+@Last modified time: 01-Jun-2020
 @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 @Copyright: 2016-2019 Tristan Croll
 -->
@@ -408,60 +408,42 @@
   </Dependencies>
 
 
-  <!-- Python and ChimeraX-specific classifiers
-       From https://pypi.python.org/pypi?%3Aaction=list_classifiers
-       Some Python classifiers are always inserted by the build process.
-       These include the Environment and Operating System classifiers
-       as well as:
-         Framework :: ChimeraX
-         Intended Audience :: Science/Research
-         Programming Language :: Python :: 3
-         Topic :: Scientific/Engineering :: Visualization
-         Topic :: Scientific/Engineering :: Chemistry
-         Topic :: Scientific/Engineering :: Bio-Informatics
-       The "ChimeraX :: Bundle" classifier is also supplied automatically.  -->
-       <DataFiles>
-         <DataFile>tests/*.pdb</DataFile>
-         <DataFile>tests/*.mtz</DataFile>
-         <DataFile>tests/*.ccp4</DataFile>
-         <DataFile platform="linux">libfftw2xc.so</DataFile>
-         <DataFile platform="linux">libfftw_mkl_core.so</DataFile>
-         <DataFile platform="mac">libfftw2xc.dylib</DataFile>
-         <DataFile platform="mac">mkl_custom.dylib</DataFile>
-         <DataFile platform="windows">mkl_fftw2.dll</DataFile>
-         <DataDir>docs</DataDir>
-     </DataFiles>
+  <DataFiles>
+     <DataFile>tests/*.pdb</DataFile>
+     <DataFile>tests/*.mtz</DataFile>
+     <DataFile>tests/*.ccp4</DataFile>
+     <DataFile platform="linux">libfftw2xc.so</DataFile>
+     <DataFile platform="linux">libfftw_mkl_core.so</DataFile>
+     <DataFile platform="mac">libfftw2xc.dylib</DataFile>
+     <DataFile platform="mac">mkl_custom.dylib</DataFile>
+     <DataFile platform="windows">mkl_fftw2.dll</DataFile>
+     <DataDir>docs</DataDir>
+  </DataFiles>
 
-     <ExtraFiles>
-       <ExtraFileGroup source="src/deps/clipper/**/*.h">include/clipper</ExtraFileGroup>
-       <ExtraFileGroup source="src/clipper_ext/*.h">include/clipper_ext</ExtraFileGroup>
-       <ExtraFileGroup source="src/deps/fftw2/include/*.h">include</ExtraFileGroup>
-       <ExtraFileGroup source="src/deps/libccp4/ccp4/**/*.h">include/ccp4</ExtraFileGroup>
-       <ExtraFileGroup source="src/deps/mmdb2/mmdb2/**/*.h">include/mmdb2</ExtraFileGroup>
-     </ExtraFiles>
+  <ExtraFiles>
+    <ExtraFileGroup source="src/deps/clipper/**/*.h">include/clipper</ExtraFileGroup>
+    <ExtraFileGroup source="src/clipper_ext/*.h">include/clipper_ext</ExtraFileGroup>
+    <ExtraFileGroup source="src/deps/fftw2/include/*.h">include</ExtraFileGroup>
+    <ExtraFileGroup source="src/deps/libccp4/ccp4/**/*.h">include/ccp4</ExtraFileGroup>
+    <ExtraFileGroup source="src/deps/mmdb2/mmdb2/**/*.h">include/mmdb2</ExtraFileGroup>
+  </ExtraFiles>
 
 
-  <!-- <DataFiles>
-    <DataFile>dir/file</DataFile>
-  </DataFiles> -->
 
-  <!-- <Providers manager="data formats">
-      <Provider name="sfCIF" category="Structure factors" suffixes=".cif"
-          encoding="utf-8"/>
+  <Providers manager="data formats">
+      <!-- <Provider name="sfCIF" category="Structure factors" suffixes=".cif"
+          encoding="utf-8"/> -->
       <Provider name="MTZ" category="Structure factors" suffixes=".mtz"/>
   </Providers>
 
   <Providers manager="open command">
-      <Provider name="sfCIF" want_path="true" />
+      <!-- <Provider name="sfCIF" want_path="true" /> -->
       <Provider name="MTZ" want_path="true" />
-      <Provider name="pdb" type="fetch" format_name="sfCIF" />
-      <Provider name="pdbe" type="fetch" format_name="sfCIF" />
-      <Provider name="pdbj" type="fetch" format_name="sfCIF" />
   </Providers>
 
   <Providers manager="save command">
-      <Provider name="sfCIF" />
-  </Providers> -->
+      <Provider name="MTZ"/>
+  </Providers>
 
 
   <Classifiers>
@@ -469,11 +451,6 @@
     <PythonClassifier>Development Status :: 4 - Beta</PythonClassifier>
     <PythonClassifier>License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)</PythonClassifier>
 ]
-    <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor MTZ :: mtz :: Reflection data :: .mtz :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier>
-    <ChimeraXClassifier>ChimeraX :: Open :: Structure factor MTZ :: mtz :: true :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier>
-    <ChimeraXClassifier>ChimeraX :: Save :: Structure factor MTZ :: mtz :: true :: preserve_input:Bool, save_map_coeffs:Bool</ChimeraXClassifier>
-    <!-- <ChimeraXClassifier>ChimeraX :: DataFormat :: Structure factor CIF :: sfcif :: Reflection data :: .cif :: :: :: :: :: Crystallographic reflection file :: </ChimeraXClassifier> -->
-    <!-- <ChimeraXClassifier>ChimeraX :: Open :: Structure factor CIF :: sfcif :: false :: structure_model:Structure, over_sampling:Float</ChimeraXClassifier> -->
     <ChimeraXClassifier>ChimeraX :: Command :: clipper :: General :: Command-line control of Clipper plugin for symmetry and map visualisation</ChimeraXClassifier>
     <ChimeraXClassifier>ChimeraX :: Command :: cview :: General :: Re-center view on a selection, and set view mode to centerOfView with pivot indicator</ChimeraXClassifier>
 ]

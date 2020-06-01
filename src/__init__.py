@@ -127,23 +127,34 @@ class _ClipperBundle(BundleAPI):
         elif command_name == 'cview':
             cmd.register_cview_cmd(logger)
 
-    @staticmethod
-    def open_file(session, path, format_name, structure_model=None,
-            over_sampling=2.0):
-        if format_name in ('mtz', 'sfcif'):
-            if structure_model is None:
-                from chimerax.core.errors import UserError
-                raise UserError('Must specify a structure model to associate with crystallographic data')
-            from .cmd import open_structure_factors
-            return open_structure_factors(session, path, structure_model=structure_model,
-                over_sampling=over_sampling)
 
     @staticmethod
-    def save_file(session, path, *, models=None, preserve_input=False,
-            save_map_coeffs=False):
-        from .cmd import save_structure_factors
-        return save_structure_factors(session, path, models=models,
-            preserve_input=preserve_input, save_map_coeffs=save_map_coeffs)
+    def run_provider(session, name, mgr):
+        if mgr == session.open_command:
+            if name in ('sfCIF', 'MTZ'):
+                return _sf_file_open_info()
+        else:
+            return _sf_file_save_info()
+
+
+
+    # @staticmethod
+    # def open_file(session, path, format_name, structure_model=None,
+    #         over_sampling=2.0):
+    #     if format_name in ('mtz', 'sfcif'):
+    #         if structure_model is None:
+    #             from chimerax.core.errors import UserError
+    #             raise UserError('Must specify a structure model to associate with crystallographic data')
+    #         from .cmd import open_structure_factors
+    #         return open_structure_factors(session, path, structure_model=structure_model,
+    #             over_sampling=over_sampling)
+    #
+    # @staticmethod
+    # def save_file(session, path, *, models=None, preserve_input=False,
+    #         save_map_coeffs=False):
+    #     from .cmd import save_structure_factors
+    #     return save_structure_factors(session, path, models=models,
+    #         preserve_input=preserve_input, save_map_coeffs=save_map_coeffs)
 
     # get_class() is used for saving/restoring tools, but Clipper doesn't define
     # any.
@@ -195,8 +206,47 @@ class _ClipperBundle(BundleAPI):
         return ct.get(class_name)
 
 
+def _sf_file_open_info():
+    from chimerax.open_command import OpenerInfo
 
+    class Info(OpenerInfo):
+        def open(self, session, data, file_name, **kw):
+            structure_model = kw.get('structure_model', None)
+            if structure_model is None:
+                from chimerax.core.errors import UserError
+                raise UserError('Must specify a structure model to associate with crystallographic data')
+            from .cmd import open_structure_factors
+            return open_structure_factors(session, data, **kw)
 
+        @property
+        def open_args(self):
+            from chimerax.atomic import StructureArg
+            from chimerax.core.commands import FloatArg
+
+            return {
+                'structure_model':  StructureArg,
+                'over_sampling':    FloatArg,
+            }
+    return Info()
+
+def _sf_file_save_info():
+    from chimerax.save_command import SaverInfo
+
+    class Info(SaverInfo):
+        def save(self, session, path, **kw):
+            from .cmd import save_structure_factors
+            save_structure_factors(session, path, **kw)
+
+        @property
+        def save_args(self):
+            from .cmd import XmapSetsArg
+            from chimerax.core.commands import BoolArg
+            return {
+                'models':           XmapSetsArg,
+                'preserve_input':   BoolArg,
+                'save_map_coeffs':  BoolArg,
+            }
+    return Info()
 
 
 
