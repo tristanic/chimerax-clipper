@@ -68,6 +68,7 @@ def set_to_default_cartoon(session, model = None):
     if model is None:
         aspec = None
         models = None
+        atoms = None
     else:
         models = AtomicStructures([model])
         atoms = model.atoms
