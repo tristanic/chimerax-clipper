@@ -429,12 +429,12 @@
 
 
   <Providers manager="data formats">
-      <Provider name="sfCIF" category="Structure factors" encoding="utf-8"/>
+      <!-- <Provider name="sfCIF" category="Structure factors" encoding="utf-8"/> -->
       <Provider name="MTZ" category="Structure factors" suffixes=".mtz"/>
   </Providers>
 
   <Providers manager="open command">
-      <Provider name="sfCIF" want_path="true" />
+      <!-- <Provider name="sfCIF" want_path="true" /> -->
       <Provider name="MTZ" want_path="true" />
   </Providers>
 
