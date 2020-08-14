@@ -171,10 +171,12 @@ class NXmapHandler(MapHandlerBase):
         if not self.display:
             return
         corners = _find_box_corners(self.center, self.display_radius, self.data.xyz_to_ijk_transform)
-        self.new_region(ijk_min=corners[0], ijk_max=corners[1], ijk_step=[1,1,1])
+        self.new_region(ijk_min=corners[0], ijk_max=corners[1], ijk_step=[1,1,1],
+            adjust_step=True)
 
     def expand_to_cover_coords(self, coords, padding):
-        self.new_region(*self.bounding_region(coords, padding=padding, step=[1,1,1]))
+        self.new_region(*self.bounding_region(coords, padding=padding, step=[1,1,1]),
+            adjust_step=True)
 
 
     def take_snapshot(self, session, flags):
