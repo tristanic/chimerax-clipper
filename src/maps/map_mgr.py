@@ -72,6 +72,7 @@ class MapMgr(Model):
     '''
     Top-level manager for all maps associated with a model.
     '''
+    DEFAULT_MAX_VOXELS = 750000
 
     # SESSION_SAVE=False
     def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0,
@@ -100,6 +101,8 @@ class MapMgr(Model):
         for t in trigger_names:
             self.triggers.add_trigger(t)
 
+        self._max_voxels_for_live_remask = self.DEFAULT_MAX_VOXELS
+
         # Handler for live box update
         self._box_update_handler = None
 
@@ -125,9 +128,11 @@ class MapMgr(Model):
             self._spotlight_mode_changed_cb)))
 
 
+
         # self.session.triggers.add_handler('frame drawn', self._first_init_cb)
         if auto_add:
             cm.add([self])
+
 
     # def added_to_session(self, session):
     #     super().added_to_session(session)
@@ -135,9 +140,9 @@ class MapMgr(Model):
 
     def _initialize_zone_mgr(self):
         if self._zone_mgr is None:
-            from .mask_handler import Zone_Mgr
+            from .mask_handler import ZoneMgr
             coords = [self.spotlight_center]
-            self._zone_mgr = Zone_Mgr(self.session, 1.5,
+            self._zone_mgr = ZoneMgr(self.session, 1.5,
                 5)
 
     @property
@@ -316,6 +321,7 @@ class MapMgr(Model):
     def _start_spotlight_mode(self):
         zm = self._zone_mgr
         zm.radius = zm.pad = self.spotlight_radius
+        zm.allow_remask_on_coord_updates()
         # zm.coords = [self.spotlight_center]
         self.triggers.activate_trigger('spotlight changed',
             (self.spotlight_center, self.spotlight_radius)
@@ -360,6 +366,12 @@ class MapMgr(Model):
         zm.pad = extra_padding
         self.triggers.activate_trigger('cover coords',
             (zm.coords, mask_radius+extra_padding))
+        displayed_volumes = [v for v in self.all_maps if v.display]
+        num_displayed_voxels = sum(v.region_matrix(v.region).size for v in displayed_volumes)
+        if num_displayed_voxels > self._max_voxels_for_live_remask:
+            zm.block_remask_on_coord_updates()
+        else:
+            zm.allow_remask_on_coord_updates()
         # self._reapply_zone()
 
 

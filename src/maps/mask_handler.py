@@ -21,7 +21,7 @@
 
 from chimerax.map import Volume
 
-class Zone_Mgr:
+class ZoneMgr:
     def __init__(self, session, grid_step, radius,
             atoms=None, transforms=None, transform_indices=None, coords=None, pad=None, interpolation_threshold=0.75):
         if pad is None:
@@ -56,6 +56,14 @@ class Zone_Mgr:
                 # print('Transformed coords: {}'.format(coords)')
                 return coords
         return self._coords
+
+    def block_remask_on_coord_updates(self):
+        if not self.triggers.is_trigger_blocked('atom coords updated'):
+            self.triggers.block_trigger('atom coords updated')
+
+    def allow_remask_on_coord_updates(self):
+        if self.triggers.is_trigger_blocked('atom coords updated'):
+            self.triggers.release_trigger('atom coords updated')
 
     @coords.setter
     def coords(self, coords):
