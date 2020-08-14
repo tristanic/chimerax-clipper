@@ -170,6 +170,15 @@ def _get_symmetry_handler(structure, create=False):
         return SymmetryManager(structure.session, model=structure)
     return None
 
+def get_all_symmetry_handlers(session):
+    from chimerax.atomic import AtomicStructure
+    handlers = []
+    for m in session.models.list(type=AtomicStructure):
+        sh = get_symmetry_handler(m, create=False)
+        if sh is not None:
+            handlers.append(sh)
+    return handlers
+
 def get_map_mgr(structure, create=False, auto_add_to_session=False):
     sh = get_symmetry_handler(structure, create=create, auto_add_to_session=auto_add_to_session)
     if sh is not None:

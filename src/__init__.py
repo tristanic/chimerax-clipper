@@ -86,7 +86,11 @@ from .clipper_python.data32 import (
 
 from .clipper_mtz import ReflectionDataContainer
 
-from .symmetry import get_symmetry_handler, get_map_mgr
+from .symmetry import (
+    get_symmetry_handler,
+    get_all_symmetry_handlers,
+    get_map_mgr
+    )
 
 
 from chimerax.core.toolshed import BundleAPI
