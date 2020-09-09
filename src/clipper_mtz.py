@@ -458,8 +458,9 @@ def _auto_choose_reflections(names, datasets):
     '''
     from chimerax.clipper import (HKL_data_F_sigF, HKL_data_I_sigI,
         HKL_data_F_sigF_ano, HKL_data_I_sigI_ano)
-    for dtype in (HKL_data_I_sigI, HKL_data_F_sigF, HKL_data_I_sigI_ano,
-        HKL_data_F_sigF_ano):
+    for dtype in (HKL_data_F_sigF, HKL_data_I_sigI, HKL_data_F_sigF_ano,
+            HKL_data_I_sigI_ano
+        ):
         for name, dataset in zip(names, datasets):
             if type(dataset) == dtype:
                 return ([name], [dataset])
