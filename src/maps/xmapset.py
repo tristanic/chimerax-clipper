@@ -720,10 +720,6 @@ class XmapSet(MapSetBase):
         self.live_update = False
         self.stop_showing_r_factors()
         self.session.logger.status('', secondary=True)
-        xm = self._live_xmap_mgr
-        if xm is not None:
-            xm.delete()
-        self._live_xmap_mgr = None
         super().delete()
 
     # Callbacks
