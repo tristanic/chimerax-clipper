@@ -63,7 +63,7 @@ def set_to_default_cartoon(session, model = None):
     '''
     from chimerax.core.commands import atomspec
     from chimerax.std_commands import cartoon
-    from chimerax.atomic.nucleotides.cmd import nucleotides
+    from chimerax.nucleotides.cmd import nucleotides
     from chimerax.atomic import AtomicStructures
     if model is None:
         aspec = None

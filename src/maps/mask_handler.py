@@ -235,7 +235,7 @@ class VolumeMask(Volume):
         dim = numpy.ceil((maxcoor-mincoor)/step).astype(numpy.int)
         data = numpy.zeros(dim, numpy.uint8)
         self._data_fill_target = data
-        from chimerax.map.data import ArrayGridData
+        from chimerax.map_data import ArrayGridData
         darray = ArrayGridData(data.transpose(), origin=mincoor, step=step)
         return darray
 

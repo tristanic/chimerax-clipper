@@ -317,7 +317,7 @@ class XmapHandlerBase(MapHandlerBase):
     def _generate_data_array(self, origin, grid_origin, dim):
         data = self._data_fill_target = numpy.empty(dim, numpy.float32)
         order = numpy.array([2,1,0], int)
-        from chimerax.map.data import ArrayGridData
+        from chimerax.map_data import ArrayGridData
         darray = ArrayGridData(data.transpose(), origin = origin,
             step = self.voxel_size, cell_angles = self.cell.angles_deg)
         return darray

@@ -34,7 +34,7 @@ class NXmapSet(MapSetBase):
 
     def add_nxmap_handler_from_file(self, filename, is_difference_map=False,
         color=None, style=None, contour=None):
-        from chimerax.map.data import open_file
+        from chimerax.map_data import open_file
         grid_data = open_file(filename)[0]
         from chimerax.map.volume import volume_from_grid_data
         h = self.add_nxmap_handler_from_volume(

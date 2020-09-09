@@ -69,7 +69,7 @@ def _space_group_hm_synonym(symbol_hm):
 
 def _format_sym_tuple(result):
     from chimerax.atomic import ctypes_support as convert
-    from chimerax.core.geometry import Places
+    from chimerax.geometry import Places
     primary_atoms = convert.atoms(result[0])
     sym_atoms = convert.atoms(result[1])
     n_sym_atoms = len(sym_atoms)
@@ -146,7 +146,7 @@ def sym_ribbons_in_sphere(tether_coords, transforms, center, cutoff):
 def symmetry_coords(atoms, sym_matrices, sym_indices):
     unique_indices = numpy.unique(sym_indices)
     coords = atoms.coords
-    from chimerax.core.geometry import Place
+    from chimerax.geometry import Place
     for i in unique_indices:
         mask = sym_indices == i
         tf = Place(matrix=sym_matrices[i])
@@ -459,7 +459,7 @@ def apply_scene_positions(model):
     if not p.is_identity():
         model.atoms.transform(p)
         # model.atoms.coords = p*model.atoms.coords
-        from chimerax.core.geometry import Place
+        from chimerax.geometry import Place
         model.position = Place()
         if isinstance(model.parent, SymmetryManager):
             model.parent.position = Place()
@@ -967,7 +967,7 @@ class SymmetryManager(Model):
             include_surrounding_residues=include_surrounding_residues,
             show_context=show_context
         )
-        from chimerax.core.geometry import Places
+        from chimerax.geometry import Places
         atoms = main_set[0]
         transforms = Places(place_array=main_set[1])
         indices = main_set[2]
@@ -988,7 +988,7 @@ class SymmetryManager(Model):
     _cube_pairs = numpy.array([[0,1], [0,2], [0,4], [1,3], [1,5], [2,3], [2,6], [3,7], [4,5], [4,6], [5,7], [6,7]], numpy.int)
 
     def _update_cover_coords(self, cover_set):
-        from chimerax.core.geometry import Places
+        from chimerax.geometry import Places
         transforms = Places(place_array=cover_set[1])
         indices = cover_set[2]
         coords = cover_set[0].coords
@@ -1009,7 +1009,7 @@ class SymmetryManager(Model):
         if offset is None:
             offset = numpy.zeros(3)
 
-        from chimerax.core.geometry import Place, Places
+        from chimerax.geometry import Place, Places
         positions = []
         colors = []
         rgba_edge = numpy.array([0,255,255,128],numpy.uint8)
@@ -1020,7 +1020,7 @@ class SymmetryManager(Model):
         from chimerax.surface.shapes import cylinder_geometry
         d.set_geometry(*cylinder_geometry())
         d.set_color(rgba_edge)
-        from chimerax.core.geometry import cylinder_rotations, Places
+        from chimerax.geometry import cylinder_rotations, Places
         xyz0 = numpy.array([corners[p[0]] for p in self._cube_pairs])
         xyz1 = numpy.array([corners[p[1]] for p in self._cube_pairs])
         radii = numpy.ones(12)*cylinder_radius
@@ -1069,7 +1069,7 @@ class SymmetryManager(Model):
         d.set_geometry(*sphere)
         #d.vertices, d.normals, d.triangles = sphere
 
-        from chimerax.core.geometry import Place, Places
+        from chimerax.geometry import Place, Places
         positions = []
         colors = []
         rgba_corner = numpy.array([255,0,255,128],numpy.uint8)
@@ -1252,7 +1252,7 @@ class AtomicSymmetryModel(Model):
             from chimerax.surface.shapes import sphere_geometry2
             d = self._spd = Drawing("symmetry search positions")
             v, n, t = sphere_geometry2(200)
-            from chimerax.core.geometry import scale
+            from chimerax.geometry import scale
             v = scale(0.5).transform_points(v)
             d.set_geometry(v,n,t)
             self.add_drawing(d)
@@ -1302,12 +1302,12 @@ class AtomicSymmetryModel(Model):
         dim = grid_minmax[1]-grid_minmax[0]
         symops = self.unit_cell.all_symops_in_box(min_xyz, dim, True, self._sym_search_frequency)
         symmats = symops.all_matrices_orth(self.cell, '3x4')
-        from chimerax.core.geometry import Place
+        from chimerax.geometry import Place
         target = [(coords, Place().matrix.astype(numpy.float32))]
         search_list = []
         for i, s in enumerate(symmats):
             search_list.append((master_coords, s.astype(numpy.float32)))
-        from chimerax.core.geometry import find_close_points_sets
+        from chimerax.geometry import find_close_points_sets
         # We want to respond gracefully if the cutoff is zero, but
         # find_close_points_sets returns nothing if the cutoff is
         # *actually* zero. So just set it to a very small non-zero value.
@@ -1479,7 +1479,7 @@ class AtomicSymmetryModel(Model):
         colors = numpy.ones((8,4), numpy.uint8)*50
         colors[:,3]=255
         colors[:,:3]+=(corner_mask*200).astype(numpy.uint8)
-        from chimerax.core.geometry import Place, Places
+        from chimerax.geometry import Place, Places
         places=[]
         for c in corner_mask:
             places.append(Place(origin=(box_corner_grid+clipper.Coord_grid(grid_dim*c)).coord_frac(self.grid).coord_orth(self.cell).xyz))
@@ -1491,7 +1491,7 @@ class AtomicSymmetryModel(Model):
         from .clipper_python import Coord_grid
         box_max = box_corner_grid + Coord_grid(grid_dim)
         step_size = max(ref_size.min()//search_frequency, 1)
-        from chimerax.core.geometry import Place, Places
+        from chimerax.geometry import Place, Places
         places = []
         u = box_corner_grid.u
         u_done = False
@@ -1651,7 +1651,7 @@ class AtomicSymmetryModel(Model):
             xyzr = numpy.empty((na, 4), numpy.float32)
             xyzr[:,:3] = coords
             xyzr[:,3] = self.structure._atom_display_radii(ca)
-            from chimerax.core.geometry import Places
+            from chimerax.geometry import Places
             ad.positions = Places(shift_and_scale = xyzr)
             colors = ca.colors.astype(numpy.float32)
             colors[:,:3] *= self._color_dim_factor
@@ -1673,7 +1673,7 @@ class AtomicSymmetryModel(Model):
             #     bonds = bonds[mask]
             #     mask = numpy.concatenate((mask, mask))
             #     bsym = bsym[mask]
-            #     from chimerax.core.geometry import Places
+            #     from chimerax.geometry import Places
             #     b_tfs = Places(place_array=b_tfs.array()[mask])
             lod.set_bond_cylinder_geometry(bd)
             bd.visible_bonds = bonds
@@ -1702,7 +1702,7 @@ class AtomicSymmetryModel(Model):
         prd = self.structure._ribbons_drawing
         position_indices = self._current_ribbon_syms
         tfs = self._current_tfs[position_indices]
-        from chimerax.core.geometry import Places
+        from chimerax.geometry import Places
         rd.positions = Places(place_array=tfs)
         rd.display = prd.display
         if not rd.display:
@@ -1717,7 +1717,7 @@ class SymAtomsDrawing(structure.AtomsDrawing):
         xyzr = self.positions.shift_and_scale_array()
         coords, radii = xyzr[:,:3], xyzr[:,3]
 
-        from chimerax.core.geometry import closest_sphere_intercept
+        from chimerax.geometry import closest_sphere_intercept
         fmin, anum = closest_sphere_intercept(coords, radii, mxyz1, mxyz2)
         if fmin is None:
             return None
@@ -1739,7 +1739,7 @@ class SymAtomsDrawing(structure.AtomsDrawing):
         if xyzr is None:
             return self.geometry_bounds()
         coords, radii = xyzr[:, :3], xyzr[:,3]
-        from chimerax.core.geometry import sphere_bounds
+        from chimerax.geometry import sphere_bounds
         b = sphere_bounds(coords, radii)
         self._cached_position_bounds = b
 

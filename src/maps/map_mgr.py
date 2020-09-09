@@ -330,7 +330,7 @@ class MapMgr(Model):
             self._box_update_handler = self.crystal_mgr.triggers.add_handler(
                 'spotlight moved', self.update_spotlight)
             self.update_spotlight(None, self.spotlight_center)
-        from chimerax.core.geometry import Places
+        from chimerax.geometry import Places
         self.positions = Places()
         # self._reapply_zone()
 

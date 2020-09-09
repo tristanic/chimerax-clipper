@@ -37,7 +37,7 @@ def unit_cell_box_drawing(unit_cell_corners, corner_radius=1.0, origin_radius=2.
     from chimerax.surface.shapes import sphere_geometry2, cylinder_geometry
     cd.set_geometry(*sphere_geometry2(80))
     ed.set_geometry(*cylinder_geometry())
-    from chimerax.core.geometry import Places, cylinder_rotations
+    from chimerax.geometry import Places, cylinder_rotations
     import numpy
     shift_and_scale = numpy.empty((8,4), numpy.float32)
     shift_and_scale[:,:3] = unit_cell_corners
@@ -168,7 +168,7 @@ def crystallographic_symmetry_axis_and_screw_translation(place, unit_cell, fract
 def unit_cell_and_sym_axes(session, unit_cell):
     cell = unit_cell.cell
     from chimerax.core.models import Model
-    from chimerax.core.geometry import Places, Place
+    from chimerax.geometry import Places, Place
     from collections import defaultdict
     import numpy
     from math import sqrt
@@ -333,7 +333,7 @@ def sym_axis_drawing_screw(fold_symmetry, screw_component, axyz0, axyz1, base_ra
     '''
     import numpy
     from chimerax.surface.shapes import dashed_cylinder_geometry
-    from chimerax.core.geometry import Places, cylinder_rotations, rotation
+    from chimerax.geometry import Places, cylinder_rotations, rotation
     n = len(axyz0)
     radius = base_radius*(1+0.1*fold_symmetry)
     radii = numpy.ones(n, numpy.float32)*radius
@@ -356,7 +356,7 @@ def sym_axis_drawing_standard(fold_symmetry, axyz0, axyz1, base_radius=0.3):
     radius = base_radius*(1+0.1*fold_symmetry)
     n = len(axyz0)
     radii = numpy.ones(n, numpy.float32)*radius
-    from chimerax.core.geometry import Places, cylinder_rotations, rotation
+    from chimerax.geometry import Places, cylinder_rotations, rotation
     rot44 = numpy.empty([n,4,4], numpy.float32)
     cylinder_rotations(axyz0, axyz1, radii, rot44)
     rot44[:,3,:3] = 0.5*(axyz0+axyz1)

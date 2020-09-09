@@ -150,7 +150,7 @@ def load_cif_sf(filename, load_map_coeffs=True):
     '''
     Load a set of structure factors from a .cif file.
     '''
-    from chimerax.atomic.mmcif import get_cif_tables
+    from chimerax.mmcif import get_cif_tables
     table_list = get_cif_tables(filename, _cif_sf_table_names)
     return _parse_tables(table_list, load_map_coeffs=load_map_coeffs)
 

@@ -43,7 +43,7 @@ def atom_list_from_sel(atom_list):
     return clipper_atom_list
 
 def make_unit_cell(model, xmap, draw = True):
-    from chimerax.core.geometry import Place, Places
+    from chimerax.geometry import Place, Places
     cell = xmap.cell()
     atoms = model.atoms
     clipper_atoms = atom_list_from_sel(atoms)
@@ -64,7 +64,7 @@ def make_unit_cell(model, xmap, draw = True):
 
 
 def draw_box(min_corner, max_corner, name='box'):
-    from chimerax.core.geometry import Place, Places
+    from chimerax.geometry import Place, Places
     from chimerax.core.models import Drawing, Model
     from chimerax.surface.shapes import sphere_geometry
     d = Drawing('corners')
@@ -88,7 +88,7 @@ def draw_box(min_corner, max_corner, name='box'):
     return d
 
 def draw_asu(xmap):
-    from chimerax.core.geometry import Place, Places
+    from chimerax.geometry import Place, Places
     from chimerax.core.models import Drawing, Model
     from chimerax.surface.shapes import sphere_geometry
     d = Drawing('asu corners')

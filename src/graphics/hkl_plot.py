@@ -68,7 +68,7 @@ class _HKLPlot3D(Drawing):
         from chimerax.surface.shapes import sphere_geometry2
         self.set_geometry(*sphere_geometry2(80))
         import numpy
-        from chimerax.core.geometry import Places, Place, identity
+        from chimerax.geometry import Places, Place, identity
         id_axes = identity().axes()
         abs_vals = numpy.abs(vals)
         import numpy
@@ -119,7 +119,7 @@ class _HKL_Axes(Drawing):
         vaz, naz, taz = cylinder_geometry(radius = axis_radius, height = axis_length)
         vcz, ncz, tcz = cone_geometry(radius = axis_radius * 2, height = axis_length * 0.2,
                                         caps = True)
-        from chimerax.core.geometry import Place
+        from chimerax.geometry import Place
         vct = Place(origin = (0,0,axis_length/2))
         vcz = vct.transform_points(vcz)
         nv = len(vaz)

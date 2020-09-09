@@ -25,15 +25,15 @@ from collections import defaultdict
 
 from chimerax.core.triggerset import TriggerSet
 from chimerax.atomic import AtomicStructure, concatenate
-from chimerax.core.geometry import Place, Places
-from chimerax.core.geometry import find_close_points, find_close_points_sets
+from chimerax.geometry import Place, Places
+from chimerax.geometry import find_close_points, find_close_points_sets
 from chimerax.surface import zone
 from chimerax.surface.shapes import sphere_geometry
 
 from chimerax.core.models import Model, Drawing
 from chimerax.std_commands import camera, cofr, cartoon
 from chimerax.core.commands import atomspec
-from chimerax.map.data import ArrayGridData
+from chimerax.map_data import ArrayGridData
 from chimerax.map import Volume, volumecommand
 
 from .mousemodes import initialize_map_contour_mouse_modes
@@ -898,7 +898,7 @@ def set_to_default_cartoon(session, model = None):
         cartoon.cartoon(session, atoms = atoms, suppress_backbone_display=False)
         cartoon.cartoon_style(session, atoms = atoms, width=0.4, thickness=0.1, arrows_helix=True, arrow_scale = 2)
         cartoon.cartoon_tether(session, structures=atoms, opacity=0)
-        from chimerax.atomic import nucleotides
+        from chimerax import nucleotides
         nucleotides.cmd.nucleotides(session, 'atoms')
     except:
         return

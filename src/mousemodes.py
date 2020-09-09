@@ -109,7 +109,7 @@ class Z_Shift_CofR(MouseMode):
         import numpy
         cc = cofr-cpos
         shift_vec = numpy.dot(cc/numpy.linalg.norm(cc), vd) *vd * dz
-        from chimerax.core.geometry import translation
+        from chimerax.geometry import translation
         t = translation(shift_vec)
         self.view.center_of_rotation += shift_vec
         self.view.center_of_rotation_method = cofr_method
@@ -120,7 +120,7 @@ class Z_Shift_CofR(MouseMode):
         return box_geometry((-1,-1,-0.01), (1,1,0.01))
 
     def _set_drawing_position(self):
-        from chimerax.core.geometry import Place, scale
+        from chimerax.geometry import Place, scale
         scale = 300*self.pixel_size()
         p = Place(axes=self.view.camera.position.axes()*scale, origin=self.view.center_of_rotation)
         self._drawing.position = p
@@ -223,7 +223,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         if c.name == 'orthographic':
             c.field_width = max(c.field_width - delta_z, self.pixel_size())
             # TODO: Make camera field_width a property so it knows to redraw.
-            from chimerax.core.geometry import place
+            from chimerax.geometry import place
             camera_to_cofr = cofr - c.position.origin()
             vd = c.view_direction()
             current_forward_distance = numpy.dot(camera_to_cofr, vd)
