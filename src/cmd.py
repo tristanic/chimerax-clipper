@@ -29,7 +29,7 @@ def open_structure_factors(session, path, structure_model = None,
     from .symmetry import get_map_mgr
     mmgr = get_map_mgr(structure_model, create=True)
     try:
-        xmapset = mmgr.add_xmapset_from_mtz(path, oversampling_rate=over_sampling)
+        xmapset = mmgr.add_xmapset_from_file(path, oversampling_rate=over_sampling)
         log_str = 'Opened crystallographic dataset from {}\n'.format(path)
         if xmapset.experimental_data:
             log_str += 'Found experimental reflection data: \n'
@@ -54,7 +54,8 @@ def open_structure_factors_and_add_to_session(session, path, structure_model=Non
         over_sampling=2.0, always_raise_errors=False):
     models, log_str = open_structure_factors(session, path, structure_model,
         over_sampling, always_raise_errors)
-    session.models.add(models)
+    if models is not None:
+        session.models.add(models)
 
 def save_structure_factors(session, path, models=None, preserve_input=False,
         save_map_coeffs=False):
@@ -114,7 +115,8 @@ def associate_volumes(session, volumes, to_model=None):
     mgr = get_map_mgr(to_model, create=True)
     for v in volumes:
         mgr.nxmapset.add_nxmap_handler_from_volume(v)
-    session.models.add([mgr.crystal_mgr])
+    if mgr.crystal_mgr not in session.models.list():
+        session.models.add([mgr.crystal_mgr])
 
 def isolate(session, atoms,
         surround_distance=0,
