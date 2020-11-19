@@ -19,6 +19,12 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
+# Workaround to ensure libraries are properly loaded when running in nogui mode
+# to generate docs
+from chimerax import arrays
+arrays.load_libarrays()
+from chimerax.atomic import Atom
+
 def _version():
     import pkg_resources
     return pkg_resources.require('ChimeraX-Clipper')[0].version
