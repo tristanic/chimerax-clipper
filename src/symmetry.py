@@ -1159,6 +1159,8 @@ class AtomicSymmetryModel(Model):
     '''
     Finds and draws local symmetry atoms for an atomic structure
     '''
+    from .clipper_python.ext import element_radius_map
+    _element_radii = element_radius_map()
     SESSION_SAVE=False
     def __init__(self, parent, radius = 15,
         dim_colors_to = 0.4, backbone_mode = 'CA trace', live = True, debug=False):
@@ -1197,6 +1199,7 @@ class AtomicSymmetryModel(Model):
         self.live_scrolling = live
         self._save_session_handler = session.triggers.add_handler('begin save session',
             self._start_save_session_cb)
+        self._assign_atom_radii(self.structure.atoms)
 
     def added_to_session(self, session):
         super().added_to_session(session)
@@ -1563,9 +1566,40 @@ class AtomicSymmetryModel(Model):
         print('Updating cartoon style...')
         self.spotlight_mode = True
         from .util import set_to_default_cartoon
+        self._assign_atom_radii(new_model.atoms)
         set_to_default_cartoon(self.session, model = self.structure)
 
         # self.session.triggers.add_handler('frame drawn', self._set_default_cartoon_cb)
+
+    def _assign_atom_radii(self, atoms):
+        '''
+        For large models, the recalculation of idatm_types triggered by addition
+        of new atoms when radii are left automatic becomes prohibitive for
+        editing the model. So we just set them to fixed values.
+        '''
+        erm = self._element_radii
+        unique_elements = set(atoms.element_names)
+        for e in unique_elements:
+            radius = erm.get(e, 1)
+            atoms[atoms.element_names==e].radii = radius
+
+    def _set_new_atom_style(self, atoms):
+        from chimerax.atomic import selected_atoms, Atom
+        from chimerax.core.commands import run
+        session=self.session
+        atoms.draw_modes = Atom.STICK_STYLE
+        residues = atoms.unique_residues
+        residues.ribbon_displays=True
+        residues.ribbon_hide_backbones=False
+        current_sel = selected_atoms(session)
+        from chimerax.std_commands.color import color
+        from chimerax.core.objects import Objects
+        objects = Objects(atoms=atoms)
+        color(session, objects, color='bychain', halfbond=True)
+        color(session, objects, color='byhetero', halfbond=True)
+        from .util import nonpolar_hydrogens
+        atoms[nonpolar_hydrogens(atoms)].displays=False
+        current_sel.selected = True
 
 
     def _model_changed_cb(self, trigger_name, changes):
@@ -1575,6 +1609,10 @@ class AtomicSymmetryModel(Model):
         num_atoms_changed = False
         update_needed = False
         ribbon_update_needed = False
+        created_atoms = changes.created_atoms()
+        if len(created_atoms):
+            self._assign_atom_radii(created_atoms)
+            self._set_new_atom_style(created_atoms)
         if len(changes.created_atoms()) or changes.num_deleted_atoms()>0:
             num_atoms_changed = True
             update_needed = True

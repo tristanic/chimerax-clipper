@@ -3,7 +3,7 @@
  * @Date:   14-Sep-2018
  * @Email:  tic20@cam.ac.uk
  * @Last modified by:   tic20
- * @Last modified time: 30-May-2019
+ * @Last modified time: 27-Oct-2020
  * @License: Free for non-commercial use (see license.pdf)
  * @Copyright: 2017-2018 Tristan Croll
  */
@@ -14,11 +14,17 @@
 #include <pybind11/stl.h>
 
 #include <clipper_ext/xtal_mgr.h>
+#include <clipper_ext/vdw.h>
 
 namespace py=pybind11;
 namespace cx=clipper_cx;
 using namespace clipper;
 using namespace clipper::datatypes;
+
+void declare_vdw_radii(py::module& m)
+{
+    m.def("element_radius_map", []() {return clipper_cx::data::vdw_radii;} );
+}
 
 void declare_xmap_container(py::module& m)
 {
@@ -144,6 +150,7 @@ void declare_xtal_thread_mgr(py::module& m)
 
 void init_xtal_mgr(py::module& m)
 {
+    declare_vdw_radii(m);
     declare_xmap_container(m);
     declare_xtal_mgr(m);
     declare_xtal_thread_mgr(m);
