@@ -3,7 +3,7 @@
 @Date:   12-Dec-2019
 @Email:  tic20@cam.ac.uk
 @Last modified by:   tic20
-@Last modified time: 21-Sep-2020
+@Last modified time: 20-Nov-2020
 @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
 @Copyright: 2016-2019 Tristan Croll
 -->
@@ -399,7 +399,7 @@
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" version="~=1.1rc202008252015"/>
+    <Dependency name="ChimeraX-Core" version="~=1.1"/>
     <Dependency name="ChimeraX-Atomic" version="~=1.6.0"/>
     <Dependency name="ChimeraX-Arrays" version="~=1.0.0"/>
   </Dependencies>
