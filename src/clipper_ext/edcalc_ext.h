@@ -41,9 +41,11 @@ public:
     EDcalc_mask_vdw( const ftype grid_radius = 3.0,
                      const ftype probe_radius = 1.0,
                      const ftype shrink_radius = 1.1,
-                     const size_t n_threads = 1)
+                     const size_t n_threads = 1,
+                     const bool ignore_zero_occ_atoms = true)
         : grid_radius_(grid_radius), probe_radius_(probe_radius),
-          shrink_radius_(shrink_radius), n_threads_(n_threads)
+          shrink_radius_(shrink_radius), n_threads_(n_threads),
+          ignore_zero_occ_atoms_(ignore_zero_occ_atoms)
     {}
     bool operator() (Xmap<T>& xmap, const Atom_list& atoms) const;
     bool operator() (NXmap<T>& nxmap, const Atom_list& atoms) const;
@@ -56,6 +58,7 @@ private:
     const ftype probe_radius_;
     const ftype shrink_radius_;
     size_t n_threads_;
+    bool ignore_zero_occ_atoms_;
 }; // class EDcalc_mask_vdw
 
 template<class T> class EDcalc_aniso_thread : public EDcalc_base<T> {
@@ -73,7 +76,9 @@ private:
     {
         try {
             T atom_radius = data::vdw_radii.at(a.element().c_str());
-            return std::max(atom_radius * (0.4 + 1.5 * pow(a.u_iso(), 0.5)), 3.0);
+            auto uiso = a.u_iso();
+            uiso = std::max(uiso, 0.0);
+            return std::max(atom_radius * (0.4 + 1.5 * pow(uiso, 0.5)), 3.0);
         } catch (std::out_of_range& err) {
             std::stringstream msg;
             msg << "No van der Waals definition for element name " << a.element().c_str() << "!";

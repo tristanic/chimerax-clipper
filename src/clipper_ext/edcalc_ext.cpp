@@ -59,6 +59,7 @@ bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& 
     // Step 1: set all grid points within (atom radius + probe radius) to 1.
     for (const Atom &a: atoms) if ( !a.is_null() )
     {
+        if (ignore_zero_occ_atoms_ && a.occupancy() == 0) continue;
         try {
             atom_radius = clipper_cx::data::vdw_radii.at(a.element().c_str());
         } catch (...) {
@@ -130,11 +131,12 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
     size_t atoms_per_thread = atoms.size() / n_threads_ + 1;
     size_t start=0, end;
     Grid_range gd(cell, grid, grid_radius_);
+    bool izo = ignore_zero_occ_atoms_;
     for (size_t i=0; i< n_threads_; ++i)
     {
         end = std::min(start+atoms_per_thread, atoms.size());
         thread_results.push_back(std::async(std::launch::async,
-            [gd](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
+            [gd, izo](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
             {
                 Coord_orth xyz;
                 Coord_grid cg, g0, g1;
@@ -143,6 +145,7 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
                 {
                     const auto& a = atoms[j];
                     if (a.is_null()) continue;
+                    if (izo && a.occupancy() == 0) continue;
                     const auto& atom_radius = clipper_cx::data::vdw_radii.at(a.element().c_str());
                     xyz = a.coord_orth();
                     cg = xmap.coord_map(xyz).coord_grid();
