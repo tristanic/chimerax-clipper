@@ -77,25 +77,38 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     // Fit an isotropic gaussian to the data, and use this to construct the
     // input to the anisotropic version.
     const auto& hkls = fobs.base_hkl_info();
-    T sum_fobs = 0, sum_fcalc=0;
+    T sum_fobs_lo = 0, sum_fcalc_lo=0, sum_fobs_hi = 0, sum_fcalc_hi = 0;
+    auto invressq_lim = pow(1/(hkls.resolution().limit()+0.5), 2);
     for (auto ih = fobs.first(); !ih.last(); ih.next())
     {
-        if (!fobs[ih].missing() && !fcalc[ih].missing() && ih.invresolsq() < 0.01 )
+        if (!fobs[ih].missing() && !fcalc[ih].missing())
         {
-            sum_fobs += fobs[ih].f();
-            sum_fcalc += fcalc[ih].f();
+          if ( ih.invresolsq() < 0.01 )
+          {
+            sum_fobs_lo += fobs[ih].f();
+            sum_fcalc_lo += fcalc[ih].f();
+          } else if (ih.invresolsq() > invressq_lim)
+          {
+            sum_fobs_hi += fobs[ih].f();
+            sum_fcalc_hi += fcalc[ih].f();
+          }
         }
     }
 
+    auto p0 = log(pow(sum_fcalc_lo/sum_fobs_lo, 2));
+    auto p1 = (p0-log(pow(sum_fcalc_hi/sum_fobs_hi, 2)))/((invressq_lim+hkls.resolution().invresolsq_limit())/2);
 
-    std::vector<ftype> params = {log(sum_fcalc/sum_fobs), 0.0};
-    std::cerr << "Initial log scale estimate from low-resolution reflections: " << params[0] << std::endl;
+    std::vector<ftype> params = {p0, p1};
+
+    std::cout << "Initial params: " << p0 << ", " << p1 << std::endl; // DELETEME
 
     BasisFn_gaussian basisfn;
     //TargetFn_scaleF1F2<F_phi<T>, F_sigF<T>> target(fcalc, fobs);
     TargetFn_scaleFobsFcalc<T> target(fobs, fcalc);
     ResolutionFn_nonlinear rfn(hkls, basisfn, target, params, 0.0);
     params = rfn.params();
+
+    std::cout << "Fitted params: " << params[0] << ", " << params[1] << std::endl; // DELETEME
     // std::cerr << "Initial Gaussian params: " << params[0] << ", " << params[1] << std::endl;
     std::vector<ftype> output_params(7,0);
     output_params[0] = params[0];
@@ -104,8 +117,15 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     output_params[3] = params[1];
     BasisFn_aniso_gaussian aniso_basisfn;
     ResolutionFn_nonlinear aniso_rfn(hkls, aniso_basisfn, target, output_params, 0.0);
-    output_params = aniso_rfn.params();
-    r = quick_r(fcalc, fobs, aniso_rfn);
+    try {
+      r = quick_r(fcalc, fobs, aniso_rfn);
+      output_params = aniso_rfn.params();
+    } catch (std::runtime_error) {}
+    std::cout << "Fitted aniso params: ";
+    for (auto p: output_params)
+      std::cout << p << ", ";
+    std::cout << std::endl;
+
     return output_params;
 }
 
@@ -153,11 +173,18 @@ TargetFn_base::Rderiv TargetFn_scaleFobsFcalc<T>::rderiv( const HKL_info::HKL_re
     const ftype eps = ih.hkl_class().epsilon();
     const ftype f1 = pow( fo.f(), 2 ) / eps;
     const ftype f2 = pow( fc.f(), 2 ) / eps;
-    ftype sigf1 = 1.0; //fo.sigf() * fo.f() / eps + 1;
-    const ftype d = (fh*f1 - f2)/sigf1;
-    result.r = d * d / f1;
-    result.dr = 2.0 * d;
-    result.dr2 = 2.0 * f1 / sigf1;
+    ftype w;
+    if (fo.sigf() > 0)
+      w = std::min(pow(fo.f()/fo.sigf(), 2), 5.0);
+    else
+      w = 1.0;
+    // ftype sigf1 = 1.0; //fo.sigf() * fo.f() / eps + 1;
+    const ftype d = fh*f1 - f2;
+    result.r = w * d * d / f1;
+    result.dr =  w * 2.0 * d;
+    result.dr2 = 2.0 * w * f1;
+  } else {
+    result.r = result.dr = result.dr2 = 0.0;
   }
   return result;
 }
