@@ -100,7 +100,7 @@ void ResolutionFn::calc_derivs( const std::vector<ftype>& params, ftype& r, std:
 
   // zero the results
   r = 0.0;
-  for ( j = 0; j < nparams; j++ ) { 
+  for ( j = 0; j < nparams; j++ ) {
     drdp[j] = 0.0;
     for ( k = 0; k < nparams; k++ )
       drdp2(j,k) = 0.0;
@@ -108,8 +108,9 @@ void ResolutionFn::calc_derivs( const std::vector<ftype>& params, ftype& r, std:
 
   // calc dr/dp vector and d2r/dp2 matrix
   for ( ih = hkl_info_->first(); !ih.last(); ih.next() ) {
-    cls = ih.hkl_class();
     rderiv = targetfn_->rderiv( ih, f( ih ) );
+    if ( rderiv.dr==0 && rderiv.dr2==0) continue;
+    cls = ih.hkl_class();
     const BasisFn_base::Fderiv& fderiv =
       basisfn_->fderiv( ih.hkl(), cell_, params );
     const std::vector<ftype>& dfdp = fderiv.df;
@@ -203,7 +204,7 @@ const std::vector<ftype>& ResolutionFn::params() const
   \param targetfn The target function to be minimised.
   \param damp_ If > 0.0, shifts are fdamped during early cycles to help
   convergence with difficult bases/target conbinations */
-ResolutionFn_nonlinear::ResolutionFn_nonlinear( const HKL_info& hkl_info, const BasisFn_base& basisfn, const TargetFn_base& targetfn, const std::vector<ftype>& params, const ftype damp, const bool debug )
+ResolutionFn_nonlinear::ResolutionFn_nonlinear( const HKL_info& hkl_info, const BasisFn_base& basisfn, const TargetFn_base& targetfn, const std::vector<ftype>& params, const ftype damp, const bool debug, const ftype tolerance )
 {
   ftype r0, r1, w, scale, g, s, dotprod;
   HKL_class cls;
@@ -255,34 +256,45 @@ ResolutionFn_nonlinear::ResolutionFn_nonlinear( const HKL_info& hkl_info, const 
       if ( dotprod < 0.0 ) std::cout << " Using scaled grad " << s / g << "\n";
       std::cout << " Gradient " << g << "\n";
       for ( j = 0; j < nparams; j++ ) {
-	for ( k = 0; k <  nparams; k++ ) std::cout << " " << drdp2(j,k);
-	std::cout << "\n";
+        for ( k = 0; k <  nparams; k++ ) std::cout << " " << drdp2(j,k);
+        std::cout << "\n";
       }
       for ( k = 0; k < nparams; k++ ) std::cout << " " << k << " " << params_[k] << " " << drdp[k] << " " << shiftn[k] << "\n";
     }
 
     // now try the step and if necessary reduce the shift
     scale = (1.0+ftype(n)) / (1.0+ftype(n)+damp);
-    for ( j = 0; j < 20; j++ ) {
+    bool give_up=true;
+    for ( j = 0; j < 10; j++ ) {
       for ( i = 0; i< nparams; i++ )
-	params_[i] = params_old[i] - scale*shiftn[i];
+        params_[i] = params_old[i] - scale*shiftn[i];
       r1 = 0.0;
       for ( ih = hkl_info.first(); !ih.last(); ih.next() ) {
-	cls = ih.hkl_class();
-	w = 2.0 / cls.epsilonc();
-	r1 += w * targetfn.rderiv( ih, f( ih ) ).r;
+        cls = ih.hkl_class();
+        w = 2.0 / cls.epsilonc();
+        r1 += w * targetfn.rderiv( ih, f( ih ) ).r;
       }
       if ( Util::is_nan(r1) ) {
-	scale *= 0.5;
+          // std::cerr << "r1 is NaN at round " << j << " with scale=" << scale << std::endl;
+        scale *= 0.1;
       } else {
-	scale *= 0.5;
-	if ( (r1-r0) <= 0.0 ) break;
+        scale *= 0.1;
+        // if ( (r1-r0) > 0.0 )
+        //     std::cerr << "r1=" << r1 << " higher than r0=" << r0 << " at n=" << n << ", j=" << j << " with scale=" << scale << std::endl;
+	    if ( (r1-r0) <= 0.0 )
+        {
+            give_up=false;
+            break;
+        }
       }
     }
- 
-    if ( debug ) std::cout << " Resolution function cycle " << n << " " << r0 << " " << r1 << " " << scale << "\n";
 
-    if ( fabs( r1 - r0 ) < 1.0e-10 ) break;
+    if ( debug ) std::cout << " Resolution function cycle " << n << " " << r0 << " " << r1 << " " << scale << "\n";
+    if ( give_up ) {
+        std::cerr << "Unable to find step that reduces r. Giving up." << std::endl;
+        break; // unable to find a step that reduces r
+    }
+    if ( fabs( r1 - r0 ) < tolerance ) break;
   }
 }
 

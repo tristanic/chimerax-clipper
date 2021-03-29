@@ -242,7 +242,7 @@ namespace clipper {
   {
   public:
     //! constructor: need reflections, basis fn and target fn.
-    ResolutionFn_nonlinear( const HKL_info& hkl_info, const BasisFn_base& basisfn, const TargetFn_base& targetfn, const std::vector<ftype>& params, const ftype damp = 0.0, const bool debug = false );
+    ResolutionFn_nonlinear( const HKL_info& hkl_info, const BasisFn_base& basisfn, const TargetFn_base& targetfn, const std::vector<ftype>& params, const ftype damp = 0.0, const bool debug = false, const ftype tolerance=1.0e-10 );
   };
 
 
