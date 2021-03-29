@@ -897,9 +897,12 @@ class XmapHandler_Static(XmapHandlerBase):
         mapset = data['mapset']
         if mapset is None:
             return None
-        xmh = mapset.add_static_xmap(data['F/phi'],
-            is_difference_map=data['is difference map'],
-            auto_add_to_session=False)
+        try:
+            xmh = mapset.add_static_xmap(data['F/phi'],
+                is_difference_map=data['is difference map'],
+                auto_add_to_session=False)
+        except AttributeError:
+            return None
         from chimerax.core.models import Model
         from chimerax.map.session import set_map_state
         Model.set_state_from_snapshot(xmh, session, data['model state'])
