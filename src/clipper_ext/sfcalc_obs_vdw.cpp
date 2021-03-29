@@ -22,6 +22,7 @@
 #include "sfcalc_obs_vdw.h"
 #include "edcalc_ext.h"
 #include "scaling.h"
+#include "util.h"
 
 using namespace clipper;
 using namespace clipper::datatypes;
@@ -50,18 +51,15 @@ template<class T>
 T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         const HKL_data<datatypes::F_phi<T>>& fphi_atom,
         const HKL_data<datatypes::F_phi<T>>& fphi_mask,
-        HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
         const HKL_info& hkls,
-        std::vector<ftype>& params, T k, T dk, T& min_r)
+        std::vector<ftype>& params, T k, T dk, T& min_r,
+        const T& tolerance)
 {
     std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
     // try some different scale factors
-    //std::vector<double> params( nparams, 1.0 );
-    //BasisFn_spline basisfn( hkls, nparams, 1.0 );
     BasisFn_aniso_gaussian basisfn;
     TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
-    // TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
     T x1 = k, dx = dk, x;
     ftype y[3] = { 0.0, 0.0, 0.0 };
     for ( int i = 0; i < 8; i++ ) {
@@ -70,20 +68,18 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         x = x1 + T(d)*dx;
         x = (x < 0 ? 0.0 : x);
         fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(x));
-        // for ( ih = fphi.first(); !ih.last(); ih.next() )
-        //   fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-        //          x * std::complex<T>(fphi_mask[ih]);
-        // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
-        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 20.0 );
-        auto r = quick_r(fphi, fsig, rfn);
-        // std::cerr << "Bulk solvent scale: " << x << "R: " << r << std::endl;
-        y[d+1] = r;
-        if (r < min_r)
-        {
-            params = rfn.params();
-            min_r = r;
+        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 5.0, false, tolerance);
+        try {
+            auto r = quick_r(fphi, fsig, rfn);
+            y[d+1] = r;
+            if (r < min_r)
+            {
+                params = rfn.params();
+                min_r = r;
+            }
+        } catch (std::runtime_error) {
+            y[d+1] = std::numeric_limits<ftype>::infinity();
         }
-        //std::cout << d << "\t" << x << "\t" << r << "\n";
       }
       // find minimum of current 3 samples
       if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; x1 -= dx; }
@@ -104,36 +100,30 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
         const HKL_info& hkls,
-        std::vector<ftype>& params, T k_sol, T ua1, T dua, T& min_r)
+        std::vector<ftype>& params, T k_sol, T ua1, T dua, T& min_r,
+        const T& tolerance)
 {
     T ua;
-    // BasisFn_spline basisfn( hkls, nparams, 1.0 );
     BasisFn_aniso_gaussian basisfn;
-    // TargetFn_scaleF1F2<datatypes::F_phi<T>,datatypes::F_sigF<T> > targetfn( fphi, fsig );
     TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
-    // HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
     ftype y[3] = { 0.0, 0.0, 0.0 };
     for (int i=0; i<8; ++i) {
         for (int d=-1; d<=1; ++d ) if (y[d+1] == 0.0 ) {
-            HKL_data<data32::F_phi>::HKL_reference_index ih;
             ua = ua1+T(d)*dua;
             fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua));
             fphi.compute(fphi_atom, fphi_mask_final, Compute_add_scaled_fphi<T>(k_sol));
-            // for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
-            //       !ih.last(); ih.next() )
-            //     fphi[ih] = std::complex<T>(fphi_atom[ih]) +
-            //         k_sol * std::complex<T>(fphi_mask_final[ih]);
-            // auto params = guess_initial_aniso_gaussian_params(fsig, fphi);
-            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 20.0 );
-            auto r = quick_r(fphi, fsig, rfn);
-            //std::cerr << "B_add: " << Util::u2b(ua) << " R: " << r << std::endl;
-            y[d+1] = r;
-            if (r < min_r)
-            {
-                params = rfn.params();
-                min_r = r;
+            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 5.0, false, tolerance);
+            try {
+                auto r = quick_r(fphi, fsig, rfn);
+                y[d+1] = r;
+                if (r < min_r)
+                {
+                    params = rfn.params();
+                    min_r = r;
+                }
+            } catch (std::runtime_error) {
+                y[d+1] = std::numeric_limits<ftype>::infinity();
             }
-            //std::cout << d << "\t" << x << "\t" << r << "\n";
         }
         // find minimum of current 3 samples
         if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; ua1 -= dua; }
@@ -153,8 +143,6 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
     const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms)
 {
   // std::cout << "Starting bulk solvent calculation..." << std::endl << std::flush;
-  // set U value constants
-  //double u_atom = Util::b2u( 0 ); // 20.0 );
   double u_mask = Util::b2u( 50.0 );
 
   // increase the U values
@@ -176,29 +164,13 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   Xmap<float> xmap( spgr, cell, grid );
 
   // do ed calc from atomu
-  // EDcalc_aniso<ftype32> edcalc;
-  // auto start = std::chrono::steady_clock  ::now();
   EDcalc_aniso_thread<ftype32> edcalc(nthreads);
-  // std::cout << "Number locked before: " << xmap.count_locked() << std::endl;
   edcalc( xmap, atoms);
-  // std::cout << "Number locked after: " << xmap.count_locked() << std::endl;
-  // if (!xmap.all_unlocked())
-    // std::cerr << "ERROR: not all grid points are unlocked!" << std::endl;
-  // auto end = std::chrono::steady_clock  ::now();
 
-  // std::chrono::duration<double> elapsed = end-start;
-  // std::cout << "EDcalc with " << nthreads << " threads took " << elapsed.count() << " seconds." << std::endl;
-  // start = std::chrono::steady_clock  ::now();
   xmap.fft_to( fphi_atom, nthreads );
-  // end = std::chrono::steady_clock  ::now();
-  // elapsed = end-start;
-  // std::cout << "Single x-to-h FFT took " << elapsed.count() << " seconds." << std::endl;
-
-  // fphi_atom.compute( fphi_atom, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, u_atom ) );
 
   // do density calc from mask
 
-  // start = std::chrono::steady_clock  ::now();
   auto emcalc = EDcalc_mask_vdw<ftype32>();
   emcalc.set_num_threads(nthreads);
   emcalc( xmap, atoms );
@@ -207,18 +179,11 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
     xmap[ix] = 1.0 - xmap[ix];
   xmap.fft_to( fphi_mask, nthreads );
 
-  // end = std::chrono::steady_clock  ::now();
-  // elapsed = end-start;
-  // std::cout << "Single-threaded bulk solvent mask + FFT took " << elapsed.count() << " seconds." << std::endl;
-
 
   HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
 
-  // set (0,0,0) terms to null
   fphi_mask.compute( fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, -u_mask ) );
-  // std::cerr << "First HKL: " << fphi_atom.first().hkl().format() << std::endl;
-  // fphi_atom[fphi_atom.first()].set_null();
-  // fphi_mask[fphi_mask.first()].set_null();
+  // set (0,0,0) terms to null
   auto c000 = HKL_data<data32::F_phi>::HKL_reference_coord(hkls, HKL(0,0,0)).index();
   fphi_atom[c000].set_null();
   fphi_mask[c000].set_null();
@@ -226,16 +191,24 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   if (bulk_solvent_optimization_needed_)
   {
       T x1 = 0.35;
-      T min_r;
-      fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(0.5));
-      *params_ = guess_initial_aniso_gaussian_params(fsig, fphi, min_r);
-      // std::cerr << "Initial anisotropic scaling params: ";
-      // for (auto p: *params_)
-      //   std::cerr << p << ",";
-      // std::cerr << std::endl;
-      x1 = optimize_k_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, x1, min_r);
-      auto ua1 = optimize_b_sol<T>(fphi, fphi_atom, fphi_mask, fphi_mask_final, fsig, hkls, *params_, x1, Util::b2u(0), Util::b2u(50), min_r);
+      // HKL_info selected_hkls = select_random_reflections(fsig, 5000);
+      HKL_info selected_hkls = select_random_reflections_in_bins(fsig, 500, 20);
+      auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
+      auto fphi_mask_temp = reflection_subset(fphi_mask, selected_hkls);
+      auto fsig_temp = reflection_subset(fsig, selected_hkls);
+      auto fphi_temp = reflection_subset(fphi, selected_hkls);
+      auto fphi_mask_final_temp = HKL_data<F_phi<T> >(selected_hkls, cell);
 
+      T sum_fobs=0, tolerance=0;
+      for (auto ih=fsig_temp.first_data(); !ih.last(); fsig_temp.next_data(ih))
+        sum_fobs += fsig_temp[ih].f();
+      tolerance = tolerance_frac_*sum_fobs;
+
+      T min_r;
+      fphi_temp.compute(fphi_atom_temp, fphi_mask_temp, Compute_add_scaled_fphi<T>(0.5));
+      *params_ = guess_initial_aniso_gaussian_params(fsig_temp, fphi_temp, min_r);
+      x1 = optimize_k_sol<T>(fphi_temp, fphi_atom_temp, fphi_mask_temp, fsig_temp, selected_hkls, *params_, x1, x1, min_r, tolerance);
+      auto ua1 = optimize_b_sol<T>(fphi_temp, fphi_atom_temp, fphi_mask_temp, fphi_mask_final_temp, fsig_temp, selected_hkls, *params_, x1, Util::b2u(0), Util::b2u(50), min_r, tolerance);
       // adopt final scale and B-factor
       bulk_u = ua1;
       bulkscl = x1;
@@ -250,9 +223,6 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
         !ih.last(); ih.next() )
     fphi[ih] = std::complex<T>(fphi_atom[ih]) +
           bulkscl * std::complex<T>(fphi_mask_final[ih]);
-  // end = std::chrono::steady_clock  ::now();
-  // elapsed = end-start;
-  // std::cout << "Complete single-threaded bulk solvent calc took " << elapsed.count() << " seconds." << std::endl;
 
   // store stats
   ftype64 w, s0 = 0.0, s1 = 0.0;
@@ -263,7 +233,6 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
     s1 += w*xmap[ix];
   }
   bulkfrc = s1/s0;
-  // bulkscl = x1;
 
   return true;
 }

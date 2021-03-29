@@ -713,8 +713,17 @@ bool
 Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
 {
     ready_ = false;
-    mgr_->generate_fcalc(atoms);
-    mgr_->generate_base_map_coeffs();
+    try
+    {
+        mgr_->generate_fcalc(atoms);
+        mgr_->generate_base_map_coeffs();
+    } catch (...)
+    {
+        ready_ = true;
+        std::cerr << "failed at generate_fcalc" << std::endl;
+        std::rethrow_exception(std::current_exception());
+    }
+
     auto map_names = mgr_->map_names();
     auto nmaps = map_names.size();
     size_t maps_per_thread = (size_t) ceil(( (float)(mgr_->n_maps())) /num_threads_);
@@ -736,13 +745,24 @@ Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
         n+=maps_per_thread;
     }
     // Wait for all threads to finish
+    std::vector<std::exception_ptr> exceptions;
     for (auto& r: results)
-        r.get();
+    {
+        try {
+            r.get();
+        } catch (...)
+        {
+            std::cerr << "Caught exception in recalculate_all_" << std::endl;
+            exceptions.push_back(std::current_exception());
+        }
+    }
     // auto end_time = std::chrono::system_clock::now();
     // std::chrono::duration<double> elapsed = end_time-start_time;
     // std::cout << "FFTs took " << elapsed.count() << " seconds." << std::endl;
 
     ready_ = true;
+    if (exceptions.size())
+        std::rethrow_exception(exceptions[0]);
     return true;
 } // recalculate_all_
 

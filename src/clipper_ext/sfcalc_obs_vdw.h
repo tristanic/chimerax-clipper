@@ -41,10 +41,10 @@ class SFcalc_obs_bulk_vdw : public SFcalc_obs_base<T>
 {
 public:
     // default constructor
-    SFcalc_obs_bulk_vdw(std::vector<ftype>& params, const size_t n_threads=8) : params_(&params), nthreads(n_threads) {}
+    SFcalc_obs_bulk_vdw(std::vector<ftype>& params, const T tolerance, const size_t n_threads=8) : params_(&params), nthreads(n_threads), tolerance_frac_(tolerance) {}
     // constructor: shorthand for constructor+operator
     SFcalc_obs_bulk_vdw(HKL_data<F_phi<T> >& fphi, const HKL_data<F_sigF<T> >& fsig,
-        const Atom_list& atoms, std::vector<ftype>& params);
+        const Atom_list& atoms, std::vector<ftype>& params, const T tolerance);
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
             const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms );
     const ftype& bulk_frac() const { return bulkfrc; }
@@ -59,6 +59,7 @@ private:
     size_t nthreads;
     T bulkfrc, bulkscl;
     T bulk_u;
+    T tolerance_frac_;
 }; // class SFcalc_obs_bulk_vdw
 
 

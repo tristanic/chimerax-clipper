@@ -359,7 +359,7 @@ private:
 
     std::vector<ftype> aniso_scale_params_;
 
-    SFcalc_obs_bulk_vdw<ftype32> bulk_solvent_calculator_ = SFcalc_obs_bulk_vdw<ftype32>(aniso_scale_params_);
+    SFcalc_obs_bulk_vdw<ftype32> bulk_solvent_calculator_ = SFcalc_obs_bulk_vdw<ftype32>(aniso_scale_params_, 1e-5);
 
     // SFcalc_obs_bulk<ftype32> bulk_solvent_calculator_ = SFcalc_obs_bulk<ftype32>();
 
