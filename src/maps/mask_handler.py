@@ -59,11 +59,11 @@ class ZoneMgr:
 
     def block_remask_on_coord_updates(self):
         if not self.triggers.is_trigger_blocked('atom coords updated'):
-            self.triggers.block_trigger('atom coords updated')
+            self.triggers.manual_block('atom coords updated')
 
     def allow_remask_on_coord_updates(self):
         if self.triggers.is_trigger_blocked('atom coords updated'):
-            self.triggers.release_trigger('atom coords updated')
+            self.triggers.manual_release('atom coords updated')
 
     @coords.setter
     def coords(self, coords):
