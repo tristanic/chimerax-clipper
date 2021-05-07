@@ -301,6 +301,9 @@ class XmapSet(MapSetBase):
                     xmap.display = False
         self._maps_initialized=True
 
+    @property
+    def path(self):
+        return self.crystal_data.path
 
     @property
     def box_params(self):
@@ -693,6 +696,9 @@ class XmapSet(MapSetBase):
                 self._delayed_recalc_handler = None
 
     def recalculate_all_maps(self, atoms):
+        if len(self.live_xmaps) == 0:
+            self._recalc_needed = False
+            return
         import ctypes
         # from .. import atom_list_from_sel
         from ..delayed_reaction import delayed_reaction

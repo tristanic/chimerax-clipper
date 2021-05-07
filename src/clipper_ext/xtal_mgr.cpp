@@ -712,6 +712,9 @@ Xtal_thread_mgr::recalculate_all(std::vector<uintptr_t> cxatoms)
 bool
 Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
 {
+    auto map_names = mgr_->map_names();
+    auto nmaps = map_names.size();
+    if(nmaps==0) return true;
     ready_ = false;
     try
     {
@@ -724,8 +727,6 @@ Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
         std::rethrow_exception(std::current_exception());
     }
 
-    auto map_names = mgr_->map_names();
-    auto nmaps = map_names.size();
     size_t maps_per_thread = (size_t) ceil(( (float)(mgr_->n_maps())) /num_threads_);
     size_t threads_per_map = std::max(num_threads_ / nmaps * maps_per_thread, size_t(1));
     // Make copies of all maps to work on. Expensive, but necessary for thread
