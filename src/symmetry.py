@@ -375,7 +375,7 @@ def symmetry_from_model_metadata_pdb(model):
             abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
             angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
             if symstr is None:
-                symstr = cryst1[55:67].capitalize()
+                symstr = cryst1[55:67].capitalize().strip()
                 if symstr.startswith('H'):
                     x_symstr = _space_group_hm_synonym(symstr)
                     if x_symstr is None:
@@ -386,7 +386,10 @@ def symmetry_from_model_metadata_pdb(model):
                     symstr = x_symstr
                     symstr_type = Spgr_descr.TYPE.XHM
                 else:
-                    symstr_type = Spgr_descr.TYPE.HM
+                    if ':' in symstr:
+                        symstr_type = Spgr_descr.TYPE.XHM
+                    else:
+                        symstr_type = Spgr_descr.TYPE.HM
         except:
             symstr = None
     if symstr is None:
@@ -444,7 +447,11 @@ def symmetry_from_model_metadata_pdb(model):
 
     cell_descr = Cell_descr(*abc, *angles)
     cell = Cell(cell_descr)
-    spgr_descr = Spgr_descr(symstr, symstr_type)
+    try:
+        spgr_descr = Spgr_descr(symstr, symstr_type)
+    except RuntimeError as e:
+        from chimerax.core.errors import UserError
+        raise UserError(f'Unrecognised space group string: {symstr}')
     spacegroup = Spacegroup(spgr_descr)
     resolution = Resolution(float(res))
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
