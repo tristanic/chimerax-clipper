@@ -228,8 +228,9 @@ class XmapHandlerBase(MapHandlerBase):
         # darray = self._generate_data_array(*mapset.box_params)
         super().__init__(mapset, name, darray,
             is_difference_map=is_difference_map)
+        self.path = mapset.path
 
-
+        
     @property
     def box_params(self):
         return self.mapset.box_params
