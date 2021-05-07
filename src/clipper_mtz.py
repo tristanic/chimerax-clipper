@@ -80,6 +80,10 @@ class ReflectionDataContainer(Model):
             self.calculated_data.add(dsets)
 
     @property
+    def path(self):
+        return self.filename
+
+    @property
     def free_flags(self):
         for c in self.child_models():
             if isinstance(c, ReflectionDataFreeFlags):
