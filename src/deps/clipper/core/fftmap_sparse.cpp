@@ -198,6 +198,9 @@ void FFTmap_sparse_p1_hx::fft_h_to_x( const ftype& scale )
   {
       hu_checkpoints[i].store(false);
       kv_checkpoints[i].store(false);
+  }
+  for (size_t i=0; i<num_threads_; ++i)
+  {
       threads.push_back(
             std::thread(&FFTmap_sparse_p1_hx::thread_kernel_,
                 this, i, nmax, s
@@ -215,6 +218,8 @@ void FFTmap_sparse_p1_hx::thread_kernel_(size_t thread_num, int nmax, ffttype s)
     // prep fftw
     std::vector<std::complex<ffttype> > in(nmax+1), out(nmax+1);
 
+    // FFTW plan creation is *not* thread-safe!
+    while (!plan_lock.test_and_set()) { std::this_thread::sleep_for(std::chrono::microseconds(1)); }
     fftw_plan planu, planv;
 #ifdef FFTW_MKL
     rfftwnd_plan planw;
@@ -225,6 +230,7 @@ void FFTmap_sparse_p1_hx::thread_kernel_(size_t thread_num, int nmax, ffttype s)
     int flags = ( type_ == Measure ) ?
       ( FFTW_USE_WISDOM | FFTW_MEASURE) :
       ( FFTW_USE_WISDOM | FFTW_ESTIMATE);
+
 
     planu = fftw_create_plan_specific( grid_real_.nu(), FFTW_FORWARD,
                        flags | FFTW_IN_PLACE,
@@ -247,7 +253,7 @@ void FFTmap_sparse_p1_hx::thread_kernel_(size_t thread_num, int nmax, ffttype s)
                         (fftw_real*)&in[0], 1,
                         (fftw_real*)&out[0], 1 );
 #endif
-
+    plan_lock.clear();
 
     int start, end;
     int layers_per_thread = grid_reci_.nw() / num_threads_ + 1;
@@ -436,6 +442,7 @@ void FFTmap_sparse_p1_xh::fft_x_to_h( const ftype& scale )
       for ( u = 0; u < grid_real_.nu(); u++ )
         if ( row_uv( u, v ) != NULL ) row_u[u] = true;
 
+  plan_lock.clear();
   lw_checkpoints = std::unique_ptr<std::atomic_bool[]>(new std::atomic_bool[num_threads_]);
   kv_checkpoints = std::unique_ptr<std::atomic_bool[]>(new std::atomic_bool[num_threads_]);
 
@@ -444,6 +451,9 @@ void FFTmap_sparse_p1_xh::fft_x_to_h( const ftype& scale )
   {
       lw_checkpoints[i].exchange(false);
       kv_checkpoints[i].exchange(false);
+  }
+  for (size_t i=0; i<num_threads_; ++i)
+  {
       threads.push_back(
           std::thread(&FFTmap_sparse_p1_xh::thread_kernel_,
               this, i, nmax, s
@@ -460,6 +470,8 @@ void FFTmap_sparse_p1_xh::thread_kernel_(size_t thread_num,
 {
 
     std::vector<std::complex<ffttype> > in(nmax+1), out(nmax+1);
+    // FFTW plan creation is *not* thread-safe!
+    while (!plan_lock.test_and_set()) { std::this_thread::sleep_for(std::chrono::microseconds(1)); }
     fftw_plan planu, planv;
   #ifdef FFTW_MKL
     rfftwnd_plan planw;
@@ -472,7 +484,6 @@ void FFTmap_sparse_p1_xh::thread_kernel_(size_t thread_num,
     int flags = ( type_ == Measure ) ?
       ( FFTW_USE_WISDOM | FFTW_MEASURE ) :
       ( FFTW_USE_WISDOM | FFTW_ESTIMATE );
-
 
     planu = fftw_create_plan_specific( grid_real_.nu(), FFTW_BACKWARD,
                        flags | FFTW_IN_PLACE,
@@ -494,6 +505,7 @@ void FFTmap_sparse_p1_xh::thread_kernel_(size_t thread_num,
                         (fftw_real*)&in[0], 1,
                         (fftw_real*)&out[0], 1 );
   #endif
+    plan_lock.clear();
 
     int start, end;
     int layers_per_thread = grid_real_.nv() / num_threads_ + 1;
