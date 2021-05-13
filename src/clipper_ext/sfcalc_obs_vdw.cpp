@@ -68,7 +68,7 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
         x = x1 + T(d)*dx;
         x = (x < 0 ? 0.0 : x);
         fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(x));
-        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 5.0, false, tolerance);
+        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 10.0, false, tolerance);
         try {
             auto r = quick_r(fphi, fsig, rfn);
             y[d+1] = r;
@@ -112,7 +112,7 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
             ua = ua1+T(d)*dua;
             fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua));
             fphi.compute(fphi_atom, fphi_mask_final, Compute_add_scaled_fphi<T>(k_sol));
-            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 5.0, false, tolerance);
+            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 10.0, false, tolerance);
             try {
                 auto r = quick_r(fphi, fsig, rfn);
                 y[d+1] = r;
