@@ -294,7 +294,7 @@
   </CLibrary> -->
 
   <CModule name="clipper_python" usesNumpy="true">
-      <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
@@ -303,7 +303,7 @@
       <LinkArgument platform="linux">-s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
       <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
-      <LinkArgument platform="mac">-s</LinkArgument> -->
+      <LinkArgument platform="mac">-s</LinkArgument>
       <IncludeDir platform="windows">C:\include</IncludeDir>
       <IncludeDir>src/deps</IncludeDir>
       <IncludeDir>src/deps/libccp4</IncludeDir>
