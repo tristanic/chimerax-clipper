@@ -41,6 +41,7 @@ HKL_info select_random_reflections(const HKL_data<F_sigF<T>>& data, size_t num_r
 template<typename T>
 HKL_info select_random_reflections_in_bins(const HKL_data<F_sigF<T>>& data, size_t reflections_per_bin, size_t num_bins)
 {
+    if (data.hkl_info().num_reflections() <= reflections_per_bin*num_bins) return data.hkl_info();
     std::map< int, std::vector<HKL> > bins;
     for (size_t i=0; i<num_bins; ++i)
     {
