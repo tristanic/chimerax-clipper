@@ -173,16 +173,10 @@ TargetFn_base::Rderiv TargetFn_scaleFobsFcalc<T>::rderiv( const HKL_info::HKL_re
     const ftype eps = ih.hkl_class().epsilon();
     const ftype f1 = pow( fo.f(), 2 ) / eps;
     const ftype f2 = pow( fc.f(), 2 ) / eps;
-    ftype w;
-    if (fo.sigf() > 0)
-      w = std::min(pow(fo.f()/fo.sigf(), 2), 5.0);
-    else
-      w = 1.0;
-    // ftype sigf1 = 1.0; //fo.sigf() * fo.f() / eps + 1;
     const ftype d = fh*f1 - f2;
-    result.r = w * d * d / f1;
-    result.dr =  w * 2.0 * d;
-    result.dr2 = 2.0 * w * f1;
+    result.r = d * d / f1;
+    result.dr =  2.0 * d;
+    result.dr2 = 2.0 * f1;
   } else {
     result.r = result.dr = result.dr2 = 0.0;
   }
