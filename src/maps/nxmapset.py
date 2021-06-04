@@ -170,7 +170,7 @@ class NXmapHandler(MapHandlerBase):
     def update_mask(self):
         if not self.display:
             return
-        corners = _find_box_corners(self.center, self.display_radius, self.data.xyz_to_ijk_transform)
+        corners = _find_box_corners(self.center(), self.display_radius, self.data.xyz_to_ijk_transform)
         self.new_region(ijk_min=corners[0], ijk_max=corners[1], ijk_step=[1,1,1],
             adjust_step=True)
 

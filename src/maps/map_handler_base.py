@@ -74,8 +74,7 @@ class MapHandlerBase(Volume):
     def crystal_mgr(self):
         return self.manager.crystal_mgr
 
-    @property
-    def center(self):
+    def center(self, *args, **kwargs):
         return self.manager.box_center
 
     @property

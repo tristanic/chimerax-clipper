@@ -20,5 +20,6 @@
 # of these is redistributed under its own license terms.
 
 from .map_mgr import MapMgr
+from .map_handler_base import MapHandlerBase
 from .xmapset import XmapSet, XmapHandler_Static, XmapHandler_Live
 from .nxmapset import NXmapSet, NXmapHandler
