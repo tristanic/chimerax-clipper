@@ -58,6 +58,7 @@ def _expand_hm_symbol(symbol_hm):
         return ' '.join([lattice, '1', sym, '1'])
     return symbol_hm
 
+
 _ccp4_symop_code_to_hm_symbol = {
     '1003': 'P 1 2 1',
     '1004': 'P 1 1 21',
@@ -155,6 +156,7 @@ def load_cif_sf(filename, load_map_coeffs=True):
     return _parse_tables(table_list, load_map_coeffs=load_map_coeffs)
 
 def _parse_tables(table_list, load_map_coeffs=True):
+    from ..clipper_python import HKL
     tables = dict(zip(_cif_sf_table_names, table_list))
     metadata = {l: tables[l] for l in _metadata_tables}
     cell_info = tables['cell']
@@ -169,7 +171,14 @@ def _parse_tables(table_list, load_map_coeffs=True):
             spgr_dtype = dtype
             from chimerax.clipper.clipper_python import Spgr_descr
             if dtype == Spgr_descr.TYPE.HM:
-                spgr_descriptor = _expand_hm_symbol(spgr_descriptor)
+                if spgr_descriptor.startswith('H'):
+                    from ..symmetry import space_group_hm_synonym
+                    syn = space_group_hm_synonym(spgr_descriptor)
+                    if syn is not None:
+                        spgr_descriptor=syn
+                        spgr_dtype = Spgr_descr.TYPE.XHM
+                else:
+                    spgr_descriptor = _expand_hm_symbol(spgr_descriptor)
             elif dtype == Spgr_descr.TYPE.Number:
                 # Check if it's a non-standard CCP4 number which Clipper doesn't recognise
                 symbol_hm = _ccp4_symop_code_to_hm_symbol.get(spgr_descriptor, None)
@@ -199,7 +208,6 @@ def _parse_tables(table_list, load_map_coeffs=True):
     else:
         # If this turns out to be too slow, it could fairly easily be pushed
         # back to C++
-        from ..clipper_python import HKL
         invresolsq_limit = max(HKL(hkl).invresolsq(cell) for hkl in hkls)
         from math import sqrt
         res = 1/sqrt(invresolsq_limit)
@@ -207,8 +215,8 @@ def _parse_tables(table_list, load_map_coeffs=True):
     resolution = Resolution(res)
 
     from .. import HKL_info
-    hkl_info = HKL_info(spacegroup, cell, resolution, True)
-
+    hkl_info = HKL_info(spacegroup, cell, resolution, False)
+    hkl_info.add_hkl_list(hkls)
     # OK, now we have all our vital information. Time to find all the data
     data = _parse_status(refln_table, hkl_info, hkls)
     exp_names = []

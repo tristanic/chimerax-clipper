@@ -50,7 +50,7 @@ void declare_ccp4mtzfile(py::module& m)
 
         .def("import_hkl_list", &CCP4MTZfile::import_hkl_list)
         .def("import_hkl_info", &CCP4MTZfile::import_hkl_info)
-        .def("import_hkl_info", [](CCP4MTZfile& self, HKL_info& target) { self.import_hkl_info(target, true); })
+        .def("import_hkl_info", [](CCP4MTZfile& self, HKL_info& target) { self.import_hkl_info(target, false); })
         .def("import_crystal", &CCP4MTZfile::import_crystal)
         .def("import_dataset", &CCP4MTZfile::import_dataset)
         .def("import_hkl_data", (void (CCP4MTZfile::*)(HKL_data_base&, const String)) &CCP4MTZfile::import_hkl_data)

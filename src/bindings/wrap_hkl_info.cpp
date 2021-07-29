@@ -21,6 +21,8 @@
 
 #include <pybind11/pybind11.h>
 #include <pybind11/operators.h>
+#include <pybind11/numpy.h>
+#include <vector>
 
 #include "type_conversions.h"
 #include <clipper/clipper.h>
@@ -42,6 +44,17 @@ void init_hkl_info(py::module &m) {
         .def_property_readonly("resolution", &HKL_info::resolution)
         .def("generate_hkl_list", &HKL_info::generate_hkl_list)
         .def("add_hkl_list", &HKL_info::add_hkl_list)
+        .def("add_hkl_list", [](HKL_info& self, py::array_t<int> hkls) {
+            auto buf = hkls.request();
+            if (buf.ndim != 2 || buf.shape[1] !=3)
+                throw std::runtime_error("HKLs must be an nx3 Numpy array!");
+            std::vector<HKL> vhkls;
+            for (size_t i=0; i<buf.shape[0]; ++i)
+            {
+                vhkls.push_back(HKL(hkls.at(i,0), hkls.at(i,1), hkls.at(i,2)));
+            }
+            self.add_hkl_list(vhkls);
+        })
         .def_property_readonly("num_reflections", &HKL_info::num_reflections)
         .def("hkl_of", &HKL_info::hkl_of)
         .def("index_of", &HKL_info::index_of)

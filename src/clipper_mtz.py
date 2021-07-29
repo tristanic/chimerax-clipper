@@ -159,7 +159,7 @@ class ReflectionDataContainer(Model):
         res = Resolution(data['resolution'])
         cell = Cell(Cell_descr(*data['cell dim'], *data['cell angles']))
         spgr_descr = Spgr_descr(data['hall symbol'], Spgr_descr.Hall)
-        rdc._hklinfo = HKL_info(Spacegroup(spgr_descr), cell, res, True)
+        rdc._hklinfo = HKL_info(Spacegroup(spgr_descr), cell, res, False)
         return rdc
 
 
@@ -604,7 +604,7 @@ def load_mtz_data_old(session, filename, free_flag_label = None):
     mtzin = CCP4MTZfile()
     hkl = HKL_info()
     mtzin.open_read(filename)
-    mtzin.import_hkl_info(hkl)
+    mtzin.import_hkl_info(hkl, False)
     # Get all the column names and types
     column_labels = mtzin.column_paths
     # Sort the columns into groups, and organise into a temporary tree
