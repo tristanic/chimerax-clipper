@@ -72,7 +72,7 @@ class MapMgr(Model):
     '''
     Top-level manager for all maps associated with a model.
     '''
-    DEFAULT_MAX_VOXELS = 750000
+    DEFAULT_MAX_VOXELS = 1500000
 
     # SESSION_SAVE=False
     def __init__(self, crystal_manager, spotlight_radius=12, default_oversampling_rate=2.0,
