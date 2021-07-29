@@ -59,7 +59,7 @@ _backbone_mode_descr = {
     BACKBONE_MODE_CA_TRACE: "CA trace"
 }
 
-def _space_group_hm_synonym(symbol_hm):
+def space_group_hm_synonym(symbol_hm):
     synonyms = {
         'H 3':  'R 3 :H',
         'H -3': 'R -3 :H',
@@ -277,7 +277,7 @@ def symmetry_from_model_metadata_mmcif(model):
     spgr_str = spgr_dict['space_group_name_h-m'].capitalize()
     if spgr_str != '?':
         if spgr_str.startswith('H'):
-            xspgr_str = _space_group_hm_synonym(spgr_str)
+            xspgr_str = space_group_hm_synonym(spgr_str)
             if xspgr_str is None:
                 print('WARNING: Hermann-Maguin space group symbol "{}" was not recognised. Ignoring.'.format(spgr_str))
                 spgr_str = '?'
@@ -377,7 +377,7 @@ def symmetry_from_model_metadata_pdb(model):
             if symstr is None:
                 symstr = cryst1[55:67].capitalize().strip()
                 if symstr.startswith('H'):
-                    x_symstr = _space_group_hm_synonym(symstr)
+                    x_symstr = space_group_hm_synonym(symstr)
                     if x_symstr is None:
                         err_str = ('Unrecognised space group symbol: {}. '
                             'If you believe this to be in error, please report '
