@@ -478,7 +478,6 @@ def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac
         unique_vals.add(flag_array[ih].data[0])
         data_array.next_data(ih)
     if len(unique_vals)==1:
-        import numpy
         from chimerax.clipper.reflection_tools.r_free import generate_free_set
         num_free = generate_free_set(flag_array, data_array, free_frac, max_free)
         warn_str = ('No free flags detected in this dataset! '
