@@ -41,7 +41,10 @@ def open_structure_factors(session, path, structure_model = None,
         log_str += 'Generated maps: \n{}\n'.format(
             '\n'.join(['\t{}'.format(m.name) for m in xmapset]))
         log_str += 'Any unwanted maps may be safely closed via the Model panel.'
-        return [mmgr.crystal_mgr], log_str
+        cmgr = mmgr.crystal_mgr
+        if cmgr not in session.models.list():
+            return [mmgr.crystal_mgr], log_str
+        return [], log_str
 
     except RuntimeError as e:
         if always_raise_errors:
