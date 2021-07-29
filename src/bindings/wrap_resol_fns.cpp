@@ -94,6 +94,24 @@ void declare_resolution_fn_nonlinear(py::module& m)
 void declare_resolution_ordinal(py::module& m)
 {
     py::class_<Resolution_ordinal, Generic_ordinal>(m, "Resolution_ordinal")
+        .def(py::init([](const HKL_info& hklinfo, const ftype& power) 
+        {
+            auto ret = new Resolution_ordinal();
+            ret->init(hklinfo, power);
+            return std::unique_ptr<Resolution_ordinal>(ret);
+        }))
+        .def(py::init([](const HKL_data_base& hkldata, const ftype& power) 
+        {
+            auto ret = new Resolution_ordinal();
+            ret->init(hkldata, power);
+            return std::unique_ptr<Resolution_ordinal>(ret);
+        }))
+        .def(py::init([](const HKL_data_base& hkldata, const Cell& cell, const ftype& power) 
+        {
+            auto ret = new Resolution_ordinal();
+            ret->init(hkldata, cell, power);
+            return std::unique_ptr<Resolution_ordinal>(ret);
+        }))
         .def("init", (void (Resolution_ordinal::*)(const HKL_info&, const ftype&)) &Resolution_ordinal::init)
         .def("init", (void (Resolution_ordinal::*)(const HKL_data_base&, const ftype&)) &Resolution_ordinal::init)
         .def("init", (void (Resolution_ordinal::*)(const HKL_data_base&, const Cell&, const ftype&)) &Resolution_ordinal::init)

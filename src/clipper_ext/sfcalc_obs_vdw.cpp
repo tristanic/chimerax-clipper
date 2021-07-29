@@ -183,10 +183,9 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
 
   fphi_mask.compute( fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, -u_mask ) );
-  // set (0,0,0) terms to null
-  auto c000 = HKL_data<data32::F_phi>::HKL_reference_coord(hkls, HKL(0,0,0)).index();
-  fphi_atom[c000].set_null();
-  fphi_mask[c000].set_null();
+  // set (0,0,0) term to null if it exists
+  fphi_atom.set_data(HKL(0,0,0), datatypes::F_phi<T>());
+  fphi_mask.set_data(HKL(0,0,0), datatypes::F_phi<T>());
 
   if (bulk_solvent_optimization_needed_)
   {

@@ -77,17 +77,23 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     // Fit an isotropic gaussian to the data, and use this to construct the
     // input to the anisotropic version.
     const auto& hkls = fobs.base_hkl_info();
+
+    // Get initial guess by comparing the average amplitudes of the lowest- and highest-resolution 
+    // 5% of reflections.
+    Resolution_ordinal s_ord;
+    s_ord.init(fobs, 1.0);
+
     T sum_fobs_lo = 0, sum_fcalc_lo=0, sum_fobs_hi = 0, sum_fcalc_hi = 0;
-    auto invressq_lim = pow(1/(hkls.resolution().limit()+0.5), 2);
     for (auto ih = fobs.first(); !ih.last(); ih.next())
     {
         if (!fobs[ih].missing() && !fcalc[ih].missing())
         {
-          if ( ih.invresolsq() < 0.01 )
+          auto ord = s_ord.ordinal(ih.invresolsq());
+          if ( ord < 1.0/20.0 )
           {
             sum_fobs_lo += fobs[ih].f();
             sum_fcalc_lo += fcalc[ih].f();
-          } else if (ih.invresolsq() > invressq_lim)
+          } else if (ord > 19.0/20.0)
           {
             sum_fobs_hi += fobs[ih].f();
             sum_fcalc_hi += fcalc[ih].f();
@@ -96,7 +102,7 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     }
 
     auto p0 = log(pow(sum_fcalc_lo/sum_fobs_lo, 2));
-    auto p1 = (p0-log(pow(sum_fcalc_hi/sum_fobs_hi, 2)))/((invressq_lim+hkls.resolution().invresolsq_limit())/2);
+    auto p1 = (p0-log(pow(sum_fcalc_hi/sum_fobs_hi, 2)))/hkls.resolution().invresolsq_limit();
 
     std::vector<ftype> params = {p0, p1};
 
