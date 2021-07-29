@@ -222,8 +222,20 @@ def _sf_file_open_info():
         def open(self, session, data, file_name, **kw):
             structure_model = kw.get('structure_model', None)
             if structure_model is None:
-                from chimerax.core.errors import UserError
-                raise UserError('Must specify a structure model to associate with crystallographic data')
+                if session.ui.is_gui and not session.in_script:
+                    from .ui.chooser_widgets import StructureChooserWindow
+                    sw = StructureChooserWindow(session, 'Choose a model to associate with the structure factors')
+                    result = sw.exec()
+                    if result==1:
+                        structure_model = sw.value
+                    elif result==2:
+                        from Qt.QtWidgets import QFileDialog
+                        import os
+                        filename, _ = QFileDialog.getOpenFileName(None, "Choose a model to associate with the structure factors", os.path.dirname(file_name), "Model files (*.pdb *.cif)")
+                        if filename:
+                            from chimerax.open_command.cmd import provider_open
+                            structure_model = provider_open(session, [filename])[0]
+            kw['structure_model'] = structure_model
             from .cmd import open_structure_factors
             return open_structure_factors(session, data, **kw)
 
