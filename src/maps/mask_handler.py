@@ -30,6 +30,9 @@ class ZoneMgr:
         self._symmetry_map = {}
         self._atoms = atoms
         if atoms is not None:
+            if len(atoms) == 0:
+                from chimerax.core.errors import UserError
+                raise UserError('Attempting to apply a zone mask, but no atoms selected!')
             self.structure = self._unique_structure(atoms)
         self._structure_change_handler = None
         self.session = session
@@ -182,7 +185,8 @@ class ZoneMgr:
     def _unique_structure(self, atoms):
         us = atoms.unique_structures
         if len(us) != 1:
-            raise TypeError('All atoms for zone mask must be from a single model!')
+            from chimerax.core.errors import UserError
+            raise UserError('All atoms for zone mask must be from a single model!')
         return us[0]
 
     def start_tracking_changes(self):
