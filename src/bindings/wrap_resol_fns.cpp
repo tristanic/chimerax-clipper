@@ -71,8 +71,20 @@ void declare_targetfn_base(py::module& m)
 void declare_resolution_fn(py::module& m)
 {
     py::class_<ResolutionFn>(m, "ResolutionFn")
-        .def(py::init<const HKL_info&, const BasisFn_base&, const TargetFn_base&,
-                const std::vector<ftype>&, const ftype, const bool>(),
+        /*
+        As of 26/10/2021, binding of STL containers passed by const ref appears to be a no-no - 
+        the temporary vector produced by the implicit conversion machinery is out of scope by the 
+        time it makes it to the function. Replaced with a pass by value alternative.
+        */
+        // .def(py::init<const HKL_info&, const BasisFn_base&, const TargetFn_base&,
+        //         const std::vector<ftype>&, const ftype, const bool>(),
+        //     py::arg("hkl_info"), py::arg("basis_fn"), py::arg("target_fn"),
+        //     py::arg("params"), py::arg("damp") = 0.0, py::arg("debug") = false)
+        .def(py::init([](const HKL_info& hkl_info, const BasisFn_base& basis_fn, const TargetFn_base& target_fn,
+            std::vector<ftype> params, ftype damp, bool debug) {
+                return std::unique_ptr<ResolutionFn>(new ResolutionFn(hkl_info, basis_fn, target_fn,
+                    params, damp, debug));
+            }),
             py::arg("hkl_info"), py::arg("basis_fn"), py::arg("target_fn"),
             py::arg("params"), py::arg("damp") = 0.0, py::arg("debug") = false)
         .def("f", &ResolutionFn::f)
@@ -83,8 +95,20 @@ void declare_resolution_fn(py::module& m)
 void declare_resolution_fn_nonlinear(py::module& m)
 {
     py::class_<ResolutionFn_nonlinear, ResolutionFn>(m, "ResolutionFn_nonlinear")
-        .def(py::init<const HKL_info&, const BasisFn_base&, const TargetFn_base&,
-            const std::vector<ftype>&, const ftype, const bool >(),
+        /*
+        As of 26/10/2021, binding of STL containers passed by const ref appears to be a no-no - 
+        the temporary vector produced by the implicit conversion machinery is out of scope by the 
+        time it makes it to the function. Replaced with a pass by value alternative.
+        */
+        // .def(py::init<const HKL_info&, const BasisFn_base&, const TargetFn_base&,
+        //     const std::vector<ftype>&, const ftype, const bool >(),
+        //     py::arg("hkl_info"), py::arg("basis_fn"), py::arg("target_fn"),
+        //     py::arg("params"), py::arg("damp") = 0.0, py::arg("debug") = false)
+        .def(py::init([](const HKL_info& hkl_info, const BasisFn_base& basis_fn, const TargetFn_base& target_fn,
+            std::vector<ftype> params, ftype damp, bool debug) {
+                return std::unique_ptr<ResolutionFn_nonlinear>(new ResolutionFn_nonlinear(hkl_info, basis_fn, target_fn,
+                    params, damp, debug));
+            }),
             py::arg("hkl_info"), py::arg("basis_fn"), py::arg("target_fn"),
             py::arg("params"), py::arg("damp") = 0.0, py::arg("debug") = false)
         ;
