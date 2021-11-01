@@ -82,7 +82,7 @@ void declare_ccp4mtzfile(py::module& m)
                 hstr.push_back(static_cast<const std::string&>(h));
             return hstr;
         },
-        [] (CCP4MTZfile& self, const std::vector<std::string>& hstr)
+        [] (CCP4MTZfile& self, std::vector<std::string> hstr)
         {
             std::vector<String> history;
             for (const auto& h: hstr)

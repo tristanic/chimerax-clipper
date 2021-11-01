@@ -301,7 +301,7 @@ void init_matrix(py::module&m, const std::string& dtype)
         .def(py::init<const int&, const int&, T>())
         .def("solve", &Class::solve)
         .def("eigen", &Class::eigen)
-        .def("__mul__", [](const Class& self, const std::vector<T>& v) { return self*v; })
+        .def("__mul__", [](const Class& self, std::vector<T> v) { return self*v; })
         ;
 
 }
