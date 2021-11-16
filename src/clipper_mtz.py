@@ -254,6 +254,7 @@ class ReflectionData(Model):
         container = data['container']
         hklinfo = container.hklinfo
         hkldata = data['hkl data']
+        hklinfo.add_hkl_list(hkldata[0])
         clipper_array = dtype(hklinfo)
         clipper_array.set_data(*hkldata)
         rd = cls('', session, clipper_array)
