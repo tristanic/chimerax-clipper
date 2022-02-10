@@ -49,14 +49,12 @@
 #ifndef CLIPPER_HKL_INFO
 #define CLIPPER_HKL_INFO
 
-
 #include "hkl_lookup.h"
 #include "../imex.h"
 
 namespace clipper
 {
   class HKL_data_base;
-
 
   //! HKL list container and tree root
   /*! This object contains contains a reflection list, and all the
@@ -65,57 +63,64 @@ namespace clipper
     lists for resolutions and reflection classes. */
   class CLIPPER_IMEX HKL_info
   {
-   public:
+  public:
     //! null constructor
     HKL_info();
     //! constructor: Takes spacegroup, cell, and resolution
-    HKL_info( const Spacegroup& spacegroup, const Cell& cell, const Resolution& resolution, const bool& generate = false );
+    HKL_info(const Spacegroup &spacegroup, const Cell &cell, const Resolution &resolution, const bool &generate = false);
     //! initialiser: Takes spacegroup, cell, and resolution
-    void init( const Spacegroup& spacegroup, const Cell& cell, const Resolution& resolution, const bool& generate = false );
+    void init(const Spacegroup &spacegroup, const Cell &cell, const Resolution &resolution, const bool &generate = false);
     //! initialiser: Takes spacegroup, cell, and HKL_sampling
-    void init( const Spacegroup& spacegroup, const Cell& cell, const HKL_sampling& hkl_sampling, const bool& generate = true );
+    void init(const Spacegroup &spacegroup, const Cell &cell, const HKL_sampling &hkl_sampling, const bool &generate = true);
 
     //! test if object has been initialised
     bool is_null() const;
 
     //! get the cell
-    const Cell& cell() const { return cell_; }
+    const Cell &cell() const { return cell_; }
     //! get the spacegroup
-    const Spacegroup& spacegroup() const { return spacegroup_; }
+    const Spacegroup &spacegroup() const { return spacegroup_; }
     //! [CLIPPER2] get HKL_sampling
-    const HKL_sampling& hkl_sampling() const { return hkl_sampling_; }
+    const HKL_sampling &hkl_sampling() const { return hkl_sampling_; }
     //! get the resolution
-    const Resolution& resolution() const { return resolution_; }
+    const Resolution &resolution() const { return resolution_; }
 
     //! synthesize hkl list
     void generate_hkl_list();
     //! add new reflections to the list
-    void add_hkl_list( const std::vector<HKL>& add );
+    void add_hkl_list(const std::vector<HKL> &add);
 
     //! get number of reflections in the object
     inline int num_reflections() const { return hkl.size(); }
 
     //! reflection hkl from index
     /*! \param index The index. \return The corresponding HKL. */
-    inline const HKL& hkl_of( const int& index ) const { return hkl[index]; }
+    inline const HKL &hkl_of(const int &index) const { return hkl[index]; }
     //! reflection index from hkl
     /*! This does not check symmetry equivalents (see find_sym).
      \param rfl The HKL. \return The index, or -1 if it does not exist. */
-    inline int index_of( const HKL& rfl ) const
-      { return lookup.index_of( rfl ); }
+    inline int index_of(const HKL &rfl) const
+    {
+      return lookup.index_of(rfl);
+    }
 
     //! get reflection resolution using lookup
-    inline const ftype32& invresolsq( const int& index ) const
-      { return invresolsq_lookup[index]; }
+    inline const ftype32 &invresolsq(const int &index) const
+    {
+      return invresolsq_lookup[index];
+    }
     //! get resolution limits of the list
-    inline const Range<ftype>& invresolsq_range() const
-      { return invresolsq_range_; }
+    inline const Range<ftype> &invresolsq_range() const
+    {
+      return invresolsq_range_;
+    }
     //! get reflection class using lookup
-    const HKL_class& hkl_class( const int& index ) const
-      { return hkl_class_lookup[index]; }
+    const HKL_class &hkl_class(const int &index) const
+    {
+      return hkl_class_lookup[index];
+    }
     //! find symop no and friedel to bring an HKL into ASU
-    HKL find_sym( const HKL& rfl, int& sym, bool& friedel ) const;
-
+    HKL find_sym(const HKL &rfl, int &sym, bool &friedel) const;
 
     //! HKL reference base class
     /*! This is a reference to an HKL. It forms a base class for
@@ -126,19 +131,24 @@ namespace clipper
     {
     public:
       //! return the parent HKL_info
-      inline const HKL_info& base_hkl_info() const { return *hklinfo; }
+      inline const HKL_info &base_hkl_info() const { return *hklinfo; }
       //! return the current index (-1 if invalid)
-      inline const int& index() const { return index_; }
+      inline const int &index() const { return index_; }
       //! return the inv resol sq for the reflection (assumes index valid)
-      inline ftype invresolsq( const HKL_data_base& hkldata ) const;
+      inline ftype invresolsq(const HKL_data_base &hkldata) const;
       //! return the inv resol sq for the reflection (assumes index valid)
       inline ftype invresolsq() const
-	{ return hklinfo->invresolsq( index_ ); }
+      {
+        return hklinfo->invresolsq(index_);
+      }
       //! test if index has gone past last reflection
       inline bool last() const
-	{ return ( index_ >= hklinfo->num_reflections() ); }
+      {
+        return (index_ >= hklinfo->num_reflections());
+      }
+
     protected:
-      const HKL_info* hklinfo;
+      const HKL_info *hklinfo;
       int index_;
     };
 
@@ -158,15 +168,24 @@ namespace clipper
       //! Null constructor
       HKL_reference_index() {}
       //! Constructor: takes parent HKL_info and initial index
-      HKL_reference_index( const HKL_info& hklinfo_, const int& index )
-	{ hklinfo = &hklinfo_; index_ = index; }
+      HKL_reference_index(const HKL_info &hklinfo_, const int &index)
+      {
+        hklinfo = &hklinfo_;
+        index_ = index;
+      }
       //! return the current HKL
-      inline const HKL& hkl() const { return hklinfo->hkl_of( index_ ); }
+      inline const HKL &hkl() const { return hklinfo->hkl_of(index_); }
       //! return the reflection class for the reflection
-      inline const HKL_class& hkl_class() const
-	{ return hklinfo->hkl_class( index_ ); }
+      inline const HKL_class &hkl_class() const
+      {
+        return hklinfo->hkl_class(index_);
+      }
       //! increment to next reflection
-      inline HKL_reference_index& next() { index_++; return *this; }
+      inline HKL_reference_index &next()
+      {
+        index_++;
+        return *this;
+      }
       // inherited functions listed for documentation purposes
       //-- const HKL_info& base_hkl_info() const;
       //-- const int& index() const;
@@ -190,48 +209,88 @@ namespace clipper
       //! Null constructor
       HKL_reference_coord() {}
       //! Constructor: takes parent HKL_info and initial HKL
-      HKL_reference_coord( const HKL_info& hklinfo_, const HKL& hkl ) {
-	hklinfo = &hklinfo_;
-	hkl_ = hkl;
-	index_ = hklinfo->index_of( hklinfo->find_sym( hkl_, sym_, friedel_ ) );
-	if ( index_ < 0 ) Message::message( Message_fatal( "HKL_reference_coord: hkl not found" ) );
+      HKL_reference_coord(const HKL_info &hklinfo_, const HKL &hkl)
+      {
+        hklinfo = &hklinfo_;
+        hkl_ = hkl;
+        index_ = hklinfo->index_of(hklinfo->find_sym(hkl_, sym_, friedel_));
+        if (index_ < 0)
+          Message::message(Message_fatal("HKL_reference_coord: hkl not found"));
       }
       //! return the current HKL
-      inline const HKL& hkl() const { return hkl_; }
+      inline const HKL &hkl() const { return hkl_; }
       //! get current symop number
-      inline const int& sym() const { return sym_; }
+      inline const int &sym() const { return sym_; }
       //! get current friedel flag
-      inline const bool& friedel() const { return friedel_; }
+      inline const bool &friedel() const { return friedel_; }
       //! assign from HKL
       /*! The new HKL must exist in the reflection list. The
 	calculation is optimised for the case when the new HKL is near
 	the old one. */
-      inline HKL_reference_coord& set_hkl( const HKL& hkl__ ) {
-	hkl_ = hkl__;
-	HKL equiv = hkl__.transform(hklinfo->isymop[sym_]);
-	if ( friedel_ ) equiv = -equiv;
-	index_ = hklinfo->index_of( equiv );
-	if ( index_ < 0 ) index_ =
-	   hklinfo->index_of( hklinfo->find_sym( hkl_, sym_, friedel_ ) );
-	return *this;
+      inline HKL_reference_coord &set_hkl(const HKL &hkl__)
+      {
+        hkl_ = hkl__;
+        HKL equiv = hkl__.transform(hklinfo->isymop[sym_]);
+        if (friedel_)
+          equiv = -equiv;
+        index_ = hklinfo->index_of(equiv);
+        if (index_ < 0)
+          index_ =
+              hklinfo->index_of(hklinfo->find_sym(hkl_, sym_, friedel_));
+        return *this;
       }
       //! increment to next reflection
-      inline HKL_reference_coord& next() {
-	sym_ = 0; friedel_ = false;
-	index_++;
-	if ( !last() ) hkl_ = hklinfo->hkl_of( index_ );
-	return *this;
+      inline HKL_reference_coord &next()
+      {
+        sym_ = 0;
+        friedel_ = false;
+        index_++;
+        if (!last())
+          hkl_ = hklinfo->hkl_of(index_);
+        return *this;
       }
       // increment h,k,l
-      inline HKL_reference_coord& next_h() { hkl_.h()++; set_hkl( hkl_ ); return *this; }  //!< increment h
-      inline HKL_reference_coord& next_k() { hkl_.k()++; set_hkl( hkl_ ); return *this; }  //!< increment k
-      inline HKL_reference_coord& next_l() { hkl_.l()++; set_hkl( hkl_ ); return *this; }  //!< increment l
-      inline HKL_reference_coord& prev_h() { hkl_.h()--; set_hkl( hkl_ ); return *this; }  //!< decrement h
-      inline HKL_reference_coord& prev_k() { hkl_.k()--; set_hkl( hkl_ ); return *this; }  //!< decrement k
-      inline HKL_reference_coord& prev_l() { hkl_.l()--; set_hkl( hkl_ ); return *this; }  //!< decrement l
+      inline HKL_reference_coord &next_h()
+      {
+        hkl_.h()++;
+        set_hkl(hkl_);
+        return *this;
+      } //!< increment h
+      inline HKL_reference_coord &next_k()
+      {
+        hkl_.k()++;
+        set_hkl(hkl_);
+        return *this;
+      } //!< increment k
+      inline HKL_reference_coord &next_l()
+      {
+        hkl_.l()++;
+        set_hkl(hkl_);
+        return *this;
+      } //!< increment l
+      inline HKL_reference_coord &prev_h()
+      {
+        hkl_.h()--;
+        set_hkl(hkl_);
+        return *this;
+      } //!< decrement h
+      inline HKL_reference_coord &prev_k()
+      {
+        hkl_.k()--;
+        set_hkl(hkl_);
+        return *this;
+      } //!< decrement k
+      inline HKL_reference_coord &prev_l()
+      {
+        hkl_.l()--;
+        set_hkl(hkl_);
+        return *this;
+      } //!< decrement l
       //! operator assign from HKL
-      inline HKL_reference_coord& operator =( const HKL& hkl__ )
-	{ return set_hkl( hkl__ ); }
+      inline HKL_reference_coord &operator=(const HKL &hkl__)
+      {
+        return set_hkl(hkl__);
+      }
       // inherited functions listed for documentation purposes
       //-- const HKL_info& base_hkl_info() const;
       //-- const int& index() const;
@@ -244,16 +303,16 @@ namespace clipper
     };
 
     //! return HKL_reference_index pointing to first reflection
-    HKL_reference_index first() const { return HKL_reference_index( *this, 0 ); }
+    HKL_reference_index first() const { return HKL_reference_index(*this, 0); }
 
     void debug() const;
 
-   protected:
-    Spacegroup spacegroup_;             //!< spacegroup
-    Cell cell_;                         //!< unit cell
-    HKL_sampling hkl_sampling_;         //!< hkl sampling
-    Resolution resolution_;             //!< resolution limit
-    std::vector<Isymop> isymop;         //!< integer symops
+  protected:
+    Spacegroup spacegroup_;     //!< spacegroup
+    Cell cell_;                 //!< unit cell
+    HKL_sampling hkl_sampling_; //!< hkl sampling
+    Resolution resolution_;     //!< resolution limit
+    std::vector<Isymop> isymop; //!< integer symops
 
     //! the reflection list
     std::vector<HKL> hkl;
@@ -275,7 +334,6 @@ namespace clipper
     friend class HKL_info::HKL_reference_index;
     friend class HKL_info::HKL_reference_coord;
   };
-
 
 } // namespace clipper
 
