@@ -184,8 +184,10 @@ class ZoneMgr:
 
     def _unique_structure(self, atoms):
         us = atoms.unique_structures
+        from chimerax.core.errors import UserError
+        if len(us) == 0:
+            raise UserError('Tried to define a zone mask with no atoms selected!')
         if len(us) != 1:
-            from chimerax.core.errors import UserError
             raise UserError('All atoms for zone mask must be from a single model!')
         return us[0]
 
