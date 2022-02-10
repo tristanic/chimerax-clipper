@@ -159,7 +159,7 @@ class ReflectionDataContainer(Model):
         res = Resolution(data['resolution'])
         cell = Cell(Cell_descr(*data['cell dim'], *data['cell angles']))
         spgr_descr = Spgr_descr(data['hall symbol'], Spgr_descr.Hall)
-        rdc._hklinfo = HKL_info(Spacegroup(spgr_descr), cell, res, False)
+        rdc._hklinfo = HKL_info(Spacegroup(spgr_descr), cell, res, True)
         return rdc
 
 
@@ -451,7 +451,43 @@ def load_hkl_data(session, filename, free_flag_label = None,
     if len(expt[0]):
         _regenerate_free_set_if_necessary(session, free[1], expt[1][0])
 
+    hklinfo, free, expt, calc = _filter_out_missing_free_flags(hklinfo, free, expt, calc)
     return (hklinfo, free, expt, calc)
+
+def _filter_out_missing_free_flags(hklinfo, free, expt, calc):
+    ih = hklinfo.first
+    flags = free[1]
+    good = []
+    bad_count=0
+    while not ih.last():
+        if not flags[ih].missing:
+            good.append(ih.hkl.as_numpy())
+        else:
+            bad_count += 1
+        ih.next()
+    if bad_count:
+        from chimerax.clipper import (HKL_info, HKL_data_Flag, HKL_data_F_sigF, HKL_data_F_phi)
+        import numpy
+        good = numpy.array(good)
+        new_hklinfo = HKL_info(hklinfo.spacegroup, hklinfo.cell, hklinfo.resolution, False)
+        new_hklinfo.add_hkl_list(good)
+        new_free = (free[0], free[1].restrict_to(new_hklinfo))
+        new_expt = [[],[]]
+        for i in range(len(expt[0])):
+            new_expt[0].append(expt[0][i])
+            new_expt[1].append( expt[1][i].restrict_to(new_hklinfo))
+        new_calc = [[],[]]
+        for i in range(len(calc[0])):
+            new_calc[0].append(calc[0][i])
+            new_calc[1].append(calc[1][i].restrict_to(new_hklinfo))
+        return new_hklinfo, new_free, new_expt, new_calc
+    else:
+        return hklinfo, free, expt, calc
+
+
+    
+
+
 
 def _auto_choose_reflections(names, datasets):
     '''
@@ -604,7 +640,7 @@ def load_mtz_data_old(session, filename, free_flag_label = None):
     mtzin = CCP4MTZfile()
     hkl = HKL_info()
     mtzin.open_read(filename)
-    mtzin.import_hkl_info(hkl, False)
+    mtzin.import_hkl_info(hkl, True)
     # Get all the column names and types
     column_labels = mtzin.column_paths
     # Sort the columns into groups, and organise into a temporary tree

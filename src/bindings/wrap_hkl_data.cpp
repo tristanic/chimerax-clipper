@@ -180,6 +180,19 @@ py::class_<HKL_data<C>> declare_HKL_data(py::module &m, const std::string &class
         },
         "Takes a matched pair of Numpy arrays containing (h,k,l) indices and "
         "data values respectively.")
+        .def("restrict_to",
+        [](Class& self, const HKL_info& hklinfo) {
+            auto new_array = new Class(hklinfo);
+            auto ih = hklinfo.first();
+            while (!ih.last())
+            {
+                new_array->set_data(ih.hkl(), self[ih.hkl()]);
+                ih.next();
+            }
+            return std::unique_ptr<Class>(new_array);
+        },
+        "Returns a new HKL_data object containing only those reflections in the given HKL_info."
+        )
         /*
         Since the base class HKL_data_base has a protected virtual destructor,
         exposing it to Python via PyBind11 requires it (and all derived classes)

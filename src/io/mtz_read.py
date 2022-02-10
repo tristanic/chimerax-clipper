@@ -73,7 +73,7 @@ def load_mtz_data(session, filename, load_map_coeffs=True):
     mtzin = CCP4MTZfile()
     hklinfo = HKL_info()
     mtzin.open_read(filename)
-    mtzin.import_hkl_info(hklinfo, False) # Read only reflections present - don't generate absent ones
+    mtzin.import_hkl_info(hklinfo, True) 
 
     first_column_type, expected_following_columns = _first_column_types()
 

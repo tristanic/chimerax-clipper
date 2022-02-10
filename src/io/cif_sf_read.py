@@ -215,8 +215,7 @@ def _parse_tables(table_list, load_map_coeffs=True):
     resolution = Resolution(res)
 
     from .. import HKL_info
-    hkl_info = HKL_info(spacegroup, cell, resolution, False)
-    hkl_info.add_hkl_list(hkls)
+    hkl_info = HKL_info(spacegroup, cell, resolution, True)
     # OK, now we have all our vital information. Time to find all the data
     data = _parse_status(refln_table, hkl_info, hkls)
     exp_names = []
