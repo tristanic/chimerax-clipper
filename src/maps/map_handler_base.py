@@ -115,9 +115,9 @@ from chimerax.map.volume import VolumeSurface
 class FastVolumeSurface(VolumeSurface):
     '''
     Threaded implementation of ChimeraX VolumeSurface, with threading at the
-    C++ level. Should become obsolete once something similar is implemented in
-    ChimeraX itself.
+    C++ level.
     '''
+    report_time=False
     pickable=False
     #SESSION_SAVE=False
     def __init__(self, volume, level, rgba=(1.0, 1.0, 1.0, 1.0), mesh=False):
@@ -127,6 +127,9 @@ class FastVolumeSurface(VolumeSurface):
         self._update_needed = False
 
     def _postprocess(self, varray, narray, tarray, rendering_options, level):
+        if self.report_time:
+            from time import perf_counter
+            start_time = perf_counter()
         ro = rendering_options
         if ro.flip_normals and level < 0:
           from chimerax.surface import invert_vertex_normals
@@ -153,12 +156,20 @@ class FastVolumeSurface(VolumeSurface):
           smooth_vertex_positions(varray, tarray, sf, si)
           smooth_vertex_positions(narray, tarray, sf, si)
 
+        if self.report_time:
+            self.session.logger.info(f'Post-processing of surface #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms')
         # Transforms and normalization done in thread
         return varray, narray, tarray, hidden_edges
+
+    def _queue_thread_result(self, rendering_options):
+        self.contour_mgr.enqueue(self, rendering_options)
 
     def _use_fast_thread_result(self, rendering_options):
         sct = self._surf_calc_thread
         if sct is not None:
+            if self.report_time:
+                from time import perf_counter
+                start_time=perf_counter()
             va, ta, na = sct.get_result()
             va, na, ta, hidden_edges = self._postprocess(va, na, ta, self.volume.rendering_options, self.level)
             self._set_surface(va, na, ta, hidden_edges)
@@ -167,10 +178,20 @@ class FastVolumeSurface(VolumeSurface):
             self._surf_calc_thread = None
             if self._update_needed:
                 # surface properties were changed while the thread was working
-                self.update_surface(rendering_options)
+                def _update_on_new_frame(*_, surf=self, ro=rendering_options):
+                    surf.update_surface(ro)
+                    from chimerax.core.triggerset import DEREGISTER
+                    return DEREGISTER
+
+                self.session.triggers.add_handler('new frame', _update_on_new_frame)
             self._update_needed = False
+            if self.report_time:
+                self.session.logger.info(f'Overall _use_fast_thread_result() for surface #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms')
+                
+
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
+
 
     def update_surface(self, rendering_options):
         if not hasattr(self.volume, 'session'):
@@ -179,7 +200,9 @@ class FastVolumeSurface(VolumeSurface):
         if sct is not None: # and not sct.ready():
             self._update_needed = True
             return
-
+        if self.report_time:
+            from time import perf_counter
+            start_time = perf_counter()
         v = self.volume
         level = self.level
         vertex_transform = v.matrix_indices_to_xyz_transform()
@@ -191,9 +214,12 @@ class FastVolumeSurface(VolumeSurface):
         from ..contour_thread import Contour_Thread_Mgr
         sct = self._surf_calc_thread = Contour_Thread_Mgr()
         delayed_reaction(self.volume.session.triggers, 'new frame',
-            sct.start_compute, (numpy.asfortranarray(v.matrix()), level, det, vertex_transform.matrix, normal_transform.matrix, False, True),
+            sct.start_compute, (numpy.ascontiguousarray(v.matrix().T), level, det, vertex_transform.matrix, normal_transform.matrix, False, True),
             sct.ready,
-            self._use_fast_thread_result, (rendering_options,))
+            self._queue_thread_result, (rendering_options,))
+        if self.report_time:
+            self.session.logger.info(f'Initiating threaded update of surface #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms')
+
 
     def take_snapshot(self, session, flags):
         data = VolumeSurface.take_snapshot(self, session, flags)
@@ -211,6 +237,10 @@ class FastVolumeSurface(VolumeSurface):
             s.display = False
         v._surfaces.append(s)
         return s
+    
+    @property
+    def contour_mgr(self):
+        return self.volume.manager.contour_mgr
 
 class XmapHandlerBase(MapHandlerBase):
     '''

@@ -86,7 +86,7 @@ class XmapSet(MapSetBase):
     Furthermore, live map recalculation requires a single Fobs/sigFobs dataset -
     if more than one is found, the user will be asked to choose.
     '''
-
+    report_timing=False
     STANDARD_HIGH_CONTOUR=0.5
     STANDARD_LOW_CONTOUR = 0.65
     #SESSION_SAVE=False
@@ -696,6 +696,9 @@ class XmapSet(MapSetBase):
                 self._delayed_recalc_handler = None
 
     def recalculate_all_maps(self, atoms):
+        if self.report_timing:
+            from time import perf_counter
+            start_time = perf_counter()
         if len(self.live_xmaps) == 0:
             self._recalc_needed = False
             return
@@ -710,16 +713,26 @@ class XmapSet(MapSetBase):
             self._apply_new_maps, []
             )
         self._recalc_needed = False
+        if self.report_timing:
+            self.session.logger.info(f'Starting map recalculation for live xmapset #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms.')
 
     def _apply_new_maps(self):
         if self.deleted:
             return
+        if self.report_timing:
+            from time import perf_counter
+            start_time = perf_counter()
         xm = self.live_xmap_mgr
         xm.apply_new_maps()
         if self.show_r_factors:
             rfactor_string = 'R-work: {:0.4f}  Rfree: {:0.4f}'.format(xm.rwork, xm.rfree)
             self.session.logger.status(rfactor_string, secondary=True)
+        if self.report_timing:
+            self.session.logger.info(f'Applying new maps for live xmapset #{self.id_string} before "maps recalculated" trigger took {(perf_counter()-start_time)*1e3:.3f} ms.')
+            start_time = perf_counter()
         self.triggers.activate_trigger('maps recalculated', None)
+        if self.report_timing:
+            self.session.logger.info(f'Running "maps recalculated" trigger for live xmapset #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms.')
 
     def delete(self):
         print('Deleting {}'.format(self.name))

@@ -81,6 +81,7 @@ class MapMgr(Model):
         super().__init__('Map Manager', cm.session)
         self._default_oversampling_rate=default_oversampling_rate
 
+        self.contour_mgr = ContourResultMgr(self.session)
         self._zone_mgr = None
 
         if not hasattr(self, 'triggers'):
@@ -449,6 +450,7 @@ class MapMgr(Model):
                 mgr.triggers.remove_handler(h)
             except:
                 continue
+        self.contour_mgr.delete()
         super().delete()
 
     def take_snapshot(self, session, flags):
@@ -476,3 +478,27 @@ class MapMgr(Model):
         self._reapply_zone()
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
+
+class ContourResultMgr:
+    def __init__(self, session):
+        self.session = session
+        self._pending = []
+        self._handler = self.session.triggers.add_handler('new frame', self._new_frame_cb)
+
+    
+    def enqueue(self, surface, rendering_options):
+        self._pending.append((surface, rendering_options))
+    
+    def _new_frame_cb(self, *_):
+        if len(self._pending):
+            s, ro = self._pending.pop(0)
+            if not s.deleted:
+                s._use_fast_thread_result(ro)
+    
+    def delete(self):
+        try:
+            self.session.triggers.remove_handler(self._handler)
+        except Exception as e:
+            self.session.logger.warning(f'Failed to clean up ContourResultMgr new frame handler with the following error:\n{str(e)}')
+
+    

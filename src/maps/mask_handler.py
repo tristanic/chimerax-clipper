@@ -22,6 +22,7 @@
 from chimerax.map import Volume
 
 class ZoneMgr:
+    report_timing=False
     def __init__(self, session, grid_step, radius,
             atoms=None, transforms=None, transform_indices=None, coords=None, pad=None, interpolation_threshold=0.75):
         if pad is None:
@@ -166,15 +167,17 @@ class ZoneMgr:
         return self._mask
 
     def _update_mask(self):
-        # from time import time
-        # start_time = time()
+        if self.report_timing:    
+            from time import perf_counter
+            start_time = perf_counter()
         update_origin = (len(self.coords) == 1)
         self.mask.generate_mask(self.coords, self.radius,
             reuse_existing=not self._resize_box, update_origin=update_origin,
             step=self.grid_step, pad=self.pad)
         self._update_needed = False
         self._resize_box = False
-        # print('Updating mask took {} ms.'.format((time()-start_time)*1000))
+        if self.report_timing:
+            self.session.logger.info(f'Updating mask took {(perf_counter()-start_time)*1e3} ms.')
 
     def get_vertex_mask(self, vertices):
         if self._update_needed:
@@ -219,8 +222,6 @@ class VolumeMask(Volume):
     '''
     SESSION_SAVE=False
     def __init__(self, session, coords, step, radius, pad=0):
-        import numpy
-
         darray = self._generate_data_array(coords, step, radius, pad=pad)
         super().__init__(session, darray)
         self.name = "mask"
@@ -275,6 +276,7 @@ class VolumeMask(Volume):
 from chimerax.core.state import State
 
 class ZoneMask(State):
+    report_timing=False
     SESSION_SAVE=False
     def __init__(self, surface, mgr, max_components, time_per_remask = 0.5):
         self.surface = surface
@@ -299,6 +301,9 @@ class ZoneMask(State):
 
 
     def set_surface_mask(self):
+        if self.report_timing:
+            from time import perf_counter
+            start_time = perf_counter()
         surface = self.surface
         v, t = surface.vertices, surface.triangles
         if t is None:
@@ -306,10 +311,7 @@ class ZoneMask(State):
             return
 
         import numpy
-        indices = numpy.where(self.mgr.get_vertex_mask(v))[0]
-        nv = len(v)
-        mask = numpy.zeros((nv,), numpy.bool)
-        numpy.put(mask, indices, 1)
+        mask = self.mgr.get_vertex_mask(v)
         tmask = numpy.logical_and(mask[t[:,0]], mask[t[:,1]])
         numpy.logical_and(tmask, mask[t[:,2]], tmask)
         surface.triangle_mask = tmask
@@ -322,6 +324,8 @@ class ZoneMask(State):
             self.mgr.triggers.add_handler('atom coords updated', self._coord_update_cb)
         from time import time
         self._last_remask_time = time()
+        if self.report_timing:
+            self.surface.session.logger.info(f'Applying zone mask to surface #{self.surface.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms.')
 
     def take_snapshot(self, session, flags):
         data = {

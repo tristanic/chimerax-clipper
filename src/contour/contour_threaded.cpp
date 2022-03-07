@@ -39,9 +39,6 @@ public:
     std::vector<float>* vertex_xyz;
     std::vector<float>* normals;
     std::vector<int>* tv_indices;
-    // float* vertex_xyz;
-    // float* normals;
-    // int* tv_indices;
     int vertex_count=0;
     int triangle_count=0;
     Contour_Geometry() {}
@@ -51,9 +48,6 @@ public:
         vertex_xyz = new std::vector<float>(vc*3);
         normals = new std::vector<float>(vc*3);
         tv_indices = new std::vector<int>(tc*3);
-        // vertex_xyz = new float[vc*3];
-        // normals = new float[vc*3];
-        // tv_indices = new int[tc*3];
     }
 };
 
@@ -182,24 +176,22 @@ void Contour_Thread_Mgr::start_compute(py::array_t<float> data, float threshold,
 
 void Contour_Thread_Mgr::copy_3d_array(py::array_t<float> source)
 {
-    data_ = std::unique_ptr<float[]>(new float[source.shape(0)*source.shape(1)*source.shape(2)]);
     int stride_size = sizeof(float);
-    // stride and size are stored reversed since ChimeraX keeps volume data in
-    // z,y,x order while contour code requires x,y,z
     // NOTE: Numpy array strides are per byte regardless of data type, whereas
     // surface() wants strides per float
     for (size_t i=0; i<3; ++i)
     {
-        stride_[i] = source.strides(2-i)/stride_size;
-        size_[i] = source.shape(2-i);
+        stride_[i] = source.strides(i)/stride_size;
+        size_[i] = source.shape(i);
     }
-    auto dptr = data_.get();
-    auto s = source.unchecked<3>();
-    for (ssize_t i=0; i < source.shape(0); i++)
-        for (ssize_t j=0; j < source.shape(1); j++)
-            for (ssize_t k=0; k < source.shape(2); k++)
-                dptr[i+stride_[1]*j+stride_[0]*k] = s(i,j,k);
-
+    auto size = source.shape(0)*source.shape(1)*source.shape(2);
+    data_ = std::unique_ptr<float[]>(new float[size]);
+    auto buf = source.request();
+    float* ptr = (float*)buf.ptr;
+    for (size_t i=0; i<size; ++i)
+    {
+        data_[i] = *ptr++;
+    }
 }
 
 Contour_Geometry Contour_Thread_Mgr::contour_surface_thread_(float* data, float threshold, bool cap_faces)
