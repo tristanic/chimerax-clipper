@@ -78,7 +78,7 @@ def set_to_default_cartoon(session, model = None):
         # arg = atomspec.AtomSpecArg('thearg')
         # aspec= arg.parse('#' + model.id_string, session)[0]
     cartoon.cartoon(session, atoms = atoms, suppress_backbone_display=False)
-    cartoon.cartoon_style(session, atoms = atoms, width=0.4, thickness=0.1, arrows_helix=True, arrow_scale = 2)
+    cartoon.cartoon_style(session, atoms = atoms, width=0.4, thickness=0.2, arrows_helix=True, arrow_scale = 2)
     cartoon.cartoon_tether(session, structures=models, opacity=0)
     nucleotides(session, 'atoms')
     from chimerax.std_commands import color
