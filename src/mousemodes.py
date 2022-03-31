@@ -20,21 +20,16 @@
 # of these is redistributed under its own license terms.
 
 import numpy
-from chimerax.mouse_modes import MouseMode, ZoomMouseMode as ZoomMouseMode_Base
+from chimerax.mouse_modes import (
+    MouseMode, 
+    ZoomMouseMode as ZoomMouseMode_Base,
+    RotateMouseMode as RotateMouseMode_Base
+)
 
 def initialize_clipper_mouse_modes(session):
     initialize_zoom_mouse_modes(session)
     initialize_map_contour_mouse_modes(session)
-    std_modes = session.ui.mouse_modes.modes
-    from chimerax.mouse_modes.std_modes import TranslateMouseMode
-    tmml = list(filter(lambda m: type(m)==TranslateMouseMode, std_modes))
-    if len(tmml) != 1:
-        # Just in case. There *should* only be one TranslateMouseMode in the list,
-        # but if not let's play it safe and just create a fresh one
-        tmm = TranslateMouseMode(session)
-    else:
-        tmm = tmml[0]
-    session.ui.mouse_modes.bind_mouse_mode('left',['shift'], tmm)
+    session.ui.mouse_modes.bind_mouse_mode('left', [], RotateMouseMode(session))
 
 def initialize_zoom_mouse_modes(session):
     z = ZoomMouseMode(session)
@@ -52,6 +47,44 @@ def initialize_map_contour_mouse_modes(session):
     session.ui.mouse_modes.bind_mouse_mode('wheel',['control'], s)
     # session.ui.mouse_modes.bind_mouse_mode('wheel',[], v)
     session.ui.mouse_modes.bind_mouse_mode('wheel',['alt'], v)
+
+class RotateMouseMode(RotateMouseMode_Base):
+    PAD_FRACTION = 0.3
+    def mouse_double_click(self,event):
+        x,y = event.position()
+        pick = self.view.picked_object(x,y)
+        atoms = self._pick_atom_or_bond_atoms(pick)
+        if atoms is not None:
+            self.session.selection.clear()
+            atoms.selected = True
+            atoms.intra_bonds.selected=True
+            self._center_on_picked_atoms(atoms)
+    
+    def _pick_atom_or_bond_atoms(self, pick):
+        if pick is None:
+            return None
+        atoms = None
+        from chimerax.atomic import Atoms
+        if hasattr(pick, 'atom'):
+            atoms = Atoms([pick.atom])
+        elif hasattr(pick, 'bond'):
+            b = pick.bond
+            atoms = Atoms(b.atoms)
+        return atoms
+    
+    def _center_on_picked_atoms(self, atoms):
+        v = self.session.view
+        cofr = v.center_of_rotation
+        center = atoms.coords.mean(axis=0)
+        cd = v.camera.view_direction()
+        shift = cofr-center
+        from chimerax.geometry import translation
+        cofr_method = v.center_of_rotation_method
+        v.move(translation(shift))
+        v.center_of_rotation = center
+        v.center_of_rotation_method = cofr_method
+
+
 
 class ClipPlaneAdjuster(MouseMode):
     def __init__(self, session, zoom_mode):
@@ -186,7 +219,6 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             camera_point = c.position.inverse() * clip_point
             fc = CameraClipPlane('far', (0,0,1),
                                 camera_point, v)
-            # Put the near clip at the camera position for depth cueing
             v.clip_planes.add_plane(fc)
             return fc
 
@@ -206,7 +238,6 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             camera_point = c.position.inverse() * clip_point
             nc = CameraClipPlane('near', (0,0,-1),
                                 camera_point, v)
-            # Put the near clip at the camera position for depth cueing
             v.clip_planes.add_plane(nc)
             return nc
 
