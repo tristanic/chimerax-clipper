@@ -53,16 +53,16 @@ class RotateMouseMode(RotateMouseMode_Base):
     def mouse_double_click(self,event):
         x,y = event.position()
         pick = self.view.picked_object(x,y)
-        atoms = self._pick_atom_or_bond_atoms(pick)
+        atoms, sym = self._pick_atom_or_bond_atoms(pick)
         if atoms is not None:
             self.session.selection.clear()
             atoms.selected = True
             atoms.intra_bonds.selected=True
-            self._center_on_picked_atoms(atoms)
+            self._center_on_picked_atoms(atoms, sym)
     
     def _pick_atom_or_bond_atoms(self, pick):
         if pick is None:
-            return None
+            return None, None
         atoms = None
         from chimerax.atomic import Atoms
         if hasattr(pick, 'atom'):
@@ -70,16 +70,27 @@ class RotateMouseMode(RotateMouseMode_Base):
         elif hasattr(pick, 'bond'):
             b = pick.bond
             atoms = Atoms(b.atoms)
-        return atoms
+        from .symmetry import PickedSymAtom, PickedSymBond
+        if isinstance(pick, (PickedSymAtom, PickedSymBond)):
+            from .util import rtop_frac_as_place
+            sym = rtop_frac_as_place(pick.sym, atoms[0].structure.parent.cell)
+        else:
+            sym = None
+        
+        return atoms, sym
     
-    def _center_on_picked_atoms(self, atoms):
+    def _center_on_picked_atoms(self, atoms, sym):
         v = self.session.view
         cofr = v.center_of_rotation
+        cofr_method = v.center_of_rotation_method
+        if sym is not None:
+            v.move(sym)
+            cofr = v.center_of_rotation = sym.inverse()*cofr
+
         center = atoms.coords.mean(axis=0)
         cd = v.camera.view_direction()
         shift = cofr-center
         from chimerax.geometry import translation
-        cofr_method = v.center_of_rotation_method
         v.move(translation(shift))
         v.center_of_rotation = center
         v.center_of_rotation_method = cofr_method

@@ -169,9 +169,18 @@ def guess_suitable_contour(volume, model, mask_radius=3, atom_radius_scale = 0.5
 def anisou_determinants(anisous):
     a = anisous
     a00, a11, a22, a01, a02, a12 = [a[:,i] for i in range(6)]
-    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02);
+    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02)
 
 def anisou_determinant(anisou):
     a = anisou
     a00, a11, a22, a01, a02, a12 = [a[i] for i in range(6)]
-    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02);
+    return a00*(a11*a22-a12*a12) + a01*(a12*a02-a01*a22) + a02*(a01*a12-a11*a02)
+
+def rtop_orth_as_place(rtop_orth):
+    from chimerax.geometry import Place
+    return Place(axes=rtop_orth.rot.as_numpy().T, origin=rtop_orth.trn.as_numpy())
+
+def rtop_frac_as_place(rtop_frac, cell):
+    rtop_orth = rtop_frac.rtop_orth(cell)
+    return rtop_orth_as_place(rtop_orth)
+
