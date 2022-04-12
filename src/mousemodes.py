@@ -257,15 +257,15 @@ class ZoomMouseMode(ZoomMouseMode_Base):
     def cleanup(self):
         pass
 
-    def _adjusted_clip_multiplier(self, mult, dist):
+    def adjusted_clip_multiplier(self, mult, dist):
         from math import exp
         return 1-(1-mult)*exp(-dist*self._clip_exponent_multiplier)
     
-    def _far_clip_point(self, origin, view_vec, dist):
-        return origin + view_vec*(1+self._adjusted_clip_multiplier(self._far_clip_multiplier, dist))
+    def far_clip_point(self, origin, view_vec, dist):
+        return origin + view_vec*(1+self.adjusted_clip_multiplier(self._far_clip_multiplier, dist))
     
-    def _near_clip_point(self, origin, view_vec, dist):
-        return origin + view_vec*(1-self._adjusted_clip_multiplier(self._near_clip_multiplier, dist))
+    def near_clip_point(self, origin, view_vec, dist):
+        return origin + view_vec*(1-self.adjusted_clip_multiplier(self._near_clip_multiplier, dist))
 
 
 
@@ -290,8 +290,8 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             c.position = new_pos
             #distance = cofr-new_origin
             new_view_vec = new_view_distance*vd
-            self.far_clip.plane_point = self._far_clip_point(new_origin, new_view_vec, new_view_distance)
-            self.near_clip.plane_point = self._near_clip_point(new_origin, new_view_vec, new_view_distance)
+            self.far_clip.plane_point = self.far_clip_point(new_origin, new_view_vec, new_view_distance)
+            self.near_clip.plane_point = self.near_clip_point(new_origin, new_view_vec, new_view_distance)
             c.redraw_needed = True
         else:
             shift = c.position.transform_vector((0, 0, delta_z))
@@ -299,8 +299,8 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             new_origin = c.position.origin()
             vd = c.view_direction()
             distance = numpy.dot(cofr-new_origin, vd)
-            self.far_clip.plane_point = self._far_clip_point(new_origin, vd*distance, distance)
-            self.near_clip.plane_point = self._near_clip_point(new_origin, vd*distance, distance)
+            self.far_clip.plane_point = self.far_clip_point(new_origin, vd*distance, distance)
+            self.near_clip.plane_point = self.near_clip_point(new_origin, vd*distance, distance)
 
 class SelectVolumeToContour(MouseMode):
     '''
