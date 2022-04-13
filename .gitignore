@@ -21,6 +21,10 @@ __pycache__/
 *.so
 *.so.*
 
+#VS Code
+.vs/
+.vscode/
+
 # Precompiled MKL libraries
 !libfftw2xc.so
 !libfftw_mkl_core.so
