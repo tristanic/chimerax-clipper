@@ -259,7 +259,21 @@ class XmapHandlerBase(MapHandlerBase):
             is_difference_map=is_difference_map)
         self.path = mapset.path
 
-        
+
+    @MapHandlerBase.is_difference_map.setter
+    def is_difference_map(self, flag):
+        if flag != self._is_difference_map:
+            self._is_difference_map = flag
+            if len(self.surfaces):
+                style = self.surfaces[0].display_style
+            else:
+                style = 'mesh'
+            self.mapset.set_xmap_display_style(self, is_difference_map=flag, style=style)
+            from .mask_handler import ZoneMask
+            for s in self.surfaces:
+                s.display=True
+                ZoneMask(s, self.mapset.master_map_mgr.zone_mgr, None)
+
     @property
     def box_params(self):
         return self.mapset.box_params

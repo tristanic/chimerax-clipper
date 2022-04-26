@@ -82,8 +82,10 @@ class NXmapSet(MapSetBase):
         if contour is None:
             from ..util import guess_suitable_contour
             if is_difference_map:
-                pcontour = guess_suitable_contour(nxmap_handler, self.structure,
-                    atom_radius_scale = 0.05)
+                # There's no easy way to define this. For now just start at 6 sigma
+                pcontour = nxmap_handler.mean_sd_rms()[1]*6
+                # pcontour = guess_suitable_contour(nxmap_handler, self.structure,
+                #     atom_radius_scale = 0.25)
                 contour = numpy.array([-pcontour, pcontour])
             else:
                 contour = numpy.array([guess_suitable_contour(nxmap_handler, self.structure)])
@@ -159,7 +161,22 @@ class NXmapHandler(MapHandlerBase):
     def _box_moved_cb(self, name, params):
         self.update_mask()
 
-    @property
+    @MapHandlerBase.is_difference_map.setter
+    def is_difference_map(self, flag):
+        if flag != self._is_difference_map:
+            self._is_difference_map = flag
+            if len(self.surfaces):
+                style = self.surfaces[0].display_style
+            else:
+                style = 'mesh'
+            self.mapset.set_nxmap_display_style(self, is_difference_map=flag, style=style)
+            from .mask_handler import ZoneMask
+            for s in self.surfaces:
+                s.display=True
+                ZoneMask(s, self.mapset.master_map_mgr.zone_mgr, None)
+
+
+    property
     def stats(self):
         return self.mean_sd_rms()
 
