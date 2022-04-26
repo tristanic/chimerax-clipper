@@ -265,10 +265,13 @@ class XmapHandlerBase(MapHandlerBase):
         if flag != self._is_difference_map:
             self._is_difference_map = flag
             if len(self.surfaces):
-                style = self.surfaces[0].display_style
+                s = self.surfaces[0]
+                style = s.display_style
+                alpha = s.color[-1]
             else:
                 style = 'mesh'
-            self.mapset.set_xmap_display_style(self, is_difference_map=flag, style=style)
+                alpha = 255
+            self.mapset.set_xmap_display_style(self, is_difference_map=flag, style=style, transparency=1-alpha/255)
             from .mask_handler import ZoneMask
             for s in self.surfaces:
                 s.display=True

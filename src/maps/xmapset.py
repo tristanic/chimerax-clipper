@@ -454,7 +454,7 @@ class XmapSet(MapSetBase):
 
 
     def set_xmap_display_style(self, xmap_handler, is_difference_map=False,
-        color=None, style=None, transparency=0.0, contour=None):
+        color=None, style=None, transparency=None, contour=None):
         if style is None:
             style = 'mesh'
         if is_difference_map and color is not None and len(color) != 2:
@@ -471,6 +471,9 @@ class XmapSet(MapSetBase):
                 color = [self.DEFAULT_MESH_MAP_COLOR]
             else:
                 color = [self.DEFAULT_SOLID_MAP_COLOR]
+        if transparency is not None:
+            for c in color:
+                c[-1] = 1-transparency
         if contour is None:
             if is_difference_map:
                 contour = self.STANDARD_DIFFERENCE_MAP_CONTOURS
@@ -491,7 +494,7 @@ class XmapSet(MapSetBase):
                                   'show_outline_box': False,
                                   'surface_colors': color,
                                   'square_mesh': False,
-                                  'transparency_factor': transparency,
+                                  # 'transparency_factor': transparency,
                                   'flip_normals': True,
                                   })
         xmap_handler.set_display_style(style)

@@ -62,7 +62,7 @@ class NXmapSet(MapSetBase):
         return h
 
     def set_nxmap_display_style(self, nxmap_handler, is_difference_map=False,
-        color=None, style=None, contour=None):
+        color=None, style=None, transparency=None, contour=None):
         if style is None:
             style='mesh'
         if is_difference_map and color is not None and len(color) != 2:
@@ -79,6 +79,9 @@ class NXmapSet(MapSetBase):
                 color = [self.DEFAULT_MESH_MAP_COLOR]
             else:
                 color = [self.DEFAULT_SOLID_MAP_COLOR]
+        if transparency is not None:
+            for c in color:
+                c[-1] = 1-transparency
         if contour is None:
             from ..util import guess_suitable_contour
             if is_difference_map:
@@ -166,10 +169,13 @@ class NXmapHandler(MapHandlerBase):
         if flag != self._is_difference_map:
             self._is_difference_map = flag
             if len(self.surfaces):
-                style = self.surfaces[0].display_style
+                s = self.surfaces
+                style = s.display_style
+                alpha = s.color[-1]
             else:
                 style = 'mesh'
-            self.mapset.set_nxmap_display_style(self, is_difference_map=flag, style=style)
+                alpha = 255
+            self.mapset.set_nxmap_display_style(self, is_difference_map=flag, style=style, transparency=1-alpha/255)
             from .mask_handler import ZoneMask
             for s in self.surfaces:
                 s.display=True
