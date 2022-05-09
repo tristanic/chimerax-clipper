@@ -93,6 +93,9 @@ def spotlight(session, models=None, enable=True, radius=None):
         from chimerax.atomic import AtomicStructure
         models = session.models.list(type=AtomicStructure)
         sym_mgrs = session.models.list(type=SymmetryManager)
+        if len(sym_mgrs) == 0:
+            from chimerax.core.errors import UserError
+            raise UserError('No models are initialised for Clipper. Use the command "clipper spotlight #{model id(s)}" to initialise (a) specific model(s).')
         models = [m for m in models if m.parent not in sym_mgrs]
         models = models+sym_mgrs
         create = False
