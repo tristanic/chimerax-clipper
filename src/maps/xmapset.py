@@ -87,8 +87,6 @@ class XmapSet(MapSetBase):
     if more than one is found, the user will be asked to choose.
     '''
     report_timing=False
-    STANDARD_HIGH_CONTOUR=0.5
-    STANDARD_LOW_CONTOUR = 0.65
     #SESSION_SAVE=False
 
     _default_live_xmap_params = {
@@ -155,7 +153,7 @@ class XmapSet(MapSetBase):
         '''
         import os
         if crystal_data is not None:
-            data_name = os.path.basename(crystal_data.filename)
+            data_name = self.data_name = os.path.basename(crystal_data.filename)
         else:
             data_name = ''
         super().__init__(manager, 'Crystallographic maps ({})'.format(
@@ -256,12 +254,15 @@ class XmapSet(MapSetBase):
                     if max(bsharp_vals) > 0:
                         map_style = 'mesh'
                         transparency = 0.0
+                        contour=self.STANDARD_LOW_CONTOUR
                     else:
                         map_style='surface'
                         transparency=0.6
+                        contour=self.STANDARD_HIGH_CONTOUR
                 map_params = self._default_live_xmap_params.copy()
                 map_params['2mFo-DFc']['style'] = map_style
                 map_params['2mFo-DFc']['transparency'] = transparency
+                map_params['2mFo-DFc']['contour'] = contour
 
                 self._prepare_standard_live_maps(exclude_free_reflections,
                     fill_with_fcalc, exclude_missing_reflections,
@@ -272,15 +273,13 @@ class XmapSet(MapSetBase):
                     transparency = 0.0
                     if b<0:
                         name_str = "2mFo-DFc_smooth_{:.0f}".format(-b)
-                        contour = sqrt(self.resolution) / 3
-                        #contour = self.STANDARD_LOW_CONTOUR
+                        contour = self.STANDARD_LOW_CONTOUR
                     else:
                         name_str = "2mFo-DFc_sharp_{:.0f}".format(b)
                         if b == max(bsharp_vals):
                             style = 'surface'
                             transparency = 0.6
-                            contour = sqrt(self.resolution) / 4
-                            #contour = self.STANDARD_HIGH_CONTOUR
+                            contour = self.STANDARD_HIGH_CONTOUR
                     self.add_live_xmap(name_str,
                         b_sharp=b,
                         is_difference_map=False,
@@ -478,19 +477,13 @@ class XmapSet(MapSetBase):
             if is_difference_map:
                 contour = self.STANDARD_DIFFERENCE_MAP_CONTOURS
             else:
-                from math import sqrt
-                contour = sqrt(self.resolution) / 3
-                # contour = self.STANDARD_LOW_CONTOUR
+                contour = self.STANDARD_HIGH_CONTOUR
 
 
-        if is_difference_map:
-            contour = numpy.array(contour) * xmap_handler.sigma
-        else:
-            from ..util import guess_suitable_contour
-            contour = [guess_suitable_contour(xmap_handler, self.structure, atom_radius_scale = contour)]
+        levels = numpy.array(contour) * xmap_handler.sigma
 
         xmap_handler.set_parameters(**{'cap_faces': False,
-                                  'surface_levels': contour,
+                                  'surface_levels': levels,
                                   'show_outline_box': False,
                                   'surface_colors': color,
                                   'square_mesh': False,
@@ -556,7 +549,8 @@ class XmapSet(MapSetBase):
         style=None,
         contour=None,
         display=True,
-        auto_add_to_session=True):
+        auto_add_to_session=True,
+        _session_restore=False):
         '''
         Add a crystallographic map based on pre-calculated amplitudes and
         phases. This map will remain unchanged no matter what happens to the
@@ -568,14 +562,15 @@ class XmapSet(MapSetBase):
             raise RuntimeError('Invalid data type: {}!'.format(type(data)))
         if is_difference_map is None:
             is_difference_map = dataset.is_difference_map
-        new_handler = XmapHandler_Static(self, dataset.name, data,
+        new_handler = XmapHandler_Static(self, dataset,
             is_difference_map = is_difference_map)
-        self.set_xmap_display_style(new_handler,
-            is_difference_map=is_difference_map,
-            color=color,
-            style=style,
-            contour=contour
-            )
+        if not _session_restore:
+            self.set_xmap_display_style(new_handler,
+                is_difference_map=is_difference_map,
+                color=color,
+                style=style,
+                contour=contour
+                )
         if auto_add_to_session:
             self.add([new_handler])
             if display:
@@ -851,7 +846,7 @@ class XmapHandler_Static(XmapHandlerBase):
     of a given region.
     '''
     #SESSION_SAVE=False
-    def __init__(self, mapset, name, f_phi_data,
+    def __init__(self, mapset, dataset, 
         is_difference_map=False):
         '''
         Args:
@@ -865,9 +860,10 @@ class XmapHandler_Static(XmapHandlerBase):
             is_difference_map:
                 Is this a difference map?
         '''
-        name = '(STATIC) '+name
+        name = '(STATIC) '+dataset.name
         self._mapset = mapset
-        self._f_phi_data = f_phi_data
+        self._dataset = dataset
+        f_phi_data = self._f_phi_data = dataset.data
         from .. import Xmap
 
         xmap = self._xmap = Xmap(self.spacegroup, self.cell, self.grid)
@@ -908,7 +904,7 @@ class XmapHandler_Static(XmapHandlerBase):
             'volume state': state_from_map(self),
             'is difference map': self._is_difference_map,
             'mapset': self._mapset,
-            'F/phi': self._f_phi_data,
+            'F/phi': self._dataset,
         }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
@@ -922,8 +918,9 @@ class XmapHandler_Static(XmapHandlerBase):
         try:
             xmh = mapset.add_static_xmap(data['F/phi'],
                 is_difference_map=data['is difference map'],
-                auto_add_to_session=False)
+                auto_add_to_session=False, _session_restore=True)
         except AttributeError:
+            raise
             return None
         from chimerax.core.models import Model
         from chimerax.map.session import set_map_state
