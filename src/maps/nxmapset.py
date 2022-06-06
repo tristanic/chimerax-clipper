@@ -169,7 +169,7 @@ class NXmapHandler(MapHandlerBase):
         if flag != self._is_difference_map:
             self._is_difference_map = flag
             if len(self.surfaces):
-                s = self.surfaces
+                s = self.surfaces[0]
                 style = s.display_style
                 alpha = s.color[-1]
             else:
