@@ -156,8 +156,7 @@ class XmapSet(MapSetBase):
             data_name = self.data_name = os.path.basename(crystal_data.filename)
         else:
             data_name = ''
-        super().__init__(manager, 'Crystallographic maps ({})'.format(
-            data_name))
+        super().__init__(manager, data_name)
 
         session = self.session
 
@@ -188,6 +187,13 @@ class XmapSet(MapSetBase):
         if auto_add_to_session:
             manager.add([self])
 
+    @MapSetBase.name.getter
+    def name(self):
+        return f'Crystallographic maps({self._name})'
+    
+    @property
+    def base_name(self):
+        return self._name
 
     def init_maps(self, use_static_maps=True, use_live_maps=True,
             fsigf_name=None, bsharp_vals=None, exclude_free_reflections=False,
