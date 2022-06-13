@@ -157,6 +157,7 @@ class XmapSet(MapSetBase):
         else:
             data_name = ''
         super().__init__(manager, data_name)
+        self.triggers.add_trigger('live recalc changed')
 
         session = self.session
 
@@ -379,6 +380,7 @@ class XmapSet(MapSetBase):
 
             self._model_changes_handler = None
             self._model_swap_handler = None
+        self.triggers.activate_trigger('live recalc changed', flag)
         self._live_update = flag
 
     @property
