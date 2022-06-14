@@ -649,10 +649,11 @@ class SymmetryManager(Model):
         from chimerax.clipper.sanity_check import remove_invalid_anisou
         remove_invalid_anisou(self.session, atoms)
 
-    def add_symmetry_info(self, cell, spacegroup, grid_sampling, resolution):
-        if self.has_symmetry:
+    def add_symmetry_info(self, cell, spacegroup, grid_sampling, resolution, override=False):
+        if self.has_symmetry and not override:
             from chimerax.core.errors import UserError
-            raise UserError('This manager already has crystallographic symmetry information!')
+            raise UserError('This manager already has crystallographic symmetry information! '
+                "If you're sure, you can force Clipper to use the new symmetry by setting override=True")
         self.cell = cell
         self.spacegroup = spacegroup
         self.grid = grid_sampling

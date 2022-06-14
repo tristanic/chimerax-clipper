@@ -301,8 +301,24 @@ class MapMgr(Model):
                 mtzdata.resolution)
 
         elif not self.symmetry_matches(mtzdata):
-            raise RuntimeError('Symmetry info from MTZ file does not match '
-                'symmetry info from model!')
+            old_dim = ', '.join([f'{d:.3f}' for d in cm.cell.dim])
+            new_dim = ', '.join([f'{d:.3f}' for d in mtzdata.cell.dim])
+            old_angles = ', '.join([f'{d:.1f}' for d in cm.cell.angles_deg])
+            new_angles = ', '.join([f'{d:.1f}' for d in mtzdata.cell.angles_deg])
+
+            info_str = (f'Old spacegroup: {cm.spacegroup.symbol_hm}\t New:{mtzdata.spacegroup.symbol_hm}\n'
+                    f'Old cell dimensions: ({old_dim})\t New: ({new_dim})\n'
+                    f'Old cell angles: ({old_angles})\t New: ({new_angles})')
+            if len(self.xmapsets):
+                raise RuntimeError('(CLIPPER) Symmetry info from new structure factor file does not match '
+                    'symmetry info from existing data!\n'+info_str)
+            else:
+                self.session.logger.warning('(CLIPPER) WARNING: Symmetry info from new structure factor file does '
+                    'not match the symmetry info currently associated with the model. Since no other '
+                    'crystal datasets are open, the new symmetry will be used.\n'+info_str
+                    )
+                cm.add_symmetry_info(mtzdata.cell, mtzdata.spacegroup, mtzdata.grid_sampling,
+                mtzdata.resolution, override=True)
         from .xmapset import XmapSet
         return XmapSet(self, mtzdata)
 
