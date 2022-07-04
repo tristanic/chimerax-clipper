@@ -134,13 +134,14 @@ def isolate(session, atoms,
     us = atoms.unique_structures
     for s in us:
         sel = us.atoms.intersect(atoms)
-        sh = get_symmetry_handler(s, create=True)
-        sh.isolate_and_cover_selection(sel,
-            include_surrounding_residues = surround_distance,
-            show_context = context_distance,
-            mask_radius = mask_radius,
-            hide_surrounds = hide_surrounds,
-            focus = focus)
+        sh = get_symmetry_handler(s)
+        if sh is not None:
+            sh.isolate_and_cover_selection(sel,
+                include_surrounding_residues = surround_distance,
+                show_context = context_distance,
+                mask_radius = mask_radius,
+                hide_surrounds = hide_surrounds,
+                focus = focus)
 
 
 
