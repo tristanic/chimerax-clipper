@@ -106,10 +106,11 @@ class ClipPlaneAdjuster(MouseMode):
         pass
 
     def wheel(self, event):
-        mult = 1-event.wheel_value()/30
+        incr = event.wheel_value()/120
+        
         z = self._zoomer
-        z.far_clip_multiplier *= mult
-        z.near_clip_multiplier *= mult
+        z.clip_multiplier -= incr
+        z.clip_exponent *= (1-incr*20)
 
 class Z_Shift_CofR(MouseMode):
     def __init__(self, session):
@@ -179,42 +180,39 @@ class Z_Shift_CofR(MouseMode):
 
 
 class ZoomMouseMode(ZoomMouseMode_Base):
+    MINIMUM_EXPONENT = 1e-4
+    MINIMUM_MULTIPLIER = 1e-3
     def __init__(self, session):
         super().__init__(session)
-        self._far_clip_multiplier = 0.2
-        self._near_clip_multiplier = 0.2
+        self._clip_multiplier = 0.1
         self._clip_exponent_multiplier = 1/50
         self.zoom(0)
 
     @property
-    def far_clip_multiplier(self):
+    def clip_multiplier(self):
         '''
         Multiplier applied to the camera-cofr distance to decide the position
         of the rear clipping plane. Clamped to the range (0..1)
         '''
-        return self._far_clip_multiplier
+        return self._clip_multiplier
 
-    @far_clip_multiplier.setter
-    def far_clip_multiplier(self, val):
-        val = max(min(val, 1), 0.025)
-        self._far_clip_multiplier = val
+    @clip_multiplier.setter
+    def clip_multiplier(self, val):
+        val = max(min(val, 0.2), self.MINIMUM_MULTIPLIER)
+        self._clip_multiplier = val
         # Zoom with a delta-z of zero to force redraw
         self.zoom(0)
+    
 
     @property
-    def near_clip_multiplier(self):
-        '''
-        Multiplier applied to the camera-cofr distance to decide the position
-        of the near clipping plane. Clamped to the range (0..1)
-        '''
-        return self._near_clip_multiplier
+    def clip_exponent(self):
+        return self._clip_exponent_multiplier
 
-    @near_clip_multiplier.setter
-    def near_clip_multiplier(self, val):
-        val = max(min(val, 1), 0.025)
-        self._near_clip_multiplier = val
-        # Zoom with a delta-z of zero to force redraw
-        self.zoom(0)
+    @clip_exponent.setter
+    def clip_exponent(self, val):
+        val = max(min(val, 0.1), self.MINIMUM_EXPONENT)
+        self._clip_exponent_multiplier = val
+        
 
     @property
     def far_clip(self):
@@ -228,7 +226,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
-            clip_point = cpos + (1+self.far_clip_multiplier)* (cofr-cpos)
+            clip_point = cpos + (1+self.clip_multiplier)* (cofr-cpos)
             camera_point = c.position.inverse() * clip_point
             fc = CameraClipPlane('far', (0,0,1),
                                 camera_point, v)
@@ -247,7 +245,7 @@ class ZoomMouseMode(ZoomMouseMode_Base):
             c = v.camera
             cofr = v.center_of_rotation
             cpos = c.position.origin()
-            clip_point = cpos + (1-self.near_clip_multiplier) * (cofr-cpos)
+            clip_point = cpos + (1-self.clip_multiplier) * (cofr-cpos)
             camera_point = c.position.inverse() * clip_point
             nc = CameraClipPlane('near', (0,0,-1),
                                 camera_point, v)
@@ -262,10 +260,10 @@ class ZoomMouseMode(ZoomMouseMode_Base):
         return 1-(1-mult)*exp(-dist*self._clip_exponent_multiplier)
     
     def far_clip_point(self, origin, view_vec, dist):
-        return origin + view_vec*(1+self.adjusted_clip_multiplier(self._far_clip_multiplier, dist))
+        return origin + view_vec*(1+self.adjusted_clip_multiplier(self._clip_multiplier, dist))
     
     def near_clip_point(self, origin, view_vec, dist):
-        return origin + view_vec*(1-self.adjusted_clip_multiplier(self._near_clip_multiplier, dist))
+        return origin + view_vec*(1-self.adjusted_clip_multiplier(self._clip_multiplier, dist))
 
 
 
