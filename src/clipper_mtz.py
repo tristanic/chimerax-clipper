@@ -304,9 +304,11 @@ class ReflectionDataCalc(ReflectionData):
             self.is_difference_map = is_difference_map
 
     def _guess_if_difference_map(self, name):
-        if name.split(',')[0] in ('F','FWT'):
+        first_part = name.split(',')[0]
+        identifier = first_part.split(' ')[-1]
+        if identifier in ('F','FWT', 'FC', 'FCALC'):
             return False
-        if '2' in name:
+        if '2' in identifier:
             return False
         return True
 
