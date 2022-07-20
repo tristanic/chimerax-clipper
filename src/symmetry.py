@@ -193,6 +193,21 @@ def is_managed_map(volume):
     from .maps.map_handler_base import MapHandlerBase
     return isinstance(volume, MapHandlerBase)
 
+def symmetry_from_restore_data(model, data):
+    from chimerax.clipper import (
+        Resolution, Spgr_descr, Spacegroup, Cell_descr, Cell, Grid_sampling
+    )
+    has_symmetry = data['has symmetry']
+    if not has_symmetry:
+        return simple_p1_box(model)
+    res = Resolution(data['resolution'])
+    cell = Cell(Cell_descr(*data['cell dim'], *data['cell angles']))
+    spgr_descr = Spgr_descr(data['hall symbol'], Spgr_descr.Hall)
+    spacegroup = Spacegroup(spgr_descr)   
+    grid_sampling = Grid_sampling(spacegroup, cell, res)
+    return cell, spacegroup, grid_sampling, res, True 
+
+
 def symmetry_from_model_metadata(model):
     '''
     Create crystallographic symmetry objects based on the information in the
@@ -588,7 +603,7 @@ class SymmetryManager(Model):
 
 
     def add_model(self, model, ignore_model_symmetry = False, spotlight_mode=True,
-            spotlight_radius=12, debug=False):
+            spotlight_radius=12, session_restore_data = None, debug=False):
         self._structure_change_handler = model.triggers.add_handler(
             'changes', self._structure_change_cb)
         if self.structure is not None and not self._session_restore:
@@ -598,8 +613,10 @@ class SymmetryManager(Model):
         self.name = 'Data manager ({})'.format(model.name)
         self._last_box_center = model.atoms.coords.mean(axis=0)
 
-
-        if ignore_model_symmetry:
+        if session_restore_data is not None:
+            f = symmetry_from_restore_data
+            args = [model, session_restore_data]
+        elif ignore_model_symmetry:
             f = simple_p1_box
             args = []
         else:
@@ -1130,6 +1147,11 @@ class SymmetryManager(Model):
         from chimerax.core.models import Model
         data = {
             'model state': Model.take_snapshot(self, session, flags),
+            'hall symbol': self.spacegroup.symbol_hall,
+            'resolution': self.resolution.limit,
+            'cell dim': self.cell.dim,
+            'cell angles': self.cell.angles_deg,
+            'has symmetry': self.has_symmetry
         }
         from . import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
@@ -1140,12 +1162,17 @@ class SymmetryManager(Model):
         sh = SymmetryManager(session)
         Model.set_state_from_snapshot(sh, session, data['model state'])
         session.triggers.add_handler('end restore session', sh._end_restore_session_cb)
+        sh._session_restore_data = data
         return sh
 
     def _end_restore_session_cb(self, *_):
         self._session_restore=True
         if self.structure is not None:
-            self.add_model(self.structure)
+            data = self._session_restore_data
+            if data['version'] < 2:
+                data = None
+            self.add_model(self.structure, session_restore_data=data)
+        delattr(self, '_session_restore_data')
         self._session_restore=False
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER

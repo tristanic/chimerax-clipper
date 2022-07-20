@@ -31,7 +31,7 @@ def _version():
 
 __version__ = _version()
 
-CLIPPER_STATE_VERSION = 1
+CLIPPER_STATE_VERSION = 2
 
 
 from .main import *
