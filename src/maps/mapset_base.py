@@ -30,7 +30,7 @@ class MapSetBase(Model):
     # Default contour levels and colours for generic maps. Override in the
     # derived class if you wish
 
-    STANDARD_LOW_CONTOUR = numpy.array([1.5])
+    STANDARD_LOW_CONTOUR = numpy.array([1.0])
     STANDARD_HIGH_CONTOUR = numpy.array([2.5])
     STANDARD_DIFFERENCE_MAP_CONTOURS = numpy.array([-3.0, 3.0])
 
@@ -41,6 +41,7 @@ class MapSetBase(Model):
     def __init__(self, manager, name):
         super().__init__(name, manager.session)
         self._mgr = manager
+        self._base_name = name
 
         if not hasattr(self, 'triggers'):
             from chimerax.core.triggerset import TriggerSet
@@ -67,6 +68,15 @@ class MapSetBase(Model):
     # @property
     # def triggers(self):
     #     return self._triggers
+
+    @property
+    def base_name(self):
+        return self._base_name
+    
+    @base_name.setter
+    def base_name(self, name):
+        self._base_name = name
+        from chimerax.core.models import MODEL_NAME_CHANGED
 
     @property
     def master_map_mgr(self):
