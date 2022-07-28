@@ -242,11 +242,12 @@ def _sf_file_open_info():
         @property
         def open_args(self):
             from chimerax.atomic import StructureArg
-            from chimerax.core.commands import FloatArg
+            from chimerax.core.commands import FloatArg, BoolArg
 
             return {
                 'structure_model':  StructureArg,
                 'over_sampling':    FloatArg,
+                'auto_free_flags':  BoolArg,
             }
     return Info()
 

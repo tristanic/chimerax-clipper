@@ -36,7 +36,8 @@ class ReflectionDataContainer(Model):
     hierarchy making it easily visible to the user.
     '''
     def __init__(self, session, hklfile=None, shannon_rate = 2.0,
-        free_flag_label = None, auto_choose_reflection_data=True):
+        free_flag_label = None, auto_choose_reflection_data=True,
+        auto_choose_free_flags=True):
         '''
         This class should hold the information that's common to all
         the data contained in its children (e.g. the HKLinfo object,
@@ -50,14 +51,16 @@ class ReflectionDataContainer(Model):
         self._grid_sampling = None
 
         if hklfile is not None:
-            self._init_from_hkl_file(hklfile, free_flag_label, auto_choose_reflection_data)
+            self._init_from_hkl_file(hklfile, free_flag_label, auto_choose_reflection_data,
+            auto_choose_free_flags)
 
 
-    def _init_from_hkl_file(self, hklfile, free_flag_label, auto_choose_reflection_data):
+    def _init_from_hkl_file(self, hklfile, free_flag_label, auto_choose_reflection_data,
+            auto_choose_free_flags):
         import os
         self.filename = os.path.abspath(hklfile)
         hklinfo, free, exp, calc = load_hkl_data(self.session, hklfile,
-            free_flag_label=free_flag_label,
+            free_flag_label=free_flag_label, auto_choose_rfree=auto_choose_free_flags,
             auto_choose_reflection_data=auto_choose_reflection_data)
         self._hklinfo = hklinfo
         self._grid_sampling = None
@@ -426,6 +429,7 @@ def load_hkl_data(session, filename, free_flag_label = None,
     if extension == '.mtz':
         (hklinfo, free, expt, calc) = load_mtz_data(
             session, hklfile, free_flag_label = free_flag_label,
+            auto_choose_rfree=auto_choose_rfree, 
             load_map_coeffs = load_map_coeffs)
 
     elif extension in ('.cif', '.ent'):
@@ -532,7 +536,7 @@ def load_mtz_data(session, filename, free_flag_label = None,
     from .io import mtz_read
     hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename, load_map_coeffs=load_map_coeffs)
     if len(crystal_dict) == 2:
-        crystal_dict = _merge_if_mini_mtz_format(crystal_dict)
+        crystal_dict = _merge_hkl_base(crystal_dict)
     if len(crystal_dict) > 1:
         warn_str = ('WARNING: This MTZ file contains data from multiple crystals. '
             'Only the data from the first crystal will be used. If you wish to '
@@ -556,6 +560,7 @@ def load_mtz_data(session, filename, free_flag_label = None,
             else:
                 all_exp_data_arrays[dname_ext] = data_array
     flag_names, flag_arrays = (list(all_flag_arrays.keys()), list(all_flag_arrays.values()))
+    possible_free_flags = {name:array for name, array in zip(flag_names, flag_arrays) if 'free' in name.lower()}    
     free_flag_name = None
     if free_flag_label is not None:
         try:
@@ -567,25 +572,20 @@ def load_mtz_data(session, filename, free_flag_label = None,
                 'file. Possible names are:\n{}')
             raise UserError(err_str.format(free_flag_label, ',\n'.join(flag_names)))
     free_flags = None
-    if free_flag_name is None and len(flag_names):
-        if len(flag_names) == 1:
-            free_flag_name = flag_names[0]
-            free_flags = flag_arrays[0]
-        else:
+    if free_flag_name is None and len(possible_free_flags):
+        for free_flag_name, free_flags in possible_free_flags.items():
+            break
+        if len(possible_free_flags) > 1:
             if auto_choose_rfree:
-                for i, name in enumerate(flag_names):
-                    if 'free' in name.lower():
-                        break
-                else:
-                    name = flag_names[0]
-                warn_str = ('WARNING: found multiple possible R-free arrays: \n {} \n'
-                    'Automatically choosing "{}". If this is incorrect, please either '
-                    'provide a file with a single flag array, or load the file '
-                    'again using the free_flag_label argument.')
-                session.logger.warning(warn_str.format(',\n'.join(flag_names), name))
-                free_flag_name = name
+                separator = "\n\t"
+                session.logger.warning('Multiple flag arrays containing the name "free" found:\n\t '
+                    f'{separator.join(name for name in possible_free_flags.keys())}\n'
+                    f'Using the first in the list. If this is incorrect, close these maps '
+                    'and provide an MTZ file with a single array of free flags.'
+                )
             else:
-                free_flag_name = _r_free_chooser(session, flag_names)
+                if session.ui.is_gui:
+                    free_flag_name = _r_free_chooser(session, flag_names)
         if free_flag_name is None:
             free_flags = None
         else:
@@ -603,33 +603,34 @@ def load_mtz_data(session, filename, free_flag_label = None,
 
 
 
-def _merge_if_mini_mtz_format(crystal_dict):
+def _merge_hkl_base(crystal_dict):
     '''
-    The CCP4-7.0 "mini-MTZ" format is designed such that each MTZ file holds
-    only a single data type. That's quite sensible in many respects, but the
-    somewhat annoying aspect to its design is that the actual data is placed
-    in a different "crystal" path compared to the HKL indices. So we need to
-    do a little checking to work out if that's the case here.
+    Unfortunately everyone seems to have their own slightly different idea on 
+    how a MTZ file should be laid out internally. An MTZ file is a container 
+    that can hold multiple "Crystal" objects. Almost nobody actually puts data 
+    from multiple crystals in a single MTZ these days, but that doesn't mean 
+    there can't be multiple "Crystals"! It is a fairly common practice to have 
+    a "HKL_base" crystal containing the H,K,L index arrays. Sometimes this will 
+    also contain the free flags array, other times that will be in the other 
+    Crystal object. We don't want to support *actual* multi-crystal MTZ files,
+    so we need to check for these cases and merge where (a) the HKL_base 
+    Crystal contains no more than H, K, L and FreeR, and (b) there is only 
+    one other Crystal object.
     '''
-    print('MTZ file either contains multiple crystal datasets or is a mini-MTZ file. Checking...')
+    #print('MTZ file either contains multiple crystal datasets or is a mini-MTZ file. Checking...')
     new_dict = {'crystal': {'dataset': {}}}
     inner_dict = new_dict['crystal']['dataset']
     hklbase = crystal_dict.get('HKL_base', None)
     if hklbase is None:
         return crystal_dict
-    base_datasets = hklbase.get('HKL_base', None)
-    if base_datasets is None:
-        return crystal_dict
-    # A mini-MTZ will contain only the free set here
-    if len(base_datasets) == 1:
-        for key, dat in base_datasets.items():
+    # A CCP4-style MTZ file will contain only the free set here
+    if len(hklbase) == 1:
+        for key, dat in hklbase.items():
             inner_dict[key] = dat
         cryst_datasets = crystal_dict[list(crystal_dict.keys())[1]]
         if len(cryst_datasets) != 1:
             return crystal_dict
         for dkey, dataset in cryst_datasets.items():
-            if len(dataset) != 1:
-                return crystal_dict
             for key, data in dataset.items():
                 inner_dict[key] = data
         return new_dict
@@ -741,7 +742,8 @@ def load_mtz_data_old(session, filename, free_flag_label = None):
     if not possible_free_flag_names:
         free_flags_name = None
     elif len(possible_free_flag_names) > 1:
-        free_flags_name = _r_free_chooser(session, possible_free_flag_names)
+        if session.ui.is_gui:
+            free_flags_name = _r_free_chooser(session, possible_free_flag_names)
         if free_flags_name is None:
             if free_flag_label != -1:
                 raise RuntimeError('No free flags chosen. Bailing out.')
@@ -761,7 +763,7 @@ def load_mtz_data_old(session, filename, free_flag_label = None):
             (calculated_set_names, calculated_sets) )
 
 def _r_free_chooser(session, possible_names):
-    from PyQt5.QtWidgets import QInputDialog
+    from Qt.QtWidgets import QInputDialog
     choice, ok_pressed = QInputDialog.getItem(session.ui.main_window, 'Choose R-free column', 'Label: ', possible_names, 0, False)
     if ok_pressed and choice:
         return choice
