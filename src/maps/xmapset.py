@@ -623,7 +623,7 @@ class XmapSet(MapSetBase):
 
     def _reflection_data_chooser(self, possible_names,
         title = 'Choose the dataset to use for map calculations'):
-        from PyQt5.QtWidgets import QInputDialog
+        from Qt.QtWidgets import QInputDialog
         choice, ok_pressed = QInputDialog.getItem(self.session.ui.main_window,
             title, 'Label: ', possible_names, 0, False)
         if ok_pressed and choice:
