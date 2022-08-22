@@ -45,14 +45,8 @@
 #include "hkl_datatypes.h"
 
 #include <config.h>
-#ifdef FFTW2_PREFIX_S
-# include <srfftw.h>
-#else
-# include <rfftw.h>
-#endif
+#include <pocketfft_hdronly.h>
 
-// compile-time check if fftw above is really single-precision
-static float* dummy = (fftw_real*) NULL;
 
 
 namespace clipper {
@@ -153,23 +147,23 @@ void FFTmap_p1::fft_h_to_x( const ftype& scale )
   ffttype s = ffttype( scale );
   int n = grid_reci_.size();
   for ( int i = 0; i < n; i++ ) data_c[i] = std::conj( s * data_c[i] );
-  // fft
-  int flags = ( type_ == Measure ) ?
-    ( FFTW_IN_PLACE | FFTW_USE_WISDOM | FFTW_MEASURE ) :
-    ( FFTW_IN_PLACE | FFTW_USE_WISDOM | FFTW_ESTIMATE );
-
-  mutex.lock();
-  fftwnd_plan plan =
-    rfftw3d_create_plan( grid_sam_.nu(), grid_sam_.nv(), grid_sam_.nw(),
-			 FFTW_COMPLEX_TO_REAL, flags );
-  mutex.unlock();
-
-  rfftwnd_one_complex_to_real(plan, (fftw_complex*)data_c, NULL);
-
-  mutex.lock();
-  rfftwnd_destroy_plan(plan);
-  mutex.unlock();
-
+  pocketfft::shape_t shape = {(size_t)grid_sam_.nu(), (size_t)grid_sam_.nv(), (size_t)grid_sam_.nw()};
+  pocketfft::stride_t stride_in(shape.size()), stride_out(shape.size());
+  size_t tmpin = sizeof(std::complex<ffttype>);
+  size_t tmpout = sizeof(ffttype);
+  for (int i=shape.size()-1; i>=0; --i)
+  {
+    stride_in[i] = tmpin;
+    tmpin*= shape[i];
+    stride_out[i] = tmpout;
+    tmpout *= shape[i];
+  }
+  pocketfft::shape_t axes = {0,1,2};
+  std::vector<ffttype>realvec(datavec.size());
+  pocketfft::c2r(shape, stride_in, stride_out, axes, pocketfft::FORWARD, data_c, realvec.data(), (ffttype)1.0);
+  auto tmpd = data_r;
+  for (const auto &r: realvec)
+    *tmpd++ = r;
   // done
   mode = REAL;
 }
@@ -181,22 +175,23 @@ void FFTmap_p1::fft_h_to_x( const ftype& scale )
 void FFTmap_p1::fft_x_to_h( const ftype& scale )
 {
   if ( mode == RECI ) return;
-  // fft
-  int flags = ( type_ == Measure ) ?
-    ( FFTW_IN_PLACE | FFTW_USE_WISDOM | FFTW_MEASURE ) :
-    ( FFTW_IN_PLACE | FFTW_USE_WISDOM | FFTW_ESTIMATE );
-
-  mutex.lock();
-  fftwnd_plan plan =
-    rfftw3d_create_plan( grid_sam_.nu(), grid_sam_.nv(), grid_sam_.nw(),
-			 FFTW_REAL_TO_COMPLEX, flags );
-  mutex.unlock();
-
-  rfftwnd_one_real_to_complex(plan, (fftw_real*)data_r, NULL);
-
-  mutex.lock();
-  rfftwnd_destroy_plan(plan);
-  mutex.unlock();
+  pocketfft::shape_t shape = {(size_t)grid_sam_.nu(), (size_t)grid_sam_.nv(), (size_t)grid_sam_.nw()};
+  pocketfft::stride_t stride_in(shape.size()), stride_out(shape.size());
+  size_t tmpout = sizeof(std::complex<ffttype>);
+  size_t tmpin = sizeof(ffttype);
+  for (int i=shape.size()-1; i>=0; --i)
+  {
+    stride_in[i] = tmpin;
+    tmpin*= shape[i];
+    stride_out[i] = tmpout;
+    tmpout *= shape[i];
+  }
+  pocketfft::shape_t axes = {0,1,2};
+  std::vector<ffttype>realvec(datavec.size());
+  auto tmpd = data_r;
+  for (auto& r: realvec)
+    r=*tmpd++;
+  pocketfft::r2c(shape, stride_in, stride_out, axes, pocketfft::FORWARD, realvec.data(), data_c, (ffttype)1.0);
 
   // scale
   ffttype s = ffttype( scale ) / grid_sam_.size();

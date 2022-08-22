@@ -10,7 +10,7 @@
 
 
 
-<BundleInfo name="ChimeraX-Clipper" version="0.18.0" package="chimerax.clipper"
+<BundleInfo name="ChimeraX-Clipper" version="0.19.0.dev0" package="chimerax.clipper"
   	    minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
 
   <!-- Additional information about bundle source -->
@@ -159,7 +159,6 @@
       <Define>CLIPPER_EXPORTS</Define>
       <Define>CLIPPER_VERBOSE</Define>
       <Define platform="windows">NOMINMAX</Define>
-      <Define>FFTW_MKL</Define>
       <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
@@ -173,14 +172,10 @@
       <IncludeDir>src/deps/libccp4</IncludeDir>
       <IncludeDir>src/deps/mmdb2</IncludeDir>
       <IncludeDir>src/deps/clipper</IncludeDir>
-      <IncludeDir>src/deps/fftw2/include</IncludeDir>
+      <IncludeDir>extern/pocketfft</IncludeDir>
       <LibraryDir>src</LibraryDir>
       <Library>mmdb2</Library>
       <Library>ccp4</Library>
-      <Library platform="linux">fftw2xc</Library>
-      <Library platform="mac">fftw2xc</Library>
-      <LinkArgument platform="windows">lib\fftw2xc_win\mkl_fftw2.lib</LinkArgument>
-      <LinkArgument platform="windows">lib\fftw2xc_win\fftw2xc_single_msvs.lib</LinkArgument>
 
 
       <!-- <Library>stdc++</Library> -->
@@ -414,11 +409,6 @@
      <DataFile>tests/*.pdb</DataFile>
      <DataFile>tests/*.mtz</DataFile>
      <DataFile>tests/*.ccp4</DataFile>
-     <DataFile platform="linux">libfftw2xc.so</DataFile>
-     <DataFile platform="linux">libfftw_mkl_core.so</DataFile>
-     <DataFile platform="mac">libfftw2xc.dylib</DataFile>
-     <DataFile platform="mac">mkl_custom.dylib</DataFile>
-     <DataFile platform="windows">mkl_fftw2.dll</DataFile>
      <DataDir>docs</DataDir>
   </DataFiles>
 

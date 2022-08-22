@@ -132,17 +132,16 @@ namespace clipper
 
 private:
     void thread_kernel_(size_t thread_num, int nmax, ffttype s);
-    void transform_along_hu_(void* planu_ptr, const int& start, const int& end);
-    void transform_along_kv_(void* planv_ptr,
+    void transform_along_hu_(const int& start, const int& end);
+    void transform_along_kv_(
         std::vector<std::complex<ffttype> >& in,
         std::vector<std::complex<ffttype> >& out,
         const int& start, const int& end,
         const ffttype& s, const int& nmax);
-    void transform_along_lw_(void* planw_ptr, const int& start, const int& end);
+    void transform_along_lw_(const int& start, const int& end);
 
     std::unique_ptr<std::atomic_bool[]> hu_checkpoints;
     std::unique_ptr<std::atomic_bool[]> kv_checkpoints;
-    std::atomic_flag plan_lock = ATOMIC_FLAG_INIT;
     // std::vector<bool> hu_checkpoints;
     // std::vector<bool> kv_checkpoints;
 
@@ -188,16 +187,15 @@ private:
 
 private:
     void thread_kernel_(size_t thread_num, int nmax, ffttype s);
-    void transform_along_lw_(void* planw_ptr, const int& start, const int& end, const int& nmax);
-    void transform_along_kv_(void* planv_ptr,
+    void transform_along_lw_(const int& start, const int& end, const int& nmax);
+    void transform_along_kv_(
         std::vector<std::complex<ffttype> >& in,
         std::vector<std::complex<ffttype> >& out,
         const int& start, const int& end,
         const ffttype& s, const int& nmax);
-    void transform_along_hu_(void* planu_ptr, const int& start, const int& end, const int& nmax);
+    void transform_along_hu_(const int& start, const int& end, const int& nmax);
     std::unique_ptr<std::atomic_bool[]> lw_checkpoints;
     std::unique_ptr<std::atomic_bool[]> kv_checkpoints;
-    std::atomic_flag plan_lock = ATOMIC_FLAG_INIT;
 
     std::vector<bool> map_l;
     std::vector<bool> row_u;
