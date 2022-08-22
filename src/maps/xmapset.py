@@ -704,7 +704,7 @@ class XmapSet(MapSetBase):
     def recalculate_all_maps(self, atoms):
         if self.report_timing:
             from time import perf_counter
-            start_time = perf_counter()
+            start_time = self._recalc_start_time = perf_counter()
         if len(self.live_xmaps) == 0:
             self._recalc_needed = False
             return
@@ -728,6 +728,7 @@ class XmapSet(MapSetBase):
         if self.report_timing:
             from time import perf_counter
             start_time = perf_counter()
+            print(f'FFT took {(start_time - self._recalc_start_time)*1000:.1f} ms.')
         xm = self.live_xmap_mgr
         xm.apply_new_maps()
         if self.show_r_factors:
