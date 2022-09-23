@@ -704,7 +704,7 @@ class XmapSet(MapSetBase):
     def recalculate_all_maps(self, atoms):
         if self.report_timing:
             from time import perf_counter
-            start_time = self._recalc_start_time = perf_counter()
+            start_time = perf_counter()
         if len(self.live_xmaps) == 0:
             self._recalc_needed = False
             return
@@ -718,6 +718,14 @@ class XmapSet(MapSetBase):
             xm.ready,
             self._apply_new_maps, []
             )
+        if self.report_timing:
+            def set_fft_start_time(*_):
+                from time import perf_counter
+                self._recalc_start_time = perf_counter()
+                from chimerax.core.triggerset import DEREGISTER
+                return DEREGISTER
+            self.session.triggers.add_handler('new frame', set_fft_start_time)
+            
         self._recalc_needed = False
         if self.report_timing:
             self.session.logger.info(f'Starting map recalculation for live xmapset #{self.id_string} took {(perf_counter()-start_time)*1e3:.3f} ms.')
