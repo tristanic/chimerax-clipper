@@ -192,7 +192,7 @@ class AtomicStructuresOrSymmetryMgrsArg(AtomSpecArg):
         aspec, text, rest = super().parse(text, session)
         models = aspec.evaluate(session).models
         sym_mgrs = [m for m in models if isinstance(m, SymmetryManager)]
-        structures = [m for m in models if isinstance(m, AtomicStructure) and
+        structures = [m for m in models if type(m)==AtomicStructure and
             m.parent not in sym_mgrs]
         return structures+sym_mgrs, text, rest
 
