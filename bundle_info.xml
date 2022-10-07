@@ -307,7 +307,6 @@
       <IncludeDir>src/deps</IncludeDir>
       <IncludeDir>src/deps/libccp4</IncludeDir>
       <IncludeDir>src/deps/mmdb2</IncludeDir>
-      <IncludeDir>src/deps/fftw2</IncludeDir>
       <IncludeDir>src</IncludeDir>
       <LibraryDir>src</LibraryDir>
       <Library>clipper</Library>
@@ -398,9 +397,9 @@
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" version="~=1.4.dev202203030220"/>
+    <Dependency name="ChimeraX-Core" version="&gt;=1.5.dev202210050721, &lt;1.6"/>
     <Dependency name="ChimeraX-Atomic" version="~=1.36"/>
-    <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=7.0"/>
+    <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=8.0"/>
     <Dependency name="ChimeraX-Arrays" build="true" version="~=1.0"/>
   </Dependencies>
 
@@ -415,7 +414,6 @@
   <ExtraFiles>
     <ExtraFileGroup source="src/deps/clipper/**/*.h">include/clipper</ExtraFileGroup>
     <ExtraFileGroup source="src/clipper_ext/*.h">include/clipper_ext</ExtraFileGroup>
-    <ExtraFileGroup source="src/deps/fftw2/include/*.h">include</ExtraFileGroup>
     <ExtraFileGroup source="src/deps/libccp4/ccp4/**/*.h">include/ccp4</ExtraFileGroup>
     <ExtraFileGroup source="src/deps/mmdb2/mmdb2/**/*.h">include/mmdb2</ExtraFileGroup>
   </ExtraFiles>
