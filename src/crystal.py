@@ -1382,8 +1382,8 @@ def calculate_grid_padding(radius, grid, cell):
     '''
     corner_mask = numpy.array([[0,0,0],[0,0,1],[0,1,0],[0,1,1],[1,0,0],[1,0,1],[1,1,0],[1,1,1]])
     corners = (corner_mask * radius).astype(float)
-    grid_upper = numpy.zeros([8,3], numpy.int)
-    grid_lower = numpy.zeros([8,3], numpy.int)
+    grid_upper = numpy.zeros([8,3], int)
+    grid_lower = numpy.zeros([8,3], int)
     from .clipper_python import Coord_orth
     for i, c in enumerate(corners):
         co = Coord_orth(c)

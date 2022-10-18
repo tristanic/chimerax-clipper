@@ -41,7 +41,7 @@ import ctypes
 def nonpolar_hydrogens(atoms):
     import numpy
     n = len(atoms)
-    mask = numpy.empty(n, numpy.bool)
+    mask = numpy.empty(n, bool)
     f = c_function('is_nonpolar_hydrogen',
         args=(ctypes.c_void_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_bool)),
     )

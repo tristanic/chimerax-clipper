@@ -239,7 +239,7 @@ class VolumeMask(Volume):
         cmax = coords.max(axis=0)
         mincoor = cmin-radius-pad
         maxcoor = cmax+radius+pad
-        dim = numpy.ceil((maxcoor-mincoor)/step).astype(numpy.int)
+        dim = numpy.ceil((maxcoor-mincoor)/step).astype(int)
         data = numpy.zeros(dim, numpy.uint8)
         self._data_fill_target = data
         from chimerax.map_data import ArrayGridData
@@ -373,7 +373,7 @@ class ZoneMask(State):
 #         indices = (self.mask_volume.interpolated_values(v)==1)
 #         nv = len(v)
 #         import numpy
-#         mask = numpy.zeros((nv,), numpy.bool)
+#         mask = numpy.zeros((nv,), bool)
 #         numpy.put(mask, indices, 1)
 #         tmask = numpy.logical_and(mask[t[:,0]], mask[t[:,1]])
 #         numpy.logical_and(tmask, mask[t[:,2]], tmask)

@@ -1010,7 +1010,7 @@ class SymmetryManager(Model):
         if focus:
             focus_on_selection(self.session, self.session.main_view, atoms)
 
-    _cube_pairs = numpy.array([[0,1], [0,2], [0,4], [1,3], [1,5], [2,3], [2,6], [3,7], [4,5], [4,6], [5,7], [6,7]], numpy.int)
+    _cube_pairs = numpy.array([[0,1], [0,2], [0,4], [1,3], [1,5], [2,3], [2,6], [3,7], [4,5], [4,6], [5,7], [6,7]], int)
 
     def _update_cover_coords(self, cover_set):
         from chimerax.geometry import Places

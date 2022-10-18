@@ -50,7 +50,7 @@ class XmapSetBoxParams:
     def origin_grid(self, origin):
         if origin is None:
             origin = [0,0,0]
-        self._origin_grid = numpy.array(origin, numpy.int)
+        self._origin_grid = numpy.array(origin, int)
         # print("Set grid origin to {}".format(self._origin_grid))
 
     @property
@@ -61,7 +61,7 @@ class XmapSetBoxParams:
     def dim(self, dim):
         if dim is None:
             dim = [1,1,1]
-        self._dim = numpy.array(dim, numpy.int)
+        self._dim = numpy.array(dim, int)
         # print("Set XYZ origin to {}".format(self._dim))
 
 
@@ -74,7 +74,7 @@ class XmapSetBoxParams:
         self.dim = params[2]
 
 
-_pad_base = numpy.array([-1,1], numpy.int)
+_pad_base = numpy.array([-1,1], int)
 class XmapSet(MapSetBase):
     '''
     Handles the organisation, visualisation and re-calculation (where
@@ -1073,8 +1073,8 @@ def _calculate_grid_padding(radius, grid, cell):
     '''
     corner_mask = numpy.array([[0,0,0],[0,0,1],[0,1,0],[0,1,1],[1,0,0],[1,0,1],[1,0,0],[1,1,1]])
     corners = (corner_mask * radius).astype(numpy.float32)
-    grid_upper = numpy.zeros([8,3], numpy.int)
-    grid_lower = numpy.zeros([8,3], numpy.int)
+    grid_upper = numpy.zeros([8,3], int)
+    grid_lower = numpy.zeros([8,3], int)
     from .. import Coord_orth
     for i, c in enumerate(corners):
         co = Coord_orth(c)
