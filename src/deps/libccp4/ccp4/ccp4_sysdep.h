@@ -249,6 +249,10 @@
 // Windows is always little-endian
 # define NATIVEIT DFNTI_IBO
 # define NATIVEFT DFNTF_LEIEEE
+#elif defined (__APPLE__)
+// Modern Macs are always little-endian
+# define NATIVEIT DFNTI_IBO
+# define NATIVEFT DFNTF_LEIEEE
 #endif
 
 
