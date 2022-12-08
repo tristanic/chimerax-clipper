@@ -106,6 +106,10 @@ class _ClipperBundle(BundleAPI):
 
     @staticmethod
     def initialize(session, bundle_info):
+        if session.ui.is_gui:
+            from .mousemodes import ShiftToReferenceAsuMenuEntry
+            from chimerax.mouse_modes import SelectMouseMode
+            SelectMouseMode.register_menu_entry(ShiftToReferenceAsuMenuEntry())
         from chimerax.clipper import cmd
         # cmd.register_mtz_file_format(session)
 

@@ -23,7 +23,8 @@ import numpy
 from chimerax.mouse_modes import (
     MouseMode, 
     ZoomMouseMode as ZoomMouseMode_Base,
-    RotateMouseMode as RotateMouseMode_Base
+    RotateMouseMode as RotateMouseMode_Base,
+    SelectContextMenuAction
 )
 
 def initialize_clipper_mouse_modes(session):
@@ -94,6 +95,41 @@ class RotateMouseMode(RotateMouseMode_Base):
         v.move(translation(shift))
         v.center_of_rotation = center
         v.center_of_rotation_method = cofr_method
+
+
+class ShiftToReferenceAsuMenuEntry(SelectContextMenuAction):
+    dangerous=True
+    def label(self, *args):
+        return "Move symmetry fragment here"
+    
+    def criteria(self, session, event):
+        from .symmetry import PickedSymAtom, PickedSymBond
+        x,y = event.position()
+        pick = session.view.picked_object(x,y)
+        return isinstance(pick, (PickedSymAtom, PickedSymBond))
+    
+    def callback(self, session, event):
+        x,y = event.position()
+        pick = session.view.picked_object(x,y)
+        if hasattr(pick, 'atom'):
+            atom = pick.atom
+        else:
+            atom = pick.bond.atoms[0]
+        from .util import rtop_frac_as_place
+        m = atom.structure
+        sym = rtop_frac_as_place(pick.sym, m.parent.cell)
+        for g in m.bonded_groups():
+            if atom in g:
+                break
+        g.transform(sym)
+        m.parent.triggers.activate_trigger('sym shifted atoms', (g, sym))
+        
+
+
+    
+        
+        
+
 
 
 

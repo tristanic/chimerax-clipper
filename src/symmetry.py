@@ -579,6 +579,9 @@ class SymmetryManager(Model):
             # Replaced the atomic model with a new one. All structure change
             # handlers will need to be reapplied
             'model replaced',
+            # Shifted some subset of atoms into a different ASU. Firing data 
+            # should contain the shifted atoms and the transform applied
+            'sym shifted atoms',
         )
         for t in trigger_names:
             self.triggers.add_trigger(t)
