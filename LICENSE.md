@@ -1,5 +1,5 @@
 Clipper plugin to UCSF ChimeraX
-Copyright (C) 2016-2019 Tristan Croll, University of Cambridge
+Copyright 2016-2022 Tristan Croll
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public
@@ -16,5 +16,5 @@ along with this program; if not, write to the Free Software Foundation,
 Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 Note that this software makes use of modified versions of the Clipper, LibCCP4
-and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
+and MMDB libraries, as well as PocketFFT. Each
 of these is redistributed under its own license terms.
