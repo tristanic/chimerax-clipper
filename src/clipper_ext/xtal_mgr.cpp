@@ -24,12 +24,14 @@
 #include "math_ext.h"
 #include "scaling.h"
 #include "aniso_scale.h"
+#include "util.h"
 
 #include <set>
 #include <memory>
 #include <algorithm>
 
 #include <iostream> // debugging
+#include <chrono> // debugging
 #include <iomanip>
 
 using namespace clipper;
@@ -199,11 +201,7 @@ Xtal_mgr_base::set_freeflag(int f)
 void
 Xtal_mgr_base::generate_fcalc(const Atom_list& atoms)
 {
-    // auto start_time = std::chrono::system_clock::now();
     bulk_solvent_calculator_(fcalc_, fobs_, atoms);
-    // auto end_time = std::chrono::system_clock::now();
-    // std::chrono::duration<double> elapsed = end_time-start_time;
-    // std::cout << "Complete Fcalc generation took " << elapsed.count() << " seconds." << std::endl;
     // guess_initial_gaussian_params_();
     fcalc_initialized_ = true;
 
@@ -227,6 +225,7 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     HKL_data<F_sigF<ftype32>>& f_sigf_out, int reflections_per_bin,
     ftype high_p_cutoff, ftype beamstop_cutoff, ftype beamstop_d_min)
 {
+    int MAX_N_BINS = 100;
     ftype high_e_cutoff_centric = approx_inverse_erfc(high_p_cutoff) * sqrt(2.0);
     ftype high_e_cutoff_acentric = sqrt(log(1/high_p_cutoff));
     ftype beamstop_invrsq_cutoff = 1/pow(beamstop_d_min, 2.0);
@@ -234,12 +233,23 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     ftype beamstop_e_cutoff_acentric = -log(1.0-beamstop_cutoff);
     HKL_data<E_sigE<ftype32>> esige(hklinfo_);
     esige.compute(f_sigf_in, data32::Compute_EsigE_from_FsigF());
+    HKL_info selected_reflections;
+    HKL_data<E_sigE<ftype32>> selected_esige;
+
     int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
+    if (n_bins > MAX_N_BINS) {
+        selected_reflections = select_random_reflections_in_bins(esige, reflections_per_bin, MAX_N_BINS);
+        selected_esige = reflection_subset(esige, selected_reflections);
+        n_bins = MAX_N_BINS;
+    } else {
+        selected_reflections = hklinfo_;
+        selected_esige = esige;
+    }
     //BasisFn_gaussian iso_basisfn;
-    BasisFn_binner basisfn(hklinfo_, n_bins, 1.0);
-    TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(esige);
+    BasisFn_binner basisfn(selected_reflections, n_bins, 1.0);
+    TargetFn_scaleEsq<E_sigE<ftype32>> targetfn(selected_esige);
     std::vector<ftype> params = {(ftype)n_bins, 1.0};
-    ResolutionFn rfn(hklinfo_, basisfn, targetfn, params);
+    ResolutionFn rfn(selected_reflections, basisfn, targetfn, params);
     ftype32 e_norm;
     size_t outlier_count = 0;
     for (auto ih=esige.first(); !ih.last(); ih.next())
@@ -258,6 +268,7 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
                 || (!centric && e_norm >= high_e_cutoff_acentric))
         {
             f_sigf_out[ih].set_null();
+            auto hkl = ih.hkl();
             outlier_count++;
             continue;
         } else if (ih.invresolsq() < beamstop_invrsq_cutoff)

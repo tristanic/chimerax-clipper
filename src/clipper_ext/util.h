@@ -19,8 +19,8 @@ namespace clipper_cx
 {
 
 
-template<typename T>
-HKL_info select_random_reflections(const HKL_data<F_sigF<T>>& data, size_t num_reflections)
+template<template<class> class dtype, typename T>
+HKL_info select_random_reflections(const HKL_data<dtype<T>>& data, size_t num_reflections)
 {
     std::vector<HKL> valid_hkls;
     for (auto ih=data.first_data(); !ih.last(); ih=data.next_data(ih))
@@ -38,8 +38,8 @@ HKL_info select_random_reflections(const HKL_data<F_sigF<T>>& data, size_t num_r
     return selected_hkls;
 }
 
-template<typename T>
-HKL_info select_random_reflections_in_bins(const HKL_data<F_sigF<T>>& data, size_t reflections_per_bin, size_t num_bins)
+template<template<class> class dtype, typename T>
+HKL_info select_random_reflections_in_bins(const HKL_data<dtype<T>>& data, size_t reflections_per_bin, size_t num_bins)
 {
     if (data.hkl_info().num_reflections() <= reflections_per_bin*num_bins) return data.hkl_info();
     std::map< int, std::vector<HKL> > bins;

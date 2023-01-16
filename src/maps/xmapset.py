@@ -436,6 +436,8 @@ class XmapSet(MapSetBase):
         return self._unit_cell
 
     def _launch_live_xmap_mgr(self, crystal_data, f_sigf):
+        from time import time
+        start_time = time()
         from ..util import available_cores
         # The master C++ manager for handling all map operations
         from ..clipper_python.ext import Xtal_thread_mgr
@@ -446,6 +448,8 @@ class XmapSet(MapSetBase):
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms
         xm.init(atoms.pointers)
+        end_time = time()
+        print(f'Launching live xmap mgr took {end_time-start_time} seconds.')
 
     def _prepare_standard_live_maps(self, exclude_free_reflections,
         fill_with_fcalc, exclude_missing_reflections, map_params):
