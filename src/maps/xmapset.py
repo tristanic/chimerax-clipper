@@ -698,8 +698,13 @@ class XmapSet(MapSetBase):
 
 
     def _recalculate_maps_if_needed(self, *_):
+        if self.deleted or self.structure.deleted:
+            if self._delayed_recalc_handler is not None:
+                self._delayed_recalc_handler.remove()
+                self._delayed_recalc_handler = None
+            return
         xm = self.live_xmap_mgr
-        if self._recalc_needed and not xm.thread_running and not self.deleted:
+        if self._recalc_needed and not xm.thread_running:
             self.recalculate_all_maps(self.structure.atoms)
             if self._delayed_recalc_handler is not None:
                 self.session.triggers.remove_handler(self._delayed_recalc_handler)
