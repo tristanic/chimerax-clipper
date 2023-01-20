@@ -1,7 +1,7 @@
 <!--
 @Author: Tristan Croll <tic20>
 @Date:   12-Dec-2019
-@Email:  tic20@cam.ac.uk
+@Email:  tcroll@altoslabs.com
 @Last modified by:   tic20
 @Last modified time: 20-Nov-2020
 @License: Lesser GNU Public License version 3.0 (see LICENSE.md)
@@ -15,7 +15,7 @@
 
   <!-- Additional information about bundle source -->
   <Author>Tristan Croll</Author>
-  <Email>tic20@cam.ac.uk</Email>
+  <Email>tcroll@altoslabs.com</Email>
   <URL>https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxclipper</URL>
 
   <!-- Synopsis is a one-line description

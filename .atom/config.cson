@@ -6,7 +6,7 @@
     autoAddingHeaderOnSaving: false
     copyright: "2016-2019 Tristan Croll"
     dateTimeFormat: "DD-MMM-YYYY"
-    email: "tic20@cam.ac.uk"
+    email: "tcroll@altoslabs.com"
     ignoreListForAutoUpdateAndAddingHeader: [
       "text.plain.null-grammar"
       "text.html.basic"
