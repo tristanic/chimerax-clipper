@@ -20,6 +20,7 @@
 // of these is redistributed under its own license terms.
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <pybind11/operators.h>
 #include <pybind11/numpy.h>
 
@@ -62,6 +63,7 @@ atomsf
         return py::make_tuple(rho, grad, curv);
     })
     .def("agarwal_params", &AtomShapeFn::agarwal_params)
+    .def("set_agarwal_params", [](AtomShapeFn& self, const std::vector<AtomShapeFn::TYPE>& params) {self.agarwal_params()=params;})
     ;
 
 
