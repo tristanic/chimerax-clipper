@@ -50,6 +50,7 @@ c_array_function = _c_functions.c_array_function
 
 HIDE_ISOLDE = 0x02
 
+auto_reset_camera=True
 
 BACKBONE_MODE_RIBBON=0
 BACKBONE_MODE_CA_TRACE=1
@@ -857,7 +858,7 @@ class SymmetryManager(Model):
         if flag == self._spotlight_mode:
             return
         else:
-            if flag:
+            if flag and auto_reset_camera:
                 from chimerax.std_commands import cofr, camera
                 cofr.cofr(self.session, 'centerOfView', show_pivot=True)
                 camera.camera(self.session, 'ortho')

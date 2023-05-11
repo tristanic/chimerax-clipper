@@ -241,6 +241,9 @@ def set_contour_sensitivity(session, sensitivity):
         raise UserError('Clipper is not yet initialised. Command ignored.')
     mm.sensitivity = sensitivity
 
+def set_camera_auto(session, flag):
+    from . import symmetry
+    symmetry.auto_reset_camera = flag
 
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
@@ -337,6 +340,12 @@ def register_clipper_cmd(logger):
             '(sensitivity * map standard deviation).')
     )
     register('clipper set contourSensitivity', set_contour_sensitivity_desc, set_contour_sensitivity)
+
+    set_camera_auto_desc = CmdDesc(
+        required=[('flag', BoolArg)],
+        synopsis='Tell Clipper whether to automatically reset the camera to orthographic view when switching to spotlight mode'
+    )
+    register('clipper set autoCameraOrtho', set_camera_auto_desc, set_camera_auto, logger=logger)
 
 
 def register_cview_cmd(logger):
