@@ -960,30 +960,45 @@ class SymmetryManager(Model):
         clutter. Adjust the atomic visualisation to show only the selected
         atoms, plus an optional surrounding buffer zone.
         Args:
-          atoms (ChimeraX Atoms object):
+
+          * atoms (ChimeraX `Atoms` object):
+
             The main selection we're interested in. The existing selection will
             be expanded to include the whole residue for every selected atom.
-          include_surrounding_residues (float):
+
+          * include_surrounding_residues (float):
+
             Any residue with an atom coming within this radius of the primary
             selection (including symmetry atoms) will be added to the selection
             covered by the map. To cover only the primary selection, set this
             value to zero.
-          show_context (float):
+
+          * show_context (float):
+
             Any residue within an atom coming within this radius of the previous
             two selections will be displayed, but will not be considered for the
             map masking calculation.
-          mask_radius (float):
+
+          * mask_radius (float):
+
             Components of the map more than this distance from any eligible atom
             will be hidden.
-          extra_padding (float):
+
+          * extra_padding (float):
+
             Optionally, further pad the volume by this distance. The extra
             volume will be hidden, but available for calculations.
-          hide_surrounds (bool):
+
+          * hide_surrounds (bool):
+
             If true, all residues outside the selection region will be hidden
-          focus (bool):
+
+          * focus (bool):
             If true, the camera will be moved to focus on the selection (only
             the atoms in the master model will be considered)
-          include_hydrogens:
+
+          * include_hydrogens (bool):
+
             Include hydrogens for the purposes of masking (this should almost
             never be necessary)
         '''
@@ -1070,17 +1085,20 @@ class SymmetryManager(Model):
         non-unity symop) within one unit cell. A sphere will be drawn
         at each grid-point with non-unit multiplicity, and colour-coded
         according to multiplicity:
-            2-fold: white
-            3-fold: cyan
-            4-fold: yellow
-            6-fold: magenta
+
+            * 2-fold: white
+            * 3-fold: cyan
+            * 4-fold: yellow
+            * 6-fold: magenta
 
         Ultimately it would be nice to replace this with something more
         elegant, that masks and scrolls continuously along with the model/
         map visualisation.
 
         Args:
-            offset (1x3 numpy array, default = None):
+
+            * offset (1x3 numpy array, default = None):
+                
                 Optional (u,v,w) offset (in fractions of a unit cell axis)
         '''
         m, d = _get_special_positions_model(self)
@@ -1652,8 +1670,9 @@ class AtomicSymmetryModel(Model):
         if len(created_atoms):
             self._assign_atom_radii(created_atoms)
             self._set_new_atom_style(created_atoms)
-        if len(changes.created_atoms()) or changes.num_deleted_atoms()>0:
+        if len(created_atoms) or changes.num_deleted_atoms()>0:
             num_atoms_changed = True
+            self._last_hides = self.structure.atoms.hides&~HIDE_ISOLDE
             update_needed = True
             ribbon_update_needed = True
         reasons = changes.atom_reasons()
@@ -1667,7 +1686,7 @@ class AtomicSymmetryModel(Model):
             hides = self.structure.atoms.hides
             # Prevent repeated callback with every display update in spotlight mode
             current_hides = hides&~HIDE_ISOLDE
-            if numpy.any(current_hides != self._last_hides):
+            if not update_needed and numpy.any(current_hides != self._last_hides):
                 update_needed = True
             self._last_hides = current_hides
         if 'color changed' in reasons:
