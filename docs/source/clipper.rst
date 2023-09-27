@@ -40,7 +40,7 @@ ChimeraX-Clipper consists of three essential parts:
    crystallographic maps on changes to the model. Documentation of this layer
    is also currently minimal.
 3. A ChimeraX-specific Python layer designed to facilitate quick scripting. This
-   component *is* documented here.
+   component *is* (lightly) documented here.
 
 .. _PyBind11: https://github.com/pybind/pybind11
 .. _Clipper API documentation: http://www.ysbl.york.ac.uk/~cowtan/clipper/doc/annotated.html
