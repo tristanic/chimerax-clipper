@@ -1660,8 +1660,6 @@ class AtomicSymmetryModel(Model):
 
 
     def _model_changed_cb(self, trigger_name, changes):
-        if not self.visible:
-            return
         changes = changes[1]
         num_atoms_changed = False
         update_needed = False
@@ -1675,6 +1673,8 @@ class AtomicSymmetryModel(Model):
             self._last_hides = self.structure.atoms.hides&~HIDE_ISOLDE
             update_needed = True
             ribbon_update_needed = True
+        if not self.visible:
+            return
         reasons = changes.atom_reasons()
         if 'coord changed' in reasons:
             ribbon_update_needed = True
