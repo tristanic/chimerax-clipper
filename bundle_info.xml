@@ -8,7 +8,7 @@
 @Copyright: 2016-2019 Tristan Croll
 -->
 
-
+ 
 
 <BundleInfo name="ChimeraX-Clipper" version="0.22.2" package="chimerax.clipper"
   	    customInit="true" minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
