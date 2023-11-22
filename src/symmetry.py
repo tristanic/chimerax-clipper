@@ -855,15 +855,13 @@ class SymmetryManager(Model):
 
     @spotlight_mode.setter
     def spotlight_mode(self, flag):
-        if flag == self._spotlight_mode:
-            return
-        else:
-            if flag and auto_reset_camera:
-                from chimerax.std_commands import cofr, camera
-                cofr.cofr(self.session, 'centerOfView', show_pivot=True)
-                camera.camera(self.session, 'ortho')
-            self._spotlight_mode = flag
-            self.triggers.activate_trigger('mode changed', None)
+        # Always fire the trigger even if we're already in spotlight mode, to ensure things behave correctly after user "vol unzone" commands
+        if flag and auto_reset_camera:
+            from chimerax.std_commands import cofr, camera
+            cofr.cofr(self.session, 'centerOfView', show_pivot=True)
+            camera.camera(self.session, 'ortho')
+        self._spotlight_mode = flag
+        self.triggers.activate_trigger('mode changed', None)
         if self.atomic_symmetry_model is not None:
             self.atomic_symmetry_model.live_scrolling = flag
         self.update(force=True)

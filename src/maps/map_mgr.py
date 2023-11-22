@@ -350,7 +350,7 @@ class MapMgr(Model):
             self.update_spotlight(None, self.spotlight_center)
         from chimerax.geometry import Places
         self.positions = Places()
-        # self._reapply_zone()
+        self._reapply_zone()
 
     def _stop_spotlight_mode(self):
         if self._box_update_handler is not None:
