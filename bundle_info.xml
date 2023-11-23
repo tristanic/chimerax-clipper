@@ -8,9 +8,9 @@
 @Copyright: 2016-2019 Tristan Croll
 -->
 
+ 
 
-
-<BundleInfo name="ChimeraX-Clipper" version="0.21.0" package="chimerax.clipper"
+<BundleInfo name="ChimeraX-Clipper" version="0.22.2" package="chimerax.clipper"
   	    customInit="true" minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
 
   <!-- Additional information about bundle source -->
@@ -397,9 +397,9 @@
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" version="&gt;=1.6.dev202303162359, &lt;1.7"/>
+    <Dependency name="ChimeraX-Core" version="~=1.7rc202311140000"/>
     <Dependency name="ChimeraX-Atomic" version="~=1.36"/>
-    <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=10.0"/>
+    <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=12.0"/>
     <Dependency name="ChimeraX-Arrays" build="true" version="~=1.0"/>
   </Dependencies>
 

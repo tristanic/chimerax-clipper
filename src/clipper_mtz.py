@@ -402,8 +402,8 @@ def load_hkl_data(session, filename, free_flag_label = None,
         auto_choose_rfree=True, auto_choose_reflection_data=True,
         load_map_coeffs=True):
     '''
-    Load in an mtz file, create Clipper objects from the data, and
-    return the tuple:
+    Loads in reflection data from a structure factor CIF or MTZ file, create 
+    Clipper objects from the data, and returns the tuple:
         ( HKLinfo,
          (free_flags_name, free_flags),
          (experimental_set_names, experimental_sets),

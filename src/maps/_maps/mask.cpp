@@ -24,6 +24,7 @@
 #include <iostream>
 
 namespace py=pybind11;
+using ssize_t = py::ssize_t;
 
 template<typename T>
 void affine_transform(T* coord, T* tf, T* out )

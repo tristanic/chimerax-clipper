@@ -486,6 +486,10 @@ Spgr_descr::Spgr_descr( const String& symb, TYPE type )
 {
   using clipper::data::sgdata;
 
+  std::ostringstream hm_failure;
+  hm_failure << "Spgr_descr: No such HM symbol (" << symb << ")";
+
+
   String symbx = symb.trim();
 
   // try and guess symbol type (don't do this!)
@@ -520,7 +524,7 @@ Spgr_descr::Spgr_descr( const String& symb, TYPE type )
     for ( i = 0; i < data::sgdata_size; i++ )
       if ( symbx == String( sgdata[i].hm ) && sgdata[i].ext == ext ) break;
     if ( i == data::sgdata_size )
-      Message::message( Message_fatal( "Spgr_descr: No such HM symbol" ) );
+      Message::message( Message_fatal( hm_failure.str() ) );
     ops.init_hall( String( sgdata[i].hall ) );
   } else if ( type == HM ) {
     for ( i = 0; i < data::sgdata_size; i++ )
@@ -528,7 +532,7 @@ Spgr_descr::Spgr_descr( const String& symb, TYPE type )
 	   ( sgdata[i].ext == pref_12 || sgdata[i].ext == pref_hr ||
 	     sgdata[i].ext == ' ' ) ) break;
     if ( i == data::sgdata_size )
-      Message::message( Message_fatal( "Spgr_descr: No such HM symbol" ) );
+      Message::message( Message_fatal( hm_failure.str() ) );
     ops.init_hall( String( sgdata[i].hall ) );
   } else if ( type == Number ) {
     int num = symbx.i();

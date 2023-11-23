@@ -1,5 +1,7 @@
-ChimeraX-Clipper Commands
-=========================
+.. _clipper_commands:
+
+Commands
+========
 
 The primary purpose of ChimeraX-Clipper is to facilitate the handling of
 crystallographic maps and symmetry in ChimeraX. However, it's not restricted to

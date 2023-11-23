@@ -29,6 +29,7 @@
 #include <vector>
 
 namespace py=pybind11;
+using ssize_t=py::ssize_t;
 using namespace clipper;
 
 // check that the given Numpy array matches expected dimensions, and throw an
