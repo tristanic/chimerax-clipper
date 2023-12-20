@@ -144,8 +144,36 @@ def isolate(session, atoms,
                 hide_surrounds = hide_surrounds,
                 focus = focus)
 
+def init_environ(session, mouse_modes=True, cofr=True, camera=True, lighting=True):
+    from chimerax.core.commands import run
+    if mouse_modes:
+        from .mousemodes import initialize_clipper_mouse_modes
+        initialize_clipper_mouse_modes(session)
+    if cofr:
+        run(session, 'cofr center showPivot t')
+    if camera:
+        run(session, 'camera ortho')
+    if lighting:
+        run(session, 'lighting simple')
 
-
+def reset_environ(session, mouse_modes=True, cofr=True, camera=True, clip_planes=True):
+    from chimerax.core.commands import run
+    if mouse_modes:
+        run(session, ('mousemode left select control;' 
+                      'mousemode left none control shift;'
+                      'mousemode middle none control;'
+                      'mousemode wheel zoom; mousemode right none shift;'
+                      'mousemode wheel none control;'
+                      'mousemode wheel none alt;'
+                      'mousemode wheel none shift'
+                    )
+        ) 
+    if cofr:
+        run(session, 'cofr front showPivot f')
+    if camera:
+        run(session, 'camera mono')
+    if clip_planes:
+        run(session, 'clip off')
 
 from chimerax.core.commands.atomspec import AtomSpecArg
 class VolumesArg(AtomSpecArg):
@@ -253,6 +281,28 @@ def register_clipper_cmd(logger):
         create_alias
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
+
+    init_desc = CmdDesc(
+        keyword=[
+            ('mouse_modes', BoolArg),
+            ('cofr', BoolArg),
+            ('camera', BoolArg),
+            ('lighting', BoolArg)
+        ],
+        synopsis = 'Initialise the Clipper environment (mouse modes, center of rotation, camera and/or lighting) without affecting existing models'
+    )
+    register('clipper init', init_desc, init_environ, logger=logger)
+
+    reset_desc = CmdDesc(
+        keyword=[
+            ('mouse_modes', BoolArg),
+            ('cofr', BoolArg),
+            ('camera', BoolArg),
+            ('clip_planes', BoolArg)
+        ],
+        synopsis='Reset mouse modes, cofr, camera, and/or clip planes to ChimeraX defaults'
+    )
+    register('clipper off', reset_desc, reset_environ, logger=logger)
 
     open_desc = CmdDesc(
         required=[
