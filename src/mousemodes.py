@@ -51,6 +51,7 @@ def initialize_map_contour_mouse_modes(session):
 
 class RotateMouseMode(RotateMouseMode_Base):
     PAD_FRACTION = 0.3
+    name = "clipper rotate"
     def mouse_double_click(self,event):
         x,y = event.position()
         pick = self.view.picked_object(x,y)
@@ -134,6 +135,7 @@ class ShiftToReferenceAsuMenuEntry(SelectContextMenuAction):
 
 
 class ClipPlaneAdjuster(MouseMode):
+    name = "clipper clip adjust"
     def __init__(self, session, zoom_mode):
         super().__init__(session)
         self._zoomer = zoom_mode
@@ -149,6 +151,7 @@ class ClipPlaneAdjuster(MouseMode):
         z.clip_exponent *= (1-incr*20)
 
 class Z_Shift_CofR(MouseMode):
+    name = "clipper z shift"
     def __init__(self, session):
         self._step_multiplier = 1
         super().__init__(session)
@@ -216,6 +219,7 @@ class Z_Shift_CofR(MouseMode):
 
 
 class ZoomMouseMode(ZoomMouseMode_Base):
+    name = "clipper zoom"
     MINIMUM_EXPONENT = 1e-4
     MINIMUM_MULTIPLIER = 1e-3
     def __init__(self, session):
@@ -346,6 +350,7 @@ class SelectVolumeToContour(MouseMode):
     has never been set or has been deleted, picked_volume defaults to
     the first Volume object in session.models.list().
     '''
+    name = "clipper contour select"
     def __init__(self, session, cooldown_time = 0.15):
         super().__init__(session)
         self._last_picked_index = 0
@@ -427,6 +432,7 @@ class SelectVolumeToContour(MouseMode):
             self._picked_volume.selected = False
 
 class ContourSelectedVolume(MouseMode):
+    name = "clipper contour adjust"
     def __init__(self, session, selector, symmetrical=True, sensitivity=0.02):
         '''
         Modified volume contouring method which acts on a single volume
