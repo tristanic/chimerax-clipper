@@ -704,6 +704,8 @@ class XmapSet(MapSetBase):
                 self._delayed_recalc_handler = None
             return
         xm = self.live_xmap_mgr
+        if xm is None:
+            return
         if self._recalc_needed and not xm.thread_running:
             self.recalculate_all_maps(self.structure.atoms)
             if self._delayed_recalc_handler is not None:

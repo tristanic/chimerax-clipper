@@ -457,7 +457,7 @@ def load_hkl_data(session, filename, free_flag_label = None,
     if len(expt[0]):
         _regenerate_free_set_if_necessary(session, free[1], expt[1][0])
 
-    hklinfo, free, expt, calc = _filter_out_missing_free_flags(hklinfo, free, expt, calc)
+        hklinfo, free, expt, calc = _filter_out_missing_free_flags(hklinfo, free, expt, calc)
     return (hklinfo, free, expt, calc)
 
 def _filter_out_missing_free_flags(hklinfo, free, expt, calc):
