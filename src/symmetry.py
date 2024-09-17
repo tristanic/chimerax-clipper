@@ -388,10 +388,10 @@ def symmetry_from_model_metadata_pdb(model):
     if cryst1 is not None:
         cryst1 = cryst1[0]
         try:
-            abc = [float(cryst1[7:16]), float(cryst1[16:25]), float(cryst1[25:34])]
-            angles = [float(cryst1[34:41]), float(cryst1[41:48]), float(cryst1[48:55])]
+            abc = [float(cryst1[6:15]), float(cryst1[15:24]), float(cryst1[24:33])]
+            angles = [float(cryst1[33:40]), float(cryst1[40:47]), float(cryst1[47:54])]
             if symstr is None:
-                symstr = cryst1[55:67].capitalize().strip()
+                symstr = cryst1[55:66].capitalize().strip()
                 if symstr.startswith('H'):
                     x_symstr = space_group_hm_synonym(symstr)
                     if x_symstr is None:
