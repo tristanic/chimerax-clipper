@@ -73,6 +73,7 @@
        Source files are listed in one or more SourceFile elements -->
   <CLibrary name="mmdb2">
       <Define>MMDB_EXPORT</Define>
+      <Define>_CRT_SECURE_NO_WARNINGS</Define>
       <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
       <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
       <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
@@ -397,8 +398,8 @@
 
   <!-- Dependencies on other ChimeraX/Python packages -->
   <Dependencies>
-    <Dependency name="ChimeraX-Core" build="true" version="~=1.9.dev0"/>
-    <Dependency name="ChimeraX-Atomic" version="~=1.57"/>
+    <Dependency name="ChimeraX-Core" build="true" version="~=1.9.0"/>
+    <Dependency name="ChimeraX-Atomic" version="~=1.58"/>
     <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=14.0"/>
     <Dependency name="ChimeraX-Arrays" build="true" version="~=1.0"/>
   </Dependencies>
