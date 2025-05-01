@@ -38,7 +38,7 @@ pointer = molc.pointer
 size_t = molc.size_t
 
 dpath = os.path.dirname(os.path.abspath(__file__))
-libfile = glob.glob(os.path.join(dpath, 'lib_symmetry*'))[0]
+libfile = glob.glob(os.path.join(dpath, 'lib','lib_symmetry*'))[0]
 
 _c_functions = CFunctions(os.path.splitext(libfile)[0])
 

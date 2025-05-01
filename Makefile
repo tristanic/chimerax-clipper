@@ -68,7 +68,7 @@ endif
 
 BUNDLE_BASE_NAME = $(subst ChimeraX-,,$(BUNDLE_NAME))
 SOURCE = src
-SRCS = $(SOURCE)/*.py #$(SOURCE)/*.cpp
+SRCS = $(SOURCE)/*.py
 
 
 :DEFAULT_GOAL := wheel
@@ -77,7 +77,7 @@ SRCS = $(SOURCE)/*.py #$(SOURCE)/*.cpp
 # Actual make dependencies!
 #
 
-wheel $(WHEEL): bundle_info.xml $(SRCS)
+wheel $(WHEEL): pyproject.toml
 	$(CHIMERAX_EXE) --nogui --safemode --cmd "devel build . ; exit"
 
 install app-install:	$(WHEEL)

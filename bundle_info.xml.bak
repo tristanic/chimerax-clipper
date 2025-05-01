@@ -1,0 +1,456 @@
+<!--
+@Author: Tristan Croll <tic20>
+@Date:   12-Dec-2019
+@Email:  tcroll@altoslabs.com
+@Last modified by:   tic20
+@Last modified time: 20-Nov-2020
+@License: Lesser GNU Public License version 3.0 (see LICENSE.md)
+@Copyright: 2016-2019 Tristan Croll
+-->
+
+ 
+
+<BundleInfo name="ChimeraX-Clipper" version="0.25.0" package="chimerax.clipper"
+  	    customInit="true" minSessionVersion="1" maxSessionVersion="1" installedIncludeDir="include">
+
+  <!-- Additional information about bundle source -->
+  <Author>Tristan Croll</Author>
+  <Email>tcroll@altoslabs.com</Email>
+  <URL>https://cxtoolshed.rbvi.ucsf.edu/apps/chimeraxclipper</URL>
+
+  <!-- Synopsis is a one-line description
+       Description is a full multi-line description -->
+  <Synopsis>Clipper: Efficient handling of volumetric data and symmetry</Synopsis>
+  <Description>
+
+  </Description>
+
+  <!-- Categories is a list where this bundle should appear -->
+  <Categories>
+    <Category name="General"/>
+  </Categories>
+
+  <CModule name="_map_mask" usesNumpy="true">
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <IncludeDir>extern/pybind11/include</IncludeDir>
+      <!-- <IncludeDir platform="windows">C:\include</IncludeDir> -->
+
+      <SourceFile>src/maps/_maps/mask.cpp</SourceFile>
+  </CModule>
+
+
+  <CModule name="contour_thread" usesNumpy="true">
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <IncludeDir>extern/pybind11/include</IncludeDir>
+      <!-- <IncludeDir platform="windows">C:\include</IncludeDir> -->
+      
+      <SourceFile>src/contour/contour_threaded.cpp</SourceFile>
+      <SourceFile>src/contour/contourdata.cpp</SourceFile>
+  </CModule>
+
+
+
+  <!-- Compiled modules in bundle
+       CModule gives the name of the module
+       Source files are listed in one or more SourceFile elements -->
+  <CLibrary name="mmdb2">
+      <Define>MMDB_EXPORT</Define>
+      <Define>_CRT_SECURE_NO_WARNINGS</Define>
+      <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument> -->
+      <!-- <Library>stdc++</Library> -->
+      <SourceFile>src/deps/mmdb2/mmdb2/hybrid_36.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_io_stream.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_linalg.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_symop.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_atom.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_machine_.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_rand.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_tables.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_bondmngr.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_manager.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_mattype.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_title.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_chain.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_mask.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_mmcif_.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_uddata.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_cifdefs.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_model.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_utils.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_coormngr.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_align.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_root.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_xml_.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_cryst.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_bfgsmin.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_rwbrook.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_ficif.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_fft.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_selmngr.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_io_file.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_math_graph.cpp</SourceFile>
+      <SourceFile>src/deps/mmdb2/mmdb2/mmdb_seqsuperpose.cpp</SourceFile>
+  </CLibrary>
+  <CLibrary name="ccp4">
+      <Define>CCP4_EXPORT</Define>
+      <Define platform="windows">NOMINMAX</Define>
+      <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument> -->
+      <LinkArgument platform="windows">AdvAPI32.Lib</LinkArgument>
+      <!-- <Library>stdc++</Library> -->
+      <SourceFile>src/deps/libccp4/ccp4/ccp4_array.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_data.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmtzlib.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/ccp4_general.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_header.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/csymlib.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/ccp4_parser.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_labels.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cvecmat.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/ccp4_program.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_open.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/library_err.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/ccp4_unitcell.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_skew.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/library_file.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_accessor.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_stats.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/library_utils.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_close.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/cmap_symop.c</SourceFile>
+      <SourceFile>src/deps/libccp4/ccp4/pack_c.c</SourceFile>
+  </CLibrary>
+  <CLibrary name="clipper">
+      <Define>CLIPPER_EXPORTS</Define>
+      <Define>CLIPPER_VERBOSE</Define>
+      <Define platform="windows">NOMINMAX</Define>
+      <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument> -->
+      <IncludeDir>src/deps/libccp4</IncludeDir>
+      <IncludeDir>src/deps/mmdb2</IncludeDir>
+      <IncludeDir>src/deps/clipper</IncludeDir>
+      <IncludeDir>extern/pocketfft</IncludeDir>
+      <LibraryDir>src</LibraryDir>
+      <Library>mmdb2</Library>
+      <Library>ccp4</Library>
+
+
+      <!-- <Library>stdc++</Library> -->
+
+      <SourceFile>src/deps/clipper/core/atomsf.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/coords.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/nxmap_operator.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/cell.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/derivs.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/ramachandran.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_instance.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/fftmap.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/resol_basisfn.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_memory.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/fftmap_sparse.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/resol_fn.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_message.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_compute.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/resol_targetfn.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_stats.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_data.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/rotation.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_test.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_datatypes.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/spacegroup.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_types.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_info.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/spacegroup_data.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_util.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_lookup.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/symop.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/container.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/hkl_operators.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/container_hkl.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/map_interp.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/container_map.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/map_utils.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/xmap.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/container_types.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/nxmap.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/clipper_thread.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/test_core.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/core/test_data.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/contrib/convolution_search.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/sfcalc.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/edcalc.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/sfcalc_obs.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/fffear.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/sfscale.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/function_object_bases.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/sfweight.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/mapfilter.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/skeleton.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/contrib/originmatch.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/mmdb/clipper_mmdb.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/minimol/minimol.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/minimol/container_minimol.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/minimol/minimol_data.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/minimol/minimol_io.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/minimol/minimol_seq.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/minimol/minimol_utils.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/phs/phs_io.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/cif/cif_data_io.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/ccp4/ccp4_mtz_types.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/ccp4/ccp4_mtz_io.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/ccp4/ccp4_map_io.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/ccp4/ccp4_utils.cpp</SourceFile>
+
+      <SourceFile>src/deps/clipper/cns/cns_hkl_io.cpp</SourceFile>
+      <SourceFile>src/deps/clipper/cns/cns_map_io.cpp</SourceFile>
+
+  </CLibrary>
+
+  <CLibrary name="clipper_cx" usesNumpy="true">
+      <Define>CLIPPER_CX_EXPORTS</Define>
+      <Define>CLIPPER_VERBOSE</Define>
+      <Define platform="windows">NOMINMAX</Define>
+      <!-- <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument> -->
+      <LinkArgument platform="windows">/FORCE:MULTIPLE</LinkArgument>
+
+      <IncludeDir>src/deps</IncludeDir>
+      <LibraryDir>src</LibraryDir>
+      <Library>clipper</Library>
+      <Library>atomstruct</Library>
+      <Library>atomic_lib</Library>
+      <Library>element</Library>
+      <!-- <Library>stdc++</Library> -->
+      <SourceFile>src/clipper_ext/xtal_mgr.cpp</SourceFile>
+      <SourceFile>src/clipper_ext/edcalc_ext.cpp</SourceFile>
+      <SourceFile>src/clipper_ext/sfcalc_obs_vdw.cpp</SourceFile>
+  </CLibrary>
+
+  <!-- <CLibrary name="_clipper" usesNumpy="true">
+      <IncludeDir>src/include</IncludeDir>
+      <LibraryDir>src</LibraryDir>
+      <CompileArgument>-fvisibility=hidden</CompileArgument>
+      <Library>clipper</Library>
+
+      <SourceFile>src/bindings/_clipper.cpp</SourceFile>
+  </CLibrary> -->
+
+  <CModule name="clipper_python" usesNumpy="true">
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <IncludeDir>extern/pybind11/include</IncludeDir>
+      <!-- <IncludeDir platform="windows">C:\include</IncludeDir> -->
+      <IncludeDir>src/deps</IncludeDir>
+      <IncludeDir>src/deps/libccp4</IncludeDir>
+      <IncludeDir>src/deps/mmdb2</IncludeDir>
+      <IncludeDir>src</IncludeDir>
+      <LibraryDir>src</LibraryDir>
+      <Library>clipper</Library>
+      <Library>clipper_cx</Library>
+      <Library>atomstruct</Library>
+      <Library>atomic_lib</Library>
+      <Library>chutil</Library>
+      <Library>element</Library>
+
+      <Define>CLIPPER_VERBOSE</Define>
+
+      <Define platform="windows">NOMINMAX</Define>
+      <LinkArgument platform="windows">/FORCE:MULTIPLE</LinkArgument>
+      <!-- <Library>stdc++</Library> -->
+      <!-- <CompileArgument>-Os</CompileArgument> -->
+
+      <SourceFile>src/bindings/wrap_resol_fns.cpp</SourceFile>
+      <SourceFile>src/bindings/ext/wrap_xtal_mgr.cpp</SourceFile>
+
+      <SourceFile>src/bindings/contrib/wrap_skeleton.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_sfweight.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_sfscale.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_sfcalc.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_sfcalc_obs.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_originmatch.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_mapfilter.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_fffear.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_edcalc.cpp</SourceFile>
+      <SourceFile>src/bindings/contrib/wrap_convolution_search.cpp</SourceFile>
+
+
+      <SourceFile>src/bindings/wrap_clipper_util.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_map_utils.cpp</SourceFile>
+
+      <SourceFile>src/bindings/wrap_ccp4_mtz_io.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_clipper_cif_io.cpp</SourceFile>
+
+      <SourceFile>src/bindings/wrap_unit_cell.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_symops.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_spacegroup.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_xmap.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_nxmap.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_nxmap_operator.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_hkl_datatypes.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_hkl_data.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_derivs.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_coords.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_clipper_stats.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_cell.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_atomsf.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_symop.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_clipper_types.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_hkl_info.cpp</SourceFile>
+      <SourceFile>src/bindings/wrap_containers.cpp</SourceFile>
+      <SourceFile>src/bindings/clipper_pybind11.cpp</SourceFile>
+  </CModule>
+
+  <CLibrary name = "_symmetry" usesNumpy="true">
+      <SourceFile>src/symmetry_cpp/symmetry.cpp</SourceFile>
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <Library>atomstruct</Library>
+      <Library>atomic_lib</Library>
+      <Library>arrays</Library>
+      <Library>chutil</Library>
+  </CLibrary>
+
+  <CLibrary name = "_util" usesNumpy="true">
+      <SourceFile>src/_util.cpp</SourceFile>
+      <CompileArgument platform="linux">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="linux">-fvisibility-inlines-hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility=hidden</CompileArgument>
+      <CompileArgument platform="mac">-fvisibility-inlines-hidden</CompileArgument>
+      <LinkArgument platform="linux">-fvisibility=hidden</LinkArgument>
+      <LinkArgument platform="linux">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="linux">-s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility=hidden -fvisibility-inlines-hidden -s</LinkArgument>
+      <LinkArgument platform="mac">-fvisibility-inlines-hidden</LinkArgument>
+      <LinkArgument platform="mac">-s</LinkArgument>
+      <Library>atomstruct</Library>
+      <Library>atomic_lib</Library>
+      <Library>element</Library>
+      <Library>chutil</Library>
+  </CLibrary>
+
+
+  <!-- Dependencies on other ChimeraX/Python packages -->
+  <Dependencies>
+    <Dependency name="ChimeraX-Core" build="true" version=">1.10.dev202504300222, ==1.10.*"/>
+    <Dependency name="ChimeraX-Atomic" build="true" version="~=1.60"/>
+    <Dependency name="ChimeraX-AtomicLibrary" build="true" version="~=14.1"/>
+    <Dependency name="ChimeraX-Arrays" build="true" version="~=1.1.0"/>
+  </Dependencies>
+
+
+  <DataFiles>
+     <DataFile>tests/*.pdb</DataFile>
+     <DataFile>tests/*.mtz</DataFile>
+     <DataFile>tests/*.ccp4</DataFile>
+     <DataDir>docs</DataDir>
+  </DataFiles>
+
+  <ExtraFiles>
+    <ExtraFileGroup source="src/deps/clipper/**/*.h">include/clipper</ExtraFileGroup>
+    <ExtraFileGroup source="src/clipper_ext/*.h">include/clipper_ext</ExtraFileGroup>
+    <ExtraFileGroup source="src/deps/libccp4/ccp4/**/*.h">include/ccp4</ExtraFileGroup>
+    <ExtraFileGroup source="src/deps/mmdb2/mmdb2/**/*.h">include/mmdb2</ExtraFileGroup>
+  </ExtraFiles>
+
+
+
+  <Providers manager="data formats">
+      <!-- <Provider name="sfCIF" category="Structure factors" encoding="utf-8"/> -->
+      <Provider name="MTZ" category="Structure factors" suffixes=".mtz"/>
+  </Providers>
+
+  <Providers manager="open command">
+      <!-- <Provider name="sfCIF" want_path="true" /> -->
+      <Provider name="MTZ" want_path="true" />
+  </Providers>
+
+  <Providers manager="save command">
+      <Provider name="MTZ"/>
+  </Providers>
+
+
+  <Classifiers>
+    <!-- Development Status should be compatible with bundle version number -->
+    <PythonClassifier>Development Status :: 4 - Beta</PythonClassifier>
+    <PythonClassifier>License :: OSI Approved :: GNU Lesser General Public License v3 or later (LGPLv3+)</PythonClassifier>
+]
+    <ChimeraXClassifier>ChimeraX :: Command :: clipper :: General :: Command-line control of Clipper plugin for symmetry and map visualisation</ChimeraXClassifier>
+    <ChimeraXClassifier>ChimeraX :: Command :: cview :: General :: Re-center view on a selection, and set view mode to centerOfView with pivot indicator</ChimeraXClassifier>
+]
+  </Classifiers>
+
+</BundleInfo>

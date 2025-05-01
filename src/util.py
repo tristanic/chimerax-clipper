@@ -31,7 +31,7 @@ def compiled_lib_extension():
 
 import os
 libdir = os.path.dirname(os.path.abspath(__file__))
-libfile = os.path.join(libdir, 'lib_util.'+compiled_lib_extension())
+libfile = os.path.join(libdir, 'lib', 'lib_util.'+compiled_lib_extension())
 from chimerax.atomic import molc
 
 _c_functions = molc.CFunctions(os.path.splitext(libfile)[0])

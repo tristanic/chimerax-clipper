@@ -25,11 +25,7 @@ from chimerax import arrays
 arrays.load_libarrays()
 from chimerax.atomic import Atom
 
-def _version():
-    import pkg_resources
-    return pkg_resources.require('ChimeraX-Clipper')[0].version
-
-__version__ = _version()
+__version__ = "0.25.0"
 
 CLIPPER_STATE_VERSION = 2
 
