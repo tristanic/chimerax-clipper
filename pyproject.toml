@@ -147,6 +147,7 @@ sources = [
   "src_cpp/deps/libccp4/ccp4/cmap_symop.c",
   "src_cpp/deps/libccp4/ccp4/pack_c.c",
 ]
+
 define-macros = [
   "CCP4_EXPORT",
 ]
@@ -163,9 +164,10 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.library.ccp4.win32]
+[tool.chimerax.library.ccp4.platform.win]
 extra-link-args = [
   "AdvAPI32.Lib",
+  "UserEnv.Lib"
 ]
 define-macros = [
   "NOMINMAX",
@@ -269,7 +271,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.library.clipper.win32]
+[tool.chimerax.library.clipper.platform.win]
 define-macros = [
   "NOMINMAX",
 ]
@@ -310,7 +312,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.library.clipper_cx.win32]
+[tool.chimerax.library.clipper_cx.platform.win]
 extra-link-args = [
   "/FORCE:MULTIPLE",
 ]
@@ -342,7 +344,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.library._symmetry.mac]
+[tool.chimerax.library._symmetry.platform.mac]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -351,7 +353,7 @@ extra-link-args = [
   "-s",
 ]
 
-[tool.chimerax.library._symmetry.linux]
+[tool.chimerax.library._symmetry.platform.linux]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -384,7 +386,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.library._util.mac]
+[tool.chimerax.library._util.platform.mac]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -393,7 +395,7 @@ extra-link-args = [
   "-s",
 ]
 
-[tool.chimerax.library._util.linux]
+[tool.chimerax.library._util.platform.linux]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -432,7 +434,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.extension._map_mask.mac]
+[tool.chimerax.extension._map_mask.platform.mac]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -441,7 +443,7 @@ extra-link-args = [
   "-s",
 ]
 
-[tool.chimerax.extension._map_mask.linux]
+[tool.chimerax.extension._map_mask.platform.linux]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -476,7 +478,7 @@ library-dirs = [
   "src/lib",
 ]
 
-[tool.chimerax.extension.contour_thread.mac]
+[tool.chimerax.extension.contour_thread.platform.mac]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -487,7 +489,7 @@ extra-link-args = [
   "-s",
 ]
 
-[tool.chimerax.extension.contour_thread.linux]
+[tool.chimerax.extension.contour_thread.platform.linux]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -572,7 +574,7 @@ library-modules = [
   "chimerax.core",
 ]
 
-[tool.chimerax.extension.clipper_python.win32]
+[tool.chimerax.extension.clipper_python.platform.win]
 extra-link-args = [
   "/FORCE:MULTIPLE",
 ]
@@ -580,7 +582,7 @@ define-macros = [
   "NOMINMAX",
 ]
 
-[tool.chimerax.extension.clipper_python.mac]
+[tool.chimerax.extension.clipper_python.platform.mac]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
@@ -591,7 +593,7 @@ extra-link-args = [
   "-s",
 ]
 
-[tool.chimerax.extension.clipper_python.linux]
+[tool.chimerax.extension.clipper_python.platform.linux]
 extra-compile-args = [
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
