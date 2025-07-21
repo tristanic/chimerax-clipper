@@ -29,6 +29,14 @@ __version__ = "0.25.0"
 
 CLIPPER_STATE_VERSION = 2
 
+def get_lib():
+    from os import path
+    return path.join(path.dirname(path.abspath(__file__)), "lib")
+
+def get_include():
+    from os import path
+    return path.join(path.dirname(path.abspath(__file__)), "include")
+
 
 from .main import *
 # General objects
