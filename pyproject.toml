@@ -50,6 +50,11 @@ classifiers = ["Development Status :: 4 - Beta"]
   "*",
 ]
 
+[tool.chimerax.extra-files]
+"src/include" = [
+  "src_cpp/include/**"
+]
+
 [[tool.chimerax.provider."data formats"]]
 name = "MTZ"
 category = "Structure factors"
