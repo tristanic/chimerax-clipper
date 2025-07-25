@@ -31,18 +31,6 @@ __version__ = "0.25.0"
 
 CLIPPER_STATE_VERSION = 2
 
-global _libdir_initialized
-_libdir_initialized = False
-def add_libdir_to_dll_path():
-    global _libdir_initialized
-    if not _libdir_initialized:
-        lib_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__))), 'lib')
-        os.add_dll_directory(lib_path)
-        _libdir_initialized = True
-
-if sys.platform=='win32':
-    add_libdir_to_dll_path()
-    
 def get_lib():
     from os import path
     return path.join(path.dirname(path.abspath(__file__)), "lib")
@@ -50,6 +38,12 @@ def get_lib():
 def get_include():
     from os import path
     return path.join(path.dirname(path.abspath(__file__)), "include")
+
+if sys.platform=='win32':
+    # Make sure that the core Clipper directories are properly linked in Windows
+    with os.add_dll_directory(get_lib()):
+        from . import clipper_python
+
 
 
 from .main import *
