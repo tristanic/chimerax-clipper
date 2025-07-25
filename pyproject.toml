@@ -5,7 +5,7 @@ requires = [
   "ChimeraX-Atomic ~=1.60",
   "ChimeraX-AtomicLibrary ~=14.1",
   "ChimeraX-Arrays ~=1.1.0",
-  "numpy~=1.26.4",
+  "numpy~=2.2.6",
 ]
 build-backend = "chimerax.bundle_builder.cx_pep517"
 
@@ -47,7 +47,7 @@ classifiers = ["Development Status :: 4 - Beta"]
   "*.ccp4",
 ]
 "src/docs" = [
-  "*",
+  "**",
 ]
 
 [tool.chimerax.extra-files]
