@@ -19,6 +19,8 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
+import os, sys
+
 # Workaround to ensure libraries are properly loaded when running in nogui mode
 # to generate docs
 from chimerax import arrays
@@ -29,6 +31,17 @@ __version__ = "0.25.0"
 
 CLIPPER_STATE_VERSION = 2
 
+global _libdir_initialized
+_libdir_initialized = False
+def add_libdir_to_dll_path():
+    global _libdir_initialized
+    if not _libdir_initialized:
+        lib_path = os.path.join(os.path.join(os.path.dirname(os.path.abspath(__file__))), 'lib')
+        os.add_dll_directory(lib_path)
+        _libdir_initialized = True
+
+if sys.platform=='win32':
+    add_libdir_to_dll_path()
 
 from .main import *
 # General objects
