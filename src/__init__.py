@@ -42,6 +42,15 @@ def add_libdir_to_dll_path():
 
 if sys.platform=='win32':
     add_libdir_to_dll_path()
+    
+def get_lib():
+    from os import path
+    return path.join(path.dirname(path.abspath(__file__)), "lib")
+
+def get_include():
+    from os import path
+    return path.join(path.dirname(path.abspath(__file__)), "include")
+
 
 from .main import *
 # General objects

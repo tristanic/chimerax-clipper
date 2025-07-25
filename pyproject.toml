@@ -1,7 +1,7 @@
 [build-system]
 requires = [
   "ChimeraX-BundleBuilder>=1.4.0",
-  "ChimeraX-Core >=1.10.dev202504300222, ==1.10.*",
+  "ChimeraX-Core >=1.10.0, ==1.10.*",
   "ChimeraX-Atomic ~=1.60",
   "ChimeraX-AtomicLibrary ~=14.1",
   "ChimeraX-Arrays ~=1.1.0",
@@ -48,6 +48,11 @@ classifiers = ["Development Status :: 4 - Beta"]
 ]
 "src/docs" = [
   "*",
+]
+
+[tool.chimerax.extra-files]
+"src/include" = [
+  "src_cpp/include/**"
 ]
 
 [[tool.chimerax.provider."data formats"]]
