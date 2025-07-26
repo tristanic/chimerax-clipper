@@ -15,7 +15,7 @@ license = { text = "OSI Approved :: GNU Lesser General Public License v3 or late
 authors = [{ name = "Tristan Croll", email = "tcroll@altoslabs.com" }]
 description = "Clipper: Efficient handling of volumetric data and symmetry"
 dependencies = [
-  "ChimeraX-Core ~=1.10.0.dev202504300222",
+  "ChimeraX-Core ~=1.10.0",
   "ChimeraX-Atomic ~=1.60",
   "ChimeraX-AtomicLibrary ~=14.1",
   "ChimeraX-Arrays ~=1.1.0",
@@ -115,18 +115,6 @@ define-macros = [
   "MMDB_EXPORT",
   "_CRT_SECURE_NO_WARNINGS",
 ]
-include-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
-]
-library-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
-]
 
 [tool.chimerax.library.ccp4]
 sources = [
@@ -155,18 +143,6 @@ sources = [
 
 define-macros = [
   "CCP4_EXPORT",
-]
-include-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
-]
-library-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.library.ccp4.platform.win]
@@ -253,7 +229,7 @@ include-dirs = [
   "extern/pocketfft",
 ]
 library-dirs = [
-  "src",
+  "src/lib",
 ]
 libraries = [
   "mmdb2",
@@ -262,18 +238,6 @@ libraries = [
 define-macros = [
   "CLIPPER_EXPORTS",
   "CLIPPER_VERBOSE",
-]
-include-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
-]
-library-modules = [
-  "chimerax.core",
-  "chimerax.atomic_lib",
-  "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.library.clipper.platform.win]
@@ -291,12 +255,11 @@ include-dirs = [
   "src_cpp/deps",
 ]
 library-dirs = [
-  "src",
+  "src/lib",
 ]
 libraries = [
   "clipper",
   "atomstruct",
-#  "atomic_lib",
   "element",
 ]
 define-macros = [
@@ -307,14 +270,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.library.clipper_cx.platform.win]
@@ -331,7 +292,6 @@ sources = [
 ]
 libraries = [
   "atomstruct",
-#  "atomic_lib",
   "arrays",
   "chutil",
 ]
@@ -339,14 +299,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.library._symmetry.platform.mac]
@@ -373,7 +331,6 @@ sources = [
 ]
 libraries = [
   "atomstruct",
-#  "atomic_lib",
   "element",
   "chutil",
 ]
@@ -381,14 +338,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.library._util.platform.mac]
@@ -409,14 +364,6 @@ extra-link-args = [
   "-s",
 ]
 
-
-
-
-
-
-
-
-
 [tool.chimerax.extension._map_mask]
 sources = [
   "src_cpp/_maps/mask.cpp",
@@ -429,14 +376,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.extension._map_mask.platform.mac]
@@ -470,14 +415,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 library-dirs = [
   "src/lib",
@@ -551,14 +494,12 @@ include-dirs = [
   "src_cpp/include",
 ]
 library-dirs = [
-  "src",
-  "src_cpp/lib",
+  "src/lib",
 ]
 libraries = [
   "clipper",
   "clipper_cx",
   "atomstruct",
-#  "atomic_lib",
   "chutil",
   "element",
 ]
@@ -569,14 +510,12 @@ include-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
   "numpy",
 ]
 library-modules = [
   "chimerax.core",
   "chimerax.atomic_lib",
   "chimerax.arrays",
-  "chimerax.core",
 ]
 
 [tool.chimerax.extension.clipper_python.platform.win]
