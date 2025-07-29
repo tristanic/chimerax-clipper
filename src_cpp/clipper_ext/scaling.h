@@ -126,7 +126,7 @@ std::vector<ftype> guess_initial_aniso_gaussian_params(
     try {
       r = quick_r(fcalc, fobs, aniso_rfn);
       output_params = aniso_rfn.params();
-    } catch (std::runtime_error) {}
+    } catch (std::runtime_error&) {}
     std::cout << "Fitted aniso params: ";
     for (auto p: output_params)
       std::cout << p << ", ";

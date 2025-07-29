@@ -566,7 +566,7 @@ py::class_<Atom_list>(m, "Atom_list", atom_list_docstring_)
     {
         try {
             check_numpy_array_shape(indices, {(int)elements.size()}, true);
-        } catch (std::runtime_error) {
+        } catch (std::runtime_error&) {
             throw std::runtime_error("Number of elements doesn't match the number of indices!");
         }
         int* ptr = (int*)indices.request().ptr;

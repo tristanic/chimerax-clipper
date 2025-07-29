@@ -822,7 +822,6 @@ private:
       FFTmap_sparse_p1_xh fftmap( grid_sampling(), num_threads );
       // copy from map data
       std::vector<std::future<void>> thread_results;
-      Xmap_base::Map_reference_index ix = first();
       int nsym = cacheref.data().nsym;
       int points_per_thread = cacheref.data().num_unique / num_threads + 1;
       int start=0;

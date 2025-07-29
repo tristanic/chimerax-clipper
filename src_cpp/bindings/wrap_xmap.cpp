@@ -166,13 +166,11 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
     nu = tbuf.shape[0]; nv=tbuf.shape[1]; nw=tbuf.shape[2];
     //py::gil_scoped_release release;
     std::vector<std::future<void>> results;
-    int u, v;
     const int POINTS_PER_THREAD=50000;
-    int maxu, maxv, maxw, thread_max_u;
+    int maxu, maxv, maxw;
     int u_per_thread = std::max(
         (int)nu/(int)n_threads+1,
         POINTS_PER_THREAD/(nv*nw)+1);
-    u = origin.u();
     maxu = origin.u()+nu; maxv=origin.v()+nv; maxw=origin.w()+nw;
     for (size_t i=0; i<n_threads; ++i)
     {

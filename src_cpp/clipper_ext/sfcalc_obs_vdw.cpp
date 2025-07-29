@@ -77,7 +77,7 @@ T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
                 params = rfn.params();
                 min_r = r;
             }
-        } catch (std::runtime_error) {
+        } catch (std::runtime_error&) {
             y[d+1] = std::numeric_limits<ftype>::infinity();
         }
       }
@@ -121,7 +121,7 @@ T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
                     params = rfn.params();
                     min_r = r;
                 }
-            } catch (std::runtime_error) {
+            } catch (std::runtime_error&) {
                 y[d+1] = std::numeric_limits<ftype>::infinity();
             }
         }
