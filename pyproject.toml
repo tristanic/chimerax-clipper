@@ -1,11 +1,11 @@
 [build-system]
 requires = [
   "ChimeraX-BundleBuilder>=1.4.0",
-  "ChimeraX-Core >=1.10.0, ==1.10.*",
+  "ChimeraX-Core >=1.10.1, ==1.10.*",
   "ChimeraX-Atomic ~=1.60",
   "ChimeraX-AtomicLibrary ~=14.1",
   "ChimeraX-Arrays ~=1.1.0",
-  "numpy~=2.2.6",
+  "numpy~=1.26.4",
 ]
 build-backend = "chimerax.bundle_builder.cx_pep517"
 
@@ -293,7 +293,6 @@ sources = [
 libraries = [
   "atomstruct",
   "arrays",
-  "chutil",
 ]
 include-modules = [
   "chimerax.core",
@@ -332,7 +331,6 @@ sources = [
 libraries = [
   "atomstruct",
   "element",
-  "chutil",
 ]
 include-modules = [
   "chimerax.core",
@@ -500,7 +498,6 @@ libraries = [
   "clipper",
   "clipper_cx",
   "atomstruct",
-  "chutil",
   "element",
 ]
 define-macros = [
