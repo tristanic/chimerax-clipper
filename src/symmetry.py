@@ -652,7 +652,6 @@ class SymmetryManager(Model):
         if not self._session_restore:
             self.set_default_atom_display(mode=self._hydrogen_mode)
 
-
     def _structure_change_cb(self, trigger_name, changes):
         if 'aniso_u changed' in changes[1].atom_reasons():
             self._anisou_sanity_check(changes[1].modified_atoms())
@@ -683,6 +682,8 @@ class SymmetryManager(Model):
         self.has_symmetry = True
 
     def added_to_session(self, session):
+        # Temporary hack due to issue #18427 in ChimeraX 1.10. TODO: remove for 1.11
+        self.structure._cpp_notify_position(self.structure.scene_position)
         super().added_to_session(session)
         if self.structure is not None:
             self.set_default_atom_display(mode=self._hydrogen_mode)
