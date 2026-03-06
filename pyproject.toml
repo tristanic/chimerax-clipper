@@ -15,7 +15,7 @@ license = { text = "OSI Approved :: GNU Lesser General Public License v3 or late
 authors = [{ name = "Tristan Croll", email = "tcroll@altoslabs.com" }]
 description = "Clipper: Efficient handling of volumetric data and symmetry"
 dependencies = [
-  "ChimeraX-Core ~=1.11.1",
+  "ChimeraX-Core ~=1.11.0",
   "ChimeraX-Atomic ~=1.61",
   "ChimeraX-AtomicLibrary ~=14.2",
   "ChimeraX-Arrays ~=1.1.0",
