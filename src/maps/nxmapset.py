@@ -182,7 +182,7 @@ class NXmapHandler(MapHandlerBase):
                 ZoneMask(s, self.mapset.master_map_mgr.zone_mgr, None)
 
 
-    property
+    @property
     def stats(self):
         return self.mean_sd_rms()
 
