@@ -111,7 +111,19 @@ toolchains but hard-fail here include:
 ### 5. C++ changes require a clean rebuild
 The build system does not always detect incremental C++ changes correctly. When in doubt, `clean` first.
 
-### 6. Windows DLL export warnings (C4251)
+### 6. `chimerax_bridge` — non-template functions live in the `.cpp`
+The non-template `clipper_atoms_from_cx_atoms` family (incl.
+`clipper_atoms_from_cx_atoms_with_map`) is **defined in
+`src_cpp/clipper_ext/chimerax_bridge.cpp`** (compiled into `clipper_cx.dll`) and
+declared with `CLIPPER_CX_IMEX` in `chimerax_bridge.h`. Every pybind11 translation
+unit (e.g. `wrap_xtal_mgr.cpp`, `wrap_adp_occ_refiner.cpp`) therefore links to the
+single exported definition — no ODR violations, no LNK2001, and a clean linker
+exit code even with `/FORCE:MULTIPLE`. Only the *template* helper
+`cl_atom_from_cx_atom` remains `inline` in the header (templates must be
+header-visible). Do **not** move the non-template definitions back into the
+header.
+
+### 7. Windows DLL export warnings (C4251)
 Exporting classes with private `std::future`, `std::unique_ptr`, or other STL members via
 `CLIPPER_CX_IMEX` generates C4251 warnings on MSVC. These are suppressed with
 `#pragma warning(disable: 4251)` at the top of the relevant `.cpp` file. The warnings are
@@ -131,6 +143,10 @@ Bundled C++ (source-compiled):
 Git submodules:
 - `extern/pybind11` — C++/Python bindings
 - `extern/pocketfft` — header-only FFT
+- `extern/eigen` — Eigen3 (MPL2, header-only); **pin to ≥ 5.0.1** — Eigen master nightly has a
+  regression where `has_unary_operator`/`has_binary_operator` SFINAE gives false positives on
+  MSVC for `scalar_zero_op`, causing C2064 (`__forceinline` operator()() accepted with extra args)
+- `extern/lbfgspp` — LBFGSpp L-BFGS-B (MIT, header-only); depends on Eigen
 
 ## Version bumping
 
