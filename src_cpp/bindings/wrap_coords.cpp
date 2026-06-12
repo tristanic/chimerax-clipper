@@ -25,6 +25,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/operators.h>
 #include <pybind11/numpy.h>
+// clipper::String inherits from std::string with CLIPPER_IMEX, causing libclipper.dll
+// to export std::vector<std::string> non-inline methods. Suppress implicit instantiation
+// here so the linker uses the DLL's exported definitions rather than creating duplicates.
+// Must appear before pybind11/stl.h, which triggers the implicit instantiation.
+extern template class std::vector<std::string>;
 #include <pybind11/stl.h>
 
 

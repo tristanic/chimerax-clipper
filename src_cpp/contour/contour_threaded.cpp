@@ -249,7 +249,7 @@ PYBIND11_MODULE(contour_thread, m) {
             py::arg("cap_faces")=true,
             py::arg("return_normals")=false)
         .def("ready", &Contour_Thread_Mgr::ready)
-        .def("get_result", [](Contour_Thread_Mgr& self)
+        .def("get_result", [](Contour_Thread_Mgr& self) -> py::tuple
         {
             // Takes ownership of vertex_xyz, tv_indices and normals. They will
             // be automatically deleted when they go out of scope in Python.

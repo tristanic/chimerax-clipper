@@ -20,6 +20,9 @@
 // of these is redistributed under its own license terms.
 
 #include <pybind11/pybind11.h>
+// See wrap_coords.cpp — suppress implicit instantiation so the DLL's exported
+// definitions are used rather than creating duplicate COMDAT symbols.
+extern template class std::vector<std::string>;
 #include <pybind11/stl.h>
 
 #include "type_conversions.h"

@@ -125,6 +125,16 @@ class MapSetBase(Model):
         else:
             return self.child_models()[name_or_index]
 
+    def find_map_by_name(self, name):
+        '''
+        Search child map handlers for one matching `name`.
+        Returns the handler, or None if no match is found.
+        '''
+        for m in self.child_models():
+            if m.name == name:
+                return m
+        return None
+
     @property
     def all_maps(self):
         from chimerax.map import Volume
@@ -157,6 +167,7 @@ class MapSetBase(Model):
     def _cover_coords_cb(self, trigger_name, data):
         coords, padding = data
         self.expand_to_cover_coords(coords, padding)
+        
 
     def _box_changed_cb(self, trigger_name, data):
         '''

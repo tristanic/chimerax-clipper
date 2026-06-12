@@ -19,18 +19,21 @@
 // and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 // of these is redistributed under its own license terms.
 
+#pragma once
+#include <utility>
+#include <vector>
 #include <atomstruct/Atom.h>
 #include <atomstruct/Residue.h>
 #include <clipper/clipper.h>
-#include <chrono>
-#include <memory>
-#include <atomic>
+#include "imex.h"
 
 namespace clipper_cx {
 
 namespace bridge {
 
-template <class ... Types> clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* cxatom, Types ... args)
+// Template helper — must remain in the header.
+template <class ... Types>
+clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* cxatom, Types ... args)
 {
     clipper::Atom clatom;
     clatom.set_element(cxatom->element().name());
@@ -45,7 +48,7 @@ template <class ... Types> clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* 
     if (cxatom->has_aniso_u(args...))
     {
         const auto& cxau = *(cxatom->aniso_u(args...));
-        // ChimeraX C++ layer stores aniso_u in row-major order`
+        // ChimeraX C++ layer stores aniso_u in row-major order
         uani = clipper::U_aniso_orth(cxau[0],cxau[3],cxau[5],cxau[1],cxau[2],cxau[4]);
     } else {
         uani = clipper::U_aniso_orth(clipper::U_aniso_orth::null());
@@ -54,93 +57,34 @@ template <class ... Types> clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* 
     return clatom;
 }
 
-clipper::Atom_list clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens)
-{
-    // auto start_time = std::chrono::steady_clock::now();
-    auto al = clipper::Atom_list();
-    for (size_t i=0; i<n; ++i)
-    {
-        auto cxa = cxatoms[i];
-        if (ignore_hydrogens && cxa->element().number()==1) continue;
-        // Unknown atoms have element number 0.
-        if (cxa->element().number()==0) continue;
+// Non-template conversion functions — defined in chimerax_bridge.cpp and
+// exported from clipper_cx so that multiple pybind11 translation units can
+// call them without each TU emitting its own duplicate COMDAT symbol.
+CLIPPER_CX_IMEX clipper::Atom_list
+clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens);
 
-        const auto& altlocs = cxa->alt_locs();
-        if (altlocs.size())
-        {
-            for (const auto& altloc: altlocs)
-                al.push_back(cl_atom_from_cx_atom<char>(cxa, altloc));
-        } else {
-            al.push_back(cl_atom_from_cx_atom<>(cxa));
-        }
-    }
-    // auto end_time = std::chrono::steady_clock::now();
-    // std::chrono::duration<double> elapsed = end_time-start_time;
-    // std::cout<<"Copying " << n << " atoms from ChimeraX to Clipper took " << elapsed.count() << " seconds." << std::endl;
-    return al;
-}
+CLIPPER_CX_IMEX clipper::Atom_list
+clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
+                                     size_t n_threads, bool ignore_hydrogens);
 
-clipper::Atom_list clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n, size_t n_threads, bool ignore_hydrogens)
-{
-    // auto start_time = std::chrono::steady_clock::now();
-    const size_t min_threaded_size = 10000;
-    const size_t min_atoms_per_thread = 4000;
-    if (n_threads==1 || n < min_threaded_size)
-        return clipper_atoms_from_cx_atoms(cxatoms, n, ignore_hydrogens);
+//! Maps one entry in the Clipper Atom_list back to its origin in ChimeraX.
+//! altloc == '\0' means a single-conformer atom (no altloc).
+//! index    : position in the Clipper Atom_list (one per altloc).
+//! cx_index : position in the input ChimeraX atom array this entry came from
+//!            (lets callers express restraints/flags in input-array terms).
+struct CLIPPER_CX_IMEX AtomAltlocIndex {
+    atomstruct::Atom* cx_atom;
+    char              altloc;
+    int               index;
+    int               cx_index;
+};
 
-    size_t atoms_per_thread = std::max(min_atoms_per_thread, n/n_threads+1);
-    std::vector<std::future<clipper::Atom_list>> results;
-    size_t start=0, end=0;
-    size_t actual_num_threads=0;
-    std::atomic<size_t> atom_count(0);
-    for (size_t i=0; i<n_threads && end<n; ++i)
-    {
-        end = std::min(n, start+atoms_per_thread);
-        results.push_back(std::async(std::launch::async,
-            [&atom_count, ignore_hydrogens](atomstruct::Atom** cxatoms, size_t start, size_t end)
-            {
-                auto al = clipper::Atom_list();
-                size_t counter = 0;
-                for (size_t i=start; i<end; ++i)
-                {
-                    auto cxa = cxatoms[i];
-                    if (ignore_hydrogens && cxa->element().number()==1) continue;
-                    // Unknown atoms have element number 0
-                    if (cxa->element().number()==0) continue;
-                    auto altlocs = cxa->alt_locs();
-                    if (altlocs.size())
-                    {
-                        for (const auto& altloc: altlocs)
-                        {
-                            al.push_back(cl_atom_from_cx_atom<char>(cxa, altloc));
-                            counter++;
-                        }
-                    } else {
-                        al.push_back(cl_atom_from_cx_atom<>(cxa));
-                        counter++;
-                    }
-                }
-                atom_count += counter;
-                return al;
-            },
-            cxatoms, start, end
-        ));
-        start += atoms_per_thread;
-        actual_num_threads++;
-    }
-
-    auto final_al = clipper::Atom_list();
-    //final_al.reserve(atom_count.load());
-    // The final thread will always have the smallest number of atoms in it.
-    // Since Clipper doesn't care about atom order, we should start with that
-    // first to save time while the other threads complete.
-    for (auto it = results.rbegin(); it != results.rend(); it++)
-    {
-        auto al = it->get();
-        std::move(std::begin(al), std::end(al), std::back_inserter(final_al));
-    }
-    return final_al;
-}
+//! Like clipper_atoms_from_cx_atoms but also returns a per-entry mapping so
+//! that refined values can be written back to the correct (Atom, altloc) pair.
+CLIPPER_CX_IMEX
+std::pair<clipper::Atom_list, std::vector<AtomAltlocIndex>>
+clipper_atoms_from_cx_atoms_with_map(
+    atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens);
 
 } // namespace bridge
 } // namespace clipper_cx

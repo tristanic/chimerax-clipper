@@ -163,9 +163,46 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   const Grid_sampling grid( spgr, cell, hkls.resolution() );
   Xmap<float> xmap( spgr, cell, grid );
 
-  // do ed calc from atomu
+  // If any atom has an unrealistically low B-factor for this resolution,
+  // apply a uniform additive shift ΔU to ALL atom U-values before the
+  // electron density / FFT calculation.  A uniform shift preserves the
+  // relative B-factor differences between atoms while ensuring the resulting
+  // fphi_atom has the expected Gaussian resolution falloff.  In reciprocal
+  // space this is equivalent to multiplying every Fcalc(h) by exp(-ΔU·s²),
+  // a factor the BasisFn_aniso_gaussian scaler can absorb cleanly through its
+  // isotropic parameter.
+  //
+  // Clamping individual atoms to the floor would instead destroy relative
+  // B-factor information (two atoms at 0.5 and 8 Å² would both become 18 Å²)
+  // and produce an irregular, per-atom correction the scaler cannot describe.
+  //
+  // Minimum credible U at resolution d_min: U_min = d_min² / (4π²),
+  // i.e. the atom Gaussian width σ = d_min / 2π (Nyquist sampling criterion).
+  const ftype d_min_calc  = hkls.resolution().limit();
+  const ftype u_min_calc  = Util::b2u(2.0 * d_min_calc * d_min_calc);
+
+  // Find the minimum isotropic U across all non-null, isotropic atoms.
+  ftype u_min_model = u_min_calc; // sentinel: no shift needed unless below floor
+  for (int i = 0; i < (int)atoms.size(); ++i) {
+      if (atoms[i].is_null()) continue;
+      if (atoms[i].u_aniso_orth().is_null())
+          u_min_model = std::min(u_min_model, atoms[i].u_iso());
+  }
+
+  // Apply uniform shift only when needed; mask calculation uses original atoms.
+  Atom_list atomu = atoms;
+  const ftype u_delta = u_min_calc - u_min_model; // zero when no shift needed
+  if (u_delta > 0.0) {
+      for (int i = 0; i < (int)atomu.size(); ++i) {
+          if (atomu[i].is_null()) continue;
+          if (atomu[i].u_aniso_orth().is_null())
+              atomu[i].set_u_iso(atomu[i].u_iso() + u_delta);
+      }
+  }
+
+  // do ed calc from atomu (uniformly B-shifted for proper FFT sampling)
   EDcalc_aniso_thread<ftype32> edcalc(nthreads);
-  edcalc( xmap, atoms);
+  edcalc( xmap, atomu);
 
   xmap.fft_to( fphi_atom, nthreads );
 
