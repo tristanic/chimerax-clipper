@@ -503,6 +503,10 @@ class XmapSet(MapSetBase):
                                   'flip_normals': True,
                                   })
         xmap_handler.set_display_style(style)
+        # Record the sigma value these (absolute) levels were set against, so the
+        # contours can be kept fixed in sigma units if the map is later rescaled
+        # (see XmapHandler_Live._map_recalc_cb).
+        xmap_handler._contour_sigma = xmap_handler.sigma
 
     def add_live_xmap(self, name,
         b_sharp=0,
@@ -852,6 +856,11 @@ class XmapSet(MapSetBase):
             for m in self.child_models():
                 if isinstance(m, XmapHandler_Live):
                     self._live_xmap_mgr.add_xmap(m._map_name, **m._rebuild_args)
+                    # The restored (absolute) surface levels correspond to the map
+                    # as saved; seed the sigma basis so the first recalculation
+                    # rescales correctly (restore goes via set_map_state, not
+                    # set_xmap_display_style).
+                    m._contour_sigma = m.sigma
                     m._session_restore=False
             self.live_update = self._session_restore_live_update
         self.recalc_needed()
@@ -1012,6 +1021,17 @@ class XmapHandler_Live(XmapHandlerBase):
         for s in self.surfaces:
             s._use_thread=True
         self._fill_volume_data(self._data_fill_target, self.box_params.origin_grid)
+        # Keep contours fixed in sigma units across recalculation. The absolute
+        # surface levels were set against self._contour_sigma; when the model's
+        # mean B-factor shifts the map's overall scale (sigma) changes, so rescale
+        # the levels by the sigma ratio rather than reusing the stale absolutes.
+        old_sigma = getattr(self, '_contour_sigma', None)
+        new_sigma = self.sigma
+        if old_sigma and new_sigma and old_sigma > 0 and self.surfaces:
+            scale = new_sigma / old_sigma
+            if scale != 1.0:
+                self.set_parameters(surface_levels=[s.level*scale for s in self.surfaces])
+        self._contour_sigma = new_sigma
         self.data.values_changed()
 
     def delete(self):
