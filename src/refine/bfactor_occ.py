@@ -89,16 +89,20 @@ class BFactorOccRefineManager:
 
       - **B-factor restraints** are passed to ``launch`` / ``launch_realspace``
         via the ``b_restraints`` keyword: a 6-tuple of equal-length sequences
-        ``(atoms1, altlocs1, atoms2, altlocs2, sigmas, ks)`` where atomsN are
-        indices into the launch atom array, altlocsN are altloc strings
-        (``''`` = no altloc) selecting the conformer of each endpoint, and
-        sigmas/ks are the per-restraint Geman-McClure sigma and weight.  The
-        caller decides exactly which (atom, altloc) pairs to restrain.
+        ``(atoms1, altlocs1, atoms2, altlocs2, sigmas, ks)`` — or a 7-tuple with
+        a trailing ``alphas`` — where atomsN are indices into the launch atom
+        array, altlocsN are altloc strings (``''`` = no altloc) selecting the
+        conformer of each endpoint, sigmas/ks are the per-restraint Barron scale
+        (c) and weight, and alphas (optional) are the per-restraint Barron shape.
+        The restraint uses Barron's general robust loss: alpha=1 (the default
+        when omitted) is Charbonnier/pseudo-Huber, alpha=-2 reproduces the
+        Geman-McClure family, alpha=2 is harmonic.  The caller decides exactly
+        which (atom, altloc) pairs to restrain.
       - **One-sided target restraints** (real-space only) are passed via the
         ``b_target_restraints`` keyword: a 5-tuple
-        ``(atoms, altlocs, target_us, sigmas, ks)`` pulling each atom's U toward
-        a fixed ``target_u`` (Å²) — e.g. a neighbouring context atom's U, for
-        fragment/context harmonisation.
+        ``(atoms, altlocs, target_us, sigmas, ks)`` (or a 6-tuple with a trailing
+        ``alphas``) pulling each atom's U toward a fixed ``target_u`` (Å²) — e.g.
+        a neighbouring context atom's U, for fragment/context harmonisation.
       - **Occupancy refinement**: set ``config.refine_occ`` to a per-input-atom
         flag array (length = number of atoms passed to launch).  Occupancy
         groups are then auto-derived in C++: atoms in one contiguous covalent
@@ -320,16 +324,14 @@ class BFactorOccRefineManager:
                 self._launch_time = perf_counter()
             self._thread_mgr.launch(*args)
 
-        # Unpack the optional pairwise restraint arrays (ChimeraX-index + altloc).
-        (r_atoms1, r_altlocs1, r_atoms2,
-         r_altlocs2, r_sigmas, r_ks) = _unpack_b_restraints(b_restraints)
-
+        # The optional pairwise restraint spec is passed straight through as a
+        # single tuple (or None); C++ unpacks it (see parse_pairwise_restraints).
         from ..delayed_reaction import delayed_reaction
         delayed_reaction(
             self._session.triggers, 'new frame',
             _timed_launch,
             [atoms.pointers, fobs, phi_fom, usage, ignore_hydrogens, f_calc,
-             r_atoms1, r_altlocs1, r_atoms2, r_altlocs2, r_sigmas, r_ks],
+             b_restraints],
             self._thread_mgr.ready,
             self._apply_results, []
         )
@@ -596,19 +598,16 @@ class BFactorOccRefineManager:
 
             # Unpack the optional restraint arrays (ChimeraX-index + altloc),
             # captured by the closure below.
-            (r_a1, r_al1, r_a2, r_al2, r_sig, r_k) = _unpack_b_restraints(b_restraints)
-            (t_a, t_al, t_tu, t_sig, t_k) = _unpack_b_target_restraints(b_target_restraints)
-
+            # Restraint specs pass straight through as single tuples (or None);
+            # C++ unpacks them (see parse_pairwise_restraints / parse_target_restraints).
             def _timed_launch(refined_ptrs, ctx_ptrs, xmap, origin, ignore_h):
                 if self._log_level == 'debug':
                     from time import perf_counter
                     self._launch_time = perf_counter()
                 self._thread_mgr.launch_realspace(
                     refined_ptrs, ctx_ptrs, xmap, origin, ignore_h,
-                    r_atoms1=r_a1, r_altlocs1=r_al1, r_atoms2=r_a2,
-                    r_altlocs2=r_al2, r_sigmas=r_sig, r_ks=r_k,
-                    tr_atoms=t_a, tr_altlocs=t_al, tr_target_us=t_tu,
-                    tr_sigmas=t_sig, tr_ks=t_k)
+                    restraints=b_restraints,
+                    target_restraints=b_target_restraints)
 
             from ..delayed_reaction import delayed_reaction
             delayed_reaction(
@@ -799,36 +798,6 @@ class BFactorOccRefineManager:
 # ---------------------------------------------------------------------------
 # Module-level helpers
 # ---------------------------------------------------------------------------
-
-def _unpack_b_restraints(spec):
-    """Normalise an optional pairwise B-factor restraint spec into six parallel
-    lists for the C++ launch call.
-
-    `spec` is None (no restraints) or a 6-tuple
-    ``(atoms1, altlocs1, atoms2, altlocs2, sigmas, ks)`` where:
-      - atoms1 / atoms2 are indices into the atom array passed to launch
-        (refined_atoms order for real-space),
-      - altlocs1 / altlocs2 are altloc strings ('' = no altloc) selecting the
-        conformer of each endpoint,
-      - sigmas / ks are the per-restraint Geman-McClure sigma and weight.
-    """
-    if spec is None:
-        return [], [], [], [], [], []
-    atoms1, altlocs1, atoms2, altlocs2, sigmas, ks = spec
-    return (list(atoms1), list(altlocs1), list(atoms2),
-            list(altlocs2), list(sigmas), list(ks))
-
-
-def _unpack_b_target_restraints(spec):
-    """Normalise an optional one-sided (target) B-factor restraint spec into five
-    parallel lists.  `spec` is None or a 5-tuple
-    ``(atoms, altlocs, target_us, sigmas, ks)`` (target_us are fixed U values in Å²)."""
-    if spec is None:
-        return [], [], [], [], []
-    atoms, altlocs, target_us, sigmas, ks = spec
-    return (list(atoms), list(altlocs), list(target_us),
-            list(sigmas), list(ks))
-
 
 def _validate_occ_groups(atoms, config):
     """

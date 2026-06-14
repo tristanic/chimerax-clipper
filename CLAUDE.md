@@ -2,7 +2,7 @@
 
 A ChimeraX plugin providing macromolecular crystallographic data handling: electron density maps, structure factors, and crystallographic symmetry. It is the primary crystallographic infrastructure layer for [ISOLDE](https://isolde.cimr.cam.ac.uk/), which lives in a separate, tightly-coupled repository. Changes to public API here frequently require corresponding changes in ISOLDE.
 
-Built on Kevin Cowtan's [Clipper library](http://www.ysbl.york.ac.uk/~cowtan/clipper/), wrapped via pybind11. Licensed LGPLv3+.
+Built on Kathryn Cowtan's [Clipper library](http://www.ysbl.york.ac.uk/~cowtan/clipper/), wrapped via pybind11. Licensed LGPLv3+.
 
 ## Architecture
 

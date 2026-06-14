@@ -47,6 +47,49 @@ namespace clipper_cx {
 using namespace clipper;
 using namespace clipper::datatypes;
 
+namespace {
+
+// Barron's general robust loss (J.T. Barron, "A General and Adaptive Robust Loss
+// Function", CVPR 2019 / arXiv 2017), evaluated in U-space.  Returns the energy
+// and its first derivative dE/dr for a residual r, scale c (= sigma), shape
+// alpha, and overall weight.  See adp_occ_types.h for the full description of the
+// family.  The removable singularities at alpha = 2 (squared error), alpha = 0
+// (Cauchy) and alpha -> -inf (Welsch) are handled by dedicated branches; every
+// branch is ≈ weight·½(r/c)² near r = 0 (origin curvature weight/c²).
+struct LossEval { double energy; double dE_dr; };
+
+inline LossEval barron_loss(double r, double alpha, double c, double weight)
+{
+    const double inv_c2 = 1.0 / (c * c);
+    const double x2     = r * r * inv_c2;   // (r/c)^2
+    const double g0     = weight * r * inv_c2;  // common gradient prefactor weight·r/c²
+    LossEval e;
+
+    if (alpha <= -1e6) {
+        // Welsch / Leclerc limit (alpha -> -inf)
+        const double ex = std::exp(-0.5 * x2);
+        e.energy = weight * (1.0 - ex);
+        e.dE_dr  = g0 * ex;
+    } else if (std::abs(alpha) < 1e-8) {
+        // Cauchy / Lorentzian limit (alpha -> 0)
+        e.energy = weight * std::log(0.5 * x2 + 1.0);
+        e.dE_dr  = g0 / (0.5 * x2 + 1.0);
+    } else if (std::abs(alpha - 2.0) < 1e-8) {
+        // Squared-error / harmonic limit (alpha -> 2)
+        e.energy = weight * 0.5 * x2;
+        e.dE_dr  = g0;
+    } else {
+        // General case
+        const double b = std::abs(alpha - 2.0);
+        const double z = x2 / b + 1.0;
+        e.energy = weight * (b / alpha) * (std::pow(z, 0.5 * alpha) - 1.0);
+        e.dE_dr  = g0 * std::pow(z, 0.5 * alpha - 1.0);
+    }
+    return e;
+}
+
+} // anonymous namespace
+
 // ============================================================================
 // BFactorOccRefiner
 // ============================================================================
@@ -497,11 +540,15 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
     }
 
     // -------------------------------------------------------------------------
-    // 3. Compute isotropic scale k = Σ(m|Fo||Fc|) / Σ|Fc|²  (working set).
+    // 3. Compute isotropic scale k = Σ(m|Fo||Fc|) / Σ|Fc|²  (working set only).
+    //    usage_ flag convention (set in xtal_mgr): BOTH (!=0) = working,
+    //    NONE (==0) = free.  The free set must be excluded here and from the
+    //    target/gradient below, or it leaks into the fit (R-free ≈ R-work).
     // -------------------------------------------------------------------------
     ftype sum_cross = 0.0, sum_sq = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()) continue;
+        if (fobs_[ih].missing() || usage_[ih].missing()
+            || usage_[ih].flag() == 0) continue;
         ftype fc = fcalc_hkl_[ih].f();
         ftype fo = fobs_[ih].f();
         ftype m  = phi_fom_[ih].fom();
@@ -513,11 +560,13 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
     // -------------------------------------------------------------------------
     // 4. Compute target T and driving density coefficients for all reflections.
     //    Working reflections: G(h) = k·(m|Fo| − k|Fc|)·exp(iφ_calc).
-    //    Non-working:         set to null so fft_from treats them as zero.
+    //    Non-working (missing OR free, flag==0): set to null so fft_from treats
+    //    them as zero — the free set contributes neither to T nor to the gradient.
     // -------------------------------------------------------------------------
     double T = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()) {
+        if (fobs_[ih].missing() || usage_[ih].missing()
+            || usage_[ih].flag() == 0) {
             driving_hkl_.set_data(ih.hkl(), F_phi<ftype32>());
             continue;
         }
@@ -619,16 +668,14 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
     }
 
     // -------------------------------------------------------------------------
-    // 7. B-factor restraints (Geman-McClure, in U-space).
+    // 7. B-factor restraints (Barron general loss, in U-space).
     // -------------------------------------------------------------------------
     for (const auto& r : cfg_.b_restraints) {
-        double du    = current_u_iso_[r.i] - current_u_iso_[r.j];
-        double s2    = r.sigma * r.sigma;
-        double denom = s2 + du * du;
-        T += r.weight * du * du / denom;
-        double g = r.weight * 2.0 * du * s2 / (denom * denom);
-        raw_grad_u[r.i] += g;
-        raw_grad_u[r.j] -= g;
+        double du = current_u_iso_[r.i] - current_u_iso_[r.j];
+        LossEval e = barron_loss(du, r.alpha, r.sigma, r.weight);
+        T += e.energy;
+        raw_grad_u[r.i] += e.dE_dr;
+        raw_grad_u[r.j] -= e.dE_dr;
     }
 
     // Assemble flat gradient vector.
@@ -782,26 +829,23 @@ double BFactorOccRefiner::operator_realspace_(const Eigen::VectorXd& x, Eigen::V
         }
     }
 
-    // B-factor restraints (Geman-McClure, U space) — identical to crystallographic.
+    // B-factor restraints (Barron general loss, U space) — identical to crystallographic.
     for (const auto& r : cfg_.b_restraints) {
-        double du    = current_u_iso_[r.i] - current_u_iso_[r.j];
-        double s2    = r.sigma * r.sigma;
-        double denom = s2 + du * du;
-        T += r.weight * du * du / denom;
-        double g = r.weight * 2.0 * du * s2 / (denom * denom);
-        raw_grad_u[r.i] += g;
-        raw_grad_u[r.j] -= g;
+        double du = current_u_iso_[r.i] - current_u_iso_[r.j];
+        LossEval e = barron_loss(du, r.alpha, r.sigma, r.weight);
+        T += e.energy;
+        raw_grad_u[r.i] += e.dE_dr;
+        raw_grad_u[r.j] -= e.dE_dr;
     }
 
-    // One-sided Geman-McClure restraints toward fixed target U values, supplied
-    // by the caller via RefineConfig.b_target_restraints.  Only atom i's
-    // gradient is accumulated (the target is a fixed value).
+    // One-sided Barron restraints toward fixed target U values, supplied by the
+    // caller via RefineConfig.b_target_restraints.  Only atom i's gradient is
+    // accumulated (the target is a fixed value).
     for (const auto& r : cfg_.b_target_restraints) {
-        double du    = current_u_iso_[r.i] - r.target_u;
-        double s2    = r.sigma * r.sigma;
-        double denom = s2 + du * du;
-        T += r.weight * du * du / denom;
-        raw_grad_u[r.i] += r.weight * 2.0 * du * s2 / (denom * denom);
+        double du = current_u_iso_[r.i] - r.target_u;
+        LossEval e = barron_loss(du, r.alpha, r.sigma, r.weight);
+        T += e.energy;
+        raw_grad_u[r.i] += e.dE_dr;
     }
 
     // Assemble flat gradient vector.
@@ -1028,6 +1072,7 @@ RefineConfig BFactorOccRefinerThread::build_effective_config_(
         r.j      = resolve(rspec.atoms2[k], rspec.altlocs2[k]);
         r.weight = rspec.weights[k];
         r.sigma  = rspec.sigmas[k];
+        r.alpha  = (k < rspec.alphas.size()) ? rspec.alphas[k] : 1.0;
         eff.b_restraints.push_back(r);
     }
 
@@ -1039,6 +1084,7 @@ RefineConfig BFactorOccRefinerThread::build_effective_config_(
         r.target_u = tspec.target_us[k];
         r.weight   = tspec.weights[k];
         r.sigma    = tspec.sigmas[k];
+        r.alpha    = (k < tspec.alphas.size()) ? tspec.alphas[k] : 1.0;
         eff.b_target_restraints.push_back(r);
     }
 
@@ -1148,10 +1194,12 @@ std::pair<double, double> BFactorOccRefiner::compute_rfactors()
         }
     }
 
-    // Isotropic scale k = Σ(m|Fo||Fc|) / Σ|Fc|²  (all non-missing).
+    // Isotropic scale k = Σ(m|Fo||Fc|) / Σ|Fc|²  (working set only, flag != 0)
+    // so the reported R-factors use a scale that is not contaminated by the free set.
     ftype sum_cross = 0.0, sum_sq = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()) continue;
+        if (fobs_[ih].missing() || usage_[ih].missing()
+            || usage_[ih].flag() == 0) continue;
         ftype fc = fcalc_hkl_[ih].f();
         ftype fo = fobs_[ih].f();
         ftype m  = phi_fom_[ih].fom();

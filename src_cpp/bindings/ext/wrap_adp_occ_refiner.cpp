@@ -93,6 +93,43 @@ void declare_refine_config(py::module& m)
         ;
 }
 
+// ---------------------------------------------------------------------------
+// Restraint specs cross the binding as a single Python tuple per group (rather
+// than many parallel-array arguments) so each bound method's argument count stays
+// well under MSVC's pybind11 template-instantiation ceiling (C1202 with the v141
+// toolset).  None → no restraints; a trailing `alphas` element is optional
+// (omitted → the engine defaults each restraint to the Charbonnier shape α=1).
+//   pairwise tuple : (atoms1, altlocs1, atoms2, altlocs2, sigmas, ks[, alphas])
+//   target tuple   : (atoms,  altlocs,  target_us,        sigmas, ks[, alphas])
+static cx::BFactorRestraintSpec parse_pairwise_restraints(py::object o)
+{
+    cx::BFactorRestraintSpec s;
+    if (o.is_none()) return s;
+    py::sequence t = o.cast<py::sequence>();
+    s.atoms1   = t[0].cast<std::vector<int>>();
+    s.altlocs1 = t[1].cast<std::vector<std::string>>();
+    s.atoms2   = t[2].cast<std::vector<int>>();
+    s.altlocs2 = t[3].cast<std::vector<std::string>>();
+    s.sigmas   = t[4].cast<std::vector<double>>();
+    s.weights  = t[5].cast<std::vector<double>>();
+    if (py::len(t) > 6) s.alphas = t[6].cast<std::vector<double>>();
+    return s;
+}
+
+static cx::BFactorTargetRestraintSpec parse_target_restraints(py::object o)
+{
+    cx::BFactorTargetRestraintSpec s;
+    if (o.is_none()) return s;
+    py::sequence t = o.cast<py::sequence>();
+    s.atoms     = t[0].cast<std::vector<int>>();
+    s.altlocs   = t[1].cast<std::vector<std::string>>();
+    s.target_us = t[2].cast<std::vector<double>>();
+    s.sigmas    = t[3].cast<std::vector<double>>();
+    s.weights   = t[4].cast<std::vector<double>>();
+    if (py::len(t) > 5) s.alphas = t[5].cast<std::vector<double>>();
+    return s;
+}
+
 void declare_adp_occ_refiner(py::module& m)
 {
     using Class = cx::BFactorOccRefinerThread;
@@ -106,9 +143,11 @@ void declare_adp_occ_refiner(py::module& m)
         // map manager.  When provided, F_bulk = F_total_init - F_atoms_init is
         // derived once on the background thread and added to F_atoms at each step,
         // giving a gradient that correctly accounts for bulk-solvent contribution.
-        // Pairwise B-factor restraints are supplied as parallel arrays indexed
-        // into the input ChimeraX atom array, each endpoint qualified by an
-        // altloc string ("" = no altloc); C++ resolves them to Clipper indices.
+        // Pairwise B-factor restraints are supplied as a single Python tuple
+        // `restraints` (or None) — see parse_pairwise_restraints above for its
+        // shape.  Indices reference the input ChimeraX atom array, each endpoint
+        // qualified by an altloc string ("" = no altloc); C++ resolves them to
+        // Clipper indices.
         .def("launch",
             [](Class& self,
                std::vector<uintptr_t>                   cx_ptrs,
@@ -117,21 +156,13 @@ void declare_adp_occ_refiner(py::module& m)
                const HKL_data<Flag>&                    usage,
                bool                                     ignore_hydrogens,
                const HKL_data<F_phi<ftype32>>&          fcalc_total,
-               std::vector<int>                         r_atoms1,
-               std::vector<std::string>                 r_altlocs1,
-               std::vector<int>                         r_atoms2,
-               std::vector<std::string>                 r_altlocs2,
-               std::vector<double>                      r_sigmas,
-               std::vector<double>                      r_ks)
+               py::object                               restraints)
             {
                 auto result =
                     clipper_cx::bridge::clipper_atoms_from_cx_atoms_with_map(
                         (atomstruct::Atom**)cx_ptrs.data(),
                         cx_ptrs.size(), ignore_hydrogens);
-                cx::BFactorRestraintSpec rspec{
-                    std::move(r_atoms1), std::move(r_altlocs1),
-                    std::move(r_atoms2), std::move(r_altlocs2),
-                    std::move(r_sigmas), std::move(r_ks)};
+                cx::BFactorRestraintSpec rspec = parse_pairwise_restraints(restraints);
                 self.launch(result.first, result.second, fobs, phi_fom, usage,
                             ignore_hydrogens, fcalc_total, rspec);
             },
@@ -141,12 +172,7 @@ void declare_adp_occ_refiner(py::module& m)
             py::arg("usage"),
             py::arg("ignore_hydrogens") = false,
             py::arg("fcalc_total") = HKL_data<F_phi<ftype32>>(),
-            py::arg("r_atoms1")  = std::vector<int>(),
-            py::arg("r_altlocs1") = std::vector<std::string>(),
-            py::arg("r_atoms2")  = std::vector<int>(),
-            py::arg("r_altlocs2") = std::vector<std::string>(),
-            py::arg("r_sigmas")  = std::vector<double>(),
-            py::arg("r_ks")      = std::vector<double>())
+            py::arg("restraints")  = py::none())
 
         // Write refined B-factors and occupancies back to ChimeraX atoms via
         // the stored (Atom*, altloc, index) mapping.  Must be called from the
@@ -157,9 +183,10 @@ void declare_adp_occ_refiner(py::module& m)
         // context_ptrs: additional atoms contributing to ρ_calc but not refined.
         // target_map: P1 Xmap (built Python-side from the ChimeraX Volume subregion).
         // target_origin: Coord_orth giving the P1 cell origin in the original frame.
-        // Restraints are supplied as parallel arrays indexed into the input
-        // refined_atoms array, each endpoint qualified by an altloc string
-        // ("" = no altloc): pairwise (r_*) and one-sided target (tr_*).  C++
+        // Restraints are supplied as single Python tuples (or None): `restraints`
+        // (pairwise) and `target_restraints` (one-sided) — see the parse helpers
+        // above for their shapes.  Indices reference the input refined_atoms array,
+        // each endpoint qualified by an altloc string ("" = no altloc); C++
         // resolves them to Clipper indices.
         .def("launch_realspace",
             [](Class& self,
@@ -168,17 +195,8 @@ void declare_adp_occ_refiner(py::module& m)
                const Xmap<ftype32>&      target_map,
                const Coord_orth&         target_origin,
                bool                      ignore_hydrogens,
-               std::vector<int>          r_atoms1,
-               std::vector<std::string>  r_altlocs1,
-               std::vector<int>          r_atoms2,
-               std::vector<std::string>  r_altlocs2,
-               std::vector<double>       r_sigmas,
-               std::vector<double>       r_ks,
-               std::vector<int>          tr_atoms,
-               std::vector<std::string>  tr_altlocs,
-               std::vector<double>       tr_target_us,
-               std::vector<double>       tr_sigmas,
-               std::vector<double>       tr_ks)
+               py::object                restraints,
+               py::object                target_restraints)
             {
                 auto refined_result =
                     clipper_cx::bridge::clipper_atoms_from_cx_atoms_with_map(
@@ -187,13 +205,8 @@ void declare_adp_occ_refiner(py::module& m)
                 auto context_atoms = clipper_cx::bridge::clipper_atoms_from_cx_atoms(
                     (atomstruct::Atom**)context_ptrs.data(),
                     context_ptrs.size(), ignore_hydrogens);
-                cx::BFactorRestraintSpec rspec{
-                    std::move(r_atoms1), std::move(r_altlocs1),
-                    std::move(r_atoms2), std::move(r_altlocs2),
-                    std::move(r_sigmas), std::move(r_ks)};
-                cx::BFactorTargetRestraintSpec tspec{
-                    std::move(tr_atoms), std::move(tr_altlocs),
-                    std::move(tr_target_us), std::move(tr_sigmas), std::move(tr_ks)};
+                cx::BFactorRestraintSpec rspec = parse_pairwise_restraints(restraints);
+                cx::BFactorTargetRestraintSpec tspec = parse_target_restraints(target_restraints);
                 self.launch_realspace(refined_result.first, refined_result.second,
                                       context_atoms, target_map, target_origin,
                                       ignore_hydrogens, rspec, tspec);
@@ -203,17 +216,8 @@ void declare_adp_occ_refiner(py::module& m)
             py::arg("target_map"),
             py::arg("target_origin"),
             py::arg("ignore_hydrogens") = false,
-            py::arg("r_atoms1")    = std::vector<int>(),
-            py::arg("r_altlocs1")  = std::vector<std::string>(),
-            py::arg("r_atoms2")    = std::vector<int>(),
-            py::arg("r_altlocs2")  = std::vector<std::string>(),
-            py::arg("r_sigmas")    = std::vector<double>(),
-            py::arg("r_ks")        = std::vector<double>(),
-            py::arg("tr_atoms")    = std::vector<int>(),
-            py::arg("tr_altlocs")  = std::vector<std::string>(),
-            py::arg("tr_target_us")= std::vector<double>(),
-            py::arg("tr_sigmas")   = std::vector<double>(),
-            py::arg("tr_ks")       = std::vector<double>())
+            py::arg("restraints")        = py::none(),
+            py::arg("target_restraints") = py::none())
 
         // Compute R-work and R-free from the current refined parameters.
         // Runs one extra EDcalc + FFT; only meaningful for the crystallographic
