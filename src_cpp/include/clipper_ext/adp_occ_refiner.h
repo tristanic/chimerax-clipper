@@ -95,7 +95,7 @@ public:
                 const HKL_data<Phi_fom<ftype32>>&         phi_fom,
                 const HKL_data<Flag>&                     usage,
                 bool                                      ignore_hydrogens = false,
-                const HKL_data<F_phi<ftype32>>&           fcalc_total
+                const HKL_data<F_phi<ftype32>>&           f_bulk
                     = HKL_data<F_phi<ftype32>>(),
                 const BFactorRestraintSpec&               restraint_spec
                     = BFactorRestraintSpec());

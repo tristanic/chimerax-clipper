@@ -19,10 +19,23 @@
 // and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 // of these is redistributed under its own license terms.
 
+// C4251: exporting SFcalc_obs_bulk_vdw<T> (CLIPPER_CX_IMEX) with HKL_data members
+// warns on MSVC; the members are correct (see CLAUDE.md gotcha #7).
+#pragma warning(disable: 4251)
+
 #include "sfcalc_obs_vdw.h"
 #include "edcalc_ext.h"
 #include "scaling.h"
 #include "util.h"
+
+#include <algorithm>
+#include <cmath>
+
+// Eigen + LBFGSpp for the joint 2-D bulk-solvent optimisation (same in-tree
+// dependencies the ADP/occ refiner uses; sfcalc_obs_vdw.cpp compiles into the
+// same clipper_cx library, so the include dirs are already present).
+#include <Eigen/Core>
+#include <LBFGSB.h>
 
 using namespace clipper;
 using namespace clipper::datatypes;
@@ -47,95 +60,149 @@ private:
 };
 
 
-template<class T>
-T optimize_k_sol(HKL_data<datatypes::F_phi<T>>& fphi,
-        const HKL_data<datatypes::F_phi<T>>& fphi_atom,
-        const HKL_data<datatypes::F_phi<T>>& fphi_mask,
-        const HKL_data<datatypes::F_sigF<T>>& fsig,
-        const HKL_info& hkls,
-        std::vector<ftype>& params, T k, T dk, T& min_r,
-        const T& tolerance)
+// Smooth, NORMALISED least-squares residual on intensities — the differentiable
+// analogue of quick_r (which sums |·| and so is non-smooth).  S(h) = rfn.f(ih)
+// is the fitted anisotropic-Gaussian scale.  The result is the dimensionless
+// ratio Σ(Fc²/S − Fo²)² / Σ(Fo²)² (an R²-like quantity, O(0.01)); the
+// normalisation is essential so the L-BFGS-B gradient is well-scaled —
+// un-normalised intensity residuals reach ~1e16 and blow the optimiser up.
+template <class T>
+double quick_lsq(const HKL_data<F_phi<T>>& fcalc, const HKL_data<F_sigF<T>>& fobs,
+    const ResolutionFn& rfn)
 {
-    std::cout << "Recalculating bulk solvent B-factor and scale..." << std::endl;
-    // try some different scale factors
-    BasisFn_aniso_gaussian basisfn;
-    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
-    T x1 = k, dx = dk, x;
-    ftype y[3] = { 0.0, 0.0, 0.0 };
-    for ( int i = 0; i < 8; i++ ) {
-      // take 3 samples of function
-      for ( int d = -1; d <= 1; d++ ) if ( y[d+1] == 0.0 ) {
-        x = x1 + T(d)*dx;
-        x = (x < 0 ? 0.0 : x);
-        fphi.compute(fphi_atom, fphi_mask, Compute_add_scaled_fphi<T>(x));
-        ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 10.0, false, tolerance);
-        try {
-            auto r = quick_r(fphi, fsig, rfn);
-            y[d+1] = r;
-            if (r < min_r)
-            {
-                params = rfn.params();
-                min_r = r;
-            }
-        } catch (std::runtime_error&) {
-            y[d+1] = std::numeric_limits<ftype>::infinity();
+    double num = 0.0, den = 0.0;
+    for ( auto ih = fobs.first(); !ih.last(); ih.next() )
+    {
+        if ( !fobs[ih].missing() && !fcalc[ih].missing() ) {
+            const double eps = ih.hkl_class().epsilon();
+            const double s   = rfn.f(ih);
+            if (!(s > 0.0)) continue;                       // skip s<=0 or NaN
+            const double f1 = pow(fcalc[ih].f(), 2.0)/eps / s;
+            const double f2 = pow(fobs[ih].f(),  2.0)/eps;
+            if (!std::isfinite(f1) || !std::isfinite(f2)) continue;
+            const double d  = f1 - f2;
+            num += d * d;
+            den += f2 * f2;
         }
-      }
-      // find minimum of current 3 samples
-      if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; x1 -= dx; }
-      else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; x1 += dx; }
-      x1 = (x1 < 0 ? 0.0 : x1 );
-      // reduce step and search again
-      y[0] = y[2] = 0.0;
-      dx /= 2.0;
     }
-    return x1;
-
+    if (!(den > 0.0)) return 1.0e6;     // no usable data → large finite penalty
+    return num / den;
 }
 
+// L-BFGS-B objective for the bulk-solvent solve over x = [k_sol, mask_U] at a
+// FIXED anisotropic-Gaussian scale (set via set_scale).  Keeping the scale fixed
+// during the (k, U) optimisation removes the throw-prone nonlinear scale fit from
+// the line search (the driver alternates scale-fit and (k, U)-optimise — block
+// coordinate descent).  Objective = the normalised smooth LSQ (quick_lsq), with
+// a finite-difference gradient; correct to first order near each iterate by the
+// envelope theorem, exact at self-consistency.
 template <class T>
-T optimize_b_sol(HKL_data<datatypes::F_phi<T>>& fphi,
+class BulkSolventObjective
+{
+public:
+    BulkSolventObjective(HKL_data<F_phi<T>>& fphi,
+                         const HKL_data<F_phi<T>>& fphi_atom,
+                         const HKL_data<F_phi<T>>& fphi_mask,
+                         const HKL_data<F_sigF<T>>& fsig,
+                         const HKL_info& hkls, const Cell& cell)
+        : fphi_(fphi), fphi_atom_(fphi_atom), fphi_mask_(fphi_mask), fsig_(fsig),
+          mask_final_(hkls, cell)
+    {}
+
+    //! Set the (already-fitted) scale held fixed during the next minimize().
+    void set_scale(const ResolutionFn* rfn) { rfn_ = rfn; }
+
+    //! Assemble F_total = F_atoms + k·exp(-ua)·F_mask into fphi_ at (k, ua).
+    void assemble(double k, double ua)
+    {
+        mask_final_.compute(fphi_mask_,
+            datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, -ua));
+        fphi_.compute(fphi_atom_, mask_final_, Compute_add_scaled_fphi<T>((T)k));
+    }
+
+    double operator() (const Eigen::VectorXd& x, Eigen::VectorXd& grad)
+    {
+        const double k = x[0], ua = x[1];
+        const double f0 = eval_(k, ua);
+        const double dk  = 1.0e-3;
+        const double dua = Util::b2u(1.0);
+        grad[0] = (eval_(k+dk, ua) - eval_(k-dk, ua)) / (2.0*dk);
+        grad[1] = (eval_(k, ua+dua) - eval_(k, ua-dua)) / (2.0*dua);
+        if (!std::isfinite(f0) || !std::isfinite(grad[0]) || !std::isfinite(grad[1])) {
+            grad[0] = grad[1] = 0.0;
+            return 1.0e6;
+        }
+        return f0;
+    }
+
+private:
+    double eval_(double k, double ua)
+    {
+        assemble(k, ua);
+        return quick_lsq(fphi_, fsig_, *rfn_);
+    }
+    HKL_data<F_phi<T>>&        fphi_;
+    const HKL_data<F_phi<T>>&  fphi_atom_;
+    const HKL_data<F_phi<T>>&  fphi_mask_;
+    const HKL_data<F_sigF<T>>& fsig_;
+    HKL_data<F_phi<T>>         mask_final_;
+    const ResolutionFn*        rfn_ = nullptr;
+};
+
+// Joint least-squares optimisation of (k_sol, mask_U), warm-started from
+// (k_start, ua_start).  Alternates: (1) fit the aniso-Gaussian scale at the
+// current (k, U); (2) bounded L-BFGS-B over (k, U) at that fixed scale.  Repeats
+// to self-consistency.  Leaves `params` holding the final aniso-Gaussian scale.
+template <class T>
+void optimize_bulk_params(
+        HKL_data<datatypes::F_phi<T>>& fphi,
         const HKL_data<datatypes::F_phi<T>>& fphi_atom,
         const HKL_data<datatypes::F_phi<T>>& fphi_mask,
-        HKL_data<datatypes::F_phi<T>>& fphi_mask_final,
         const HKL_data<datatypes::F_sigF<T>>& fsig,
-        const HKL_info& hkls,
-        std::vector<ftype>& params, T k_sol, T ua1, T dua, T& min_r,
-        const T& tolerance)
+        const HKL_info& hkls, const Cell& cell,
+        std::vector<ftype>& params, ftype tolerance,
+        T k_start, T ua_start, T& k_out, T& ua_out)
 {
-    T ua;
-    BasisFn_aniso_gaussian basisfn;
-    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);
-    ftype y[3] = { 0.0, 0.0, 0.0 };
-    for (int i=0; i<8; ++i) {
-        for (int d=-1; d<=1; ++d ) if (y[d+1] == 0.0 ) {
-            ua = ua1+T(d)*dua;
-            fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua));
-            fphi.compute(fphi_atom, fphi_mask_final, Compute_add_scaled_fphi<T>(k_sol));
-            ResolutionFn_nonlinear rfn( hkls, basisfn, targetfn, params, 10.0, false, tolerance);
-            try {
-                auto r = quick_r(fphi, fsig, rfn);
-                y[d+1] = r;
-                if (r < min_r)
-                {
-                    params = rfn.params();
-                    min_r = r;
-                }
-            } catch (std::runtime_error&) {
-                y[d+1] = std::numeric_limits<ftype>::infinity();
-            }
+    BulkSolventObjective<T>    obj(fphi, fphi_atom, fphi_mask, fsig, hkls, cell);
+    BasisFn_aniso_gaussian     basisfn;
+    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);   // reads fphi (assembled below)
+
+    LBFGSpp::LBFGSBParam<double> p;
+    p.epsilon        = 1e-3;
+    p.max_iterations = 20;
+    p.past           = 2;       // stop when the objective stops improving
+    p.delta          = 1e-4;
+    LBFGSpp::LBFGSBSolver<double> solver(p);
+
+    Eigen::VectorXd x(2), lb(2), ub(2);
+    lb[0] = 0.0;                 ub[0] = 2.0;                 // k_sol
+    lb[1] = Util::b2u(-50.0);    ub[1] = Util::b2u(200.0);    // additional mask U
+    x[0] = std::min(std::max((double)k_start,  lb[0]), ub[0]);
+    x[1] = std::min(std::max((double)ua_start, lb[1]), ub[1]);
+
+    for (int outer = 0; outer < 4; ++outer) {
+        // (1) Fit the aniso scale at the current (k, U) (fphi assembled there).
+        obj.assemble(x[0], x[1]);
+        std::unique_ptr<ResolutionFn_nonlinear> rfn;
+        try {
+            rfn.reset(new ResolutionFn_nonlinear(hkls, basisfn, targetfn, params,
+                                                 10.0, false, tolerance));
+            params = rfn->params();
+        } catch (const std::exception&) {
+            if (!rfn) break;   // cannot fit a scale at all → keep current (k, U)
         }
-        // find minimum of current 3 samples
-        if      ( y[0] < y[1] && y[0] < y[2] ) { y[1] = y[0]; ua1 -= dua; }
-        else if ( y[2] < y[1] && y[2] < y[0] ) { y[1] = y[2]; ua1 += dua; }
-        //else params = working_params;
-        // reduce step and search again
-        y[0] = y[2] = 0.0;
-        dua /= 2.0;
+        obj.set_scale(rfn.get());
 
+        // (2) L-BFGS-B over (k, U) at the fixed scale.
+        Eigen::VectorXd xprev = x;
+        double fx = 0.0;
+        try { solver.minimize(obj, x, fx, lb, ub); }
+        catch (const std::exception&) { /* iteration cap — keep current x */ }
+
+        if ((x - xprev).norm() < 1.0e-4) break;   // self-consistent
     }
-    return ua1;
-
+    k_out  = (T)x[0];
+    ua_out = (T)x[1];
 }
 
 template<class T>
@@ -224,41 +291,60 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   fphi_atom.set_data(HKL(0,0,0), datatypes::F_phi<T>());
   fphi_mask.set_data(HKL(0,0,0), datatypes::F_phi<T>());
 
+  // Retain the (smoothed) solvent-mask transform as a first-class object.
+  fmask_ = fphi_mask;
+
   if (bulk_solvent_optimization_needed_)
   {
-      T x1 = 0.35;
-      // HKL_info selected_hkls = select_random_reflections(fsig, 5000);
       HKL_info selected_hkls = select_random_reflections_in_bins(fsig, 500, 20);
       auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
       auto fphi_mask_temp = reflection_subset(fphi_mask, selected_hkls);
       auto fsig_temp = reflection_subset(fsig, selected_hkls);
       auto fphi_temp = reflection_subset(fphi, selected_hkls);
-      auto fphi_mask_final_temp = HKL_data<F_phi<T> >(selected_hkls, cell);
 
       T sum_fobs=0, tolerance=0;
       for (auto ih=fsig_temp.first_data(); !ih.last(); fsig_temp.next_data(ih))
         sum_fobs += fsig_temp[ih].f();
       tolerance = tolerance_frac_*sum_fobs;
 
-      T min_r;
-      fphi_temp.compute(fphi_atom_temp, fphi_mask_temp, Compute_add_scaled_fphi<T>(0.5));
-      *params_ = guess_initial_aniso_gaussian_params(fsig_temp, fphi_temp, min_r);
-      x1 = optimize_k_sol<T>(fphi_temp, fphi_atom_temp, fphi_mask_temp, fsig_temp, selected_hkls, *params_, x1, x1, min_r, tolerance);
-      auto ua1 = optimize_b_sol<T>(fphi_temp, fphi_atom_temp, fphi_mask_temp, fphi_mask_final_temp, fsig_temp, selected_hkls, *params_, x1, Util::b2u(0), Util::b2u(50), min_r, tolerance);
-      // adopt final scale and B-factor
-      bulk_u = ua1;
-      bulkscl = x1;
-      std::cout << "Final solvent B-factor: " << Util::u2b(u_mask + ua1) << " scale: " << x1 << std::endl;
-      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >(1.0, -ua1));
+      T k_start, ua_start;
+      if (!bulk_solvent_ever_optimized_) {
+          // Cold start: seed the aniso-Gaussian params and the (k_sol, U) guess.
+          T min_r;
+          fphi_temp.compute(fphi_atom_temp, fphi_mask_temp, Compute_add_scaled_fphi<T>(0.5));
+          *params_ = guess_initial_aniso_gaussian_params(fsig_temp, fphi_temp, min_r);
+          k_start = 0.35; ua_start = Util::b2u(0);
+      } else {
+          // Warm start from the previous solve (params_ already populated).
+          k_start = bulkscl; ua_start = bulk_u;
+      }
+
+      T k_opt, ua_opt;
+      optimize_bulk_params<T>(fphi_temp, fphi_atom_temp, fphi_mask_temp, fsig_temp,
+                              selected_hkls, cell, *params_, tolerance,
+                              k_start, ua_start, k_opt, ua_opt);
+      bulkscl = k_opt;
+      bulk_u  = ua_opt;
+      bulk_solvent_ever_optimized_ = true;
+      std::cout << "Bulk solvent B-factor: " << Util::u2b(u_mask + bulk_u)
+                << " scale: " << bulkscl << std::endl;
       bulk_solvent_optimization_needed_ = false;
-  } else {
-      // Just use the stored values
-      fphi_mask_final.compute(fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, -bulk_u));
   }
+  fphi_mask_final.compute(fphi_mask,
+      datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, -bulk_u));
+
+  // Assemble F_total = F_atoms + k_sol·F_mask_final, capturing the bulk
+  // contribution F_bulk = k_sol·F_mask_final as a first-class object.
+  fbulk_ = HKL_data<F_phi<T> >(hkls, cell);
   for ( HKL_data<data32::F_phi>::HKL_reference_index ih = fphi.first();
         !ih.last(); ih.next() )
+  {
+    if (!fphi_mask_final[ih].missing())
+        fbulk_.set_data(ih.hkl(),
+            F_phi<T>(bulkscl * std::complex<T>(fphi_mask_final[ih])));
     fphi[ih] = std::complex<T>(fphi_atom[ih]) +
           bulkscl * std::complex<T>(fphi_mask_final[ih]);
+  }
 
   // store stats
   ftype64 w, s0 = 0.0, s1 = 0.0;

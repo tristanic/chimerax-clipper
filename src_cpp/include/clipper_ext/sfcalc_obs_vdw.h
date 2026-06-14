@@ -47,19 +47,29 @@ public:
         const Atom_list& atoms, std::vector<ftype>& params, const T tolerance);
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
             const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms );
-    const ftype& bulk_frac() const { return bulkfrc; }
-    const ftype& bulk_scale() const { return bulkscl; }
+    const T& bulk_frac() const { return bulkfrc; }
+    const T& bulk_scale() const { return bulkscl; }
+    //! Bulk-solvent structure factors from the most recent operator() call.
+    //! f_mask: FFT of the (smoothed) solvent mask.
+    //! f_bulk: the additive bulk contribution k_sol·exp(-B_sol)·F_mask, so that
+    //! F_total = F_atoms + f_bulk.  Both are empty until operator() has run.
+    const HKL_data<F_phi<T>>& f_mask() const { return fmask_; }
+    const HKL_data<F_phi<T>>& f_bulk() const { return fbulk_; }
     const size_t& n_threads() const { return nthreads; }
     void set_n_threads(size_t n) { nthreads=n; }
     //! If called, then the bulk solvent scale and B-factor will be re-optimised on the next run.
     void set_bulk_solvent_optimization_needed() { bulk_solvent_optimization_needed_ = true; }
 private:
     bool bulk_solvent_optimization_needed_ = true;
+    //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
+    //! from the stored (bulkscl, bulk_u) rather than cold-starting.
+    bool bulk_solvent_ever_optimized_ = false;
     std::vector<ftype> *const params_;
     size_t nthreads;
     T bulkfrc, bulkscl;
     T bulk_u;
     T tolerance_frac_;
+    HKL_data<F_phi<T>> fmask_, fbulk_;
 }; // class SFcalc_obs_bulk_vdw
 
 

@@ -835,6 +835,22 @@ Xtal_thread_mgr::fcalc()
 }
 
 HKL_data<F_phi<ftype32>>
+Xtal_thread_mgr::fbulk()
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    return mgr_->fbulk();
+}
+
+HKL_data<F_phi<ftype32>>
+Xtal_thread_mgr::fmask()
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    return mgr_->fmask();
+}
+
+HKL_data<F_phi<ftype32>>
 Xtal_thread_mgr::scaled_fcalc()
 {
     deletion_guard();

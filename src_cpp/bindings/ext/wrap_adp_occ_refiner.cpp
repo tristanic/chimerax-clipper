@@ -139,10 +139,10 @@ void declare_adp_occ_refiner(py::module& m)
 
         // Launch refinement.  Uses clipper_atoms_from_cx_atoms_with_map so that
         // per-altloc results can be written back correctly by apply_to_atoms().
-        // fcalc_total: optional total F_calc (atoms + bulk solvent) from the live
-        // map manager.  When provided, F_bulk = F_total_init - F_atoms_init is
-        // derived once on the background thread and added to F_atoms at each step,
-        // giving a gradient that correctly accounts for bulk-solvent contribution.
+        // f_bulk: optional bulk-solvent contribution (Xtal_mgr::f_bulk) from the
+        // live map manager.  When provided it is held fixed and added to
+        // F_atoms(current U) at each step, so the gradient correctly accounts for
+        // the bulk-solvent contribution.
         // Pairwise B-factor restraints are supplied as a single Python tuple
         // `restraints` (or None) — see parse_pairwise_restraints above for its
         // shape.  Indices reference the input ChimeraX atom array, each endpoint
@@ -155,7 +155,7 @@ void declare_adp_occ_refiner(py::module& m)
                const HKL_data<Phi_fom<ftype32>>&        phi_fom,
                const HKL_data<Flag>&                    usage,
                bool                                     ignore_hydrogens,
-               const HKL_data<F_phi<ftype32>>&          fcalc_total,
+               const HKL_data<F_phi<ftype32>>&          f_bulk,
                py::object                               restraints)
             {
                 auto result =
@@ -164,14 +164,14 @@ void declare_adp_occ_refiner(py::module& m)
                         cx_ptrs.size(), ignore_hydrogens);
                 cx::BFactorRestraintSpec rspec = parse_pairwise_restraints(restraints);
                 self.launch(result.first, result.second, fobs, phi_fom, usage,
-                            ignore_hydrogens, fcalc_total, rspec);
+                            ignore_hydrogens, f_bulk, rspec);
             },
             py::arg("atoms"),
             py::arg("fobs"),
             py::arg("phi_fom"),
             py::arg("usage"),
             py::arg("ignore_hydrogens") = false,
-            py::arg("fcalc_total") = HKL_data<F_phi<ftype32>>(),
+            py::arg("f_bulk") = HKL_data<F_phi<ftype32>>(),
             py::arg("restraints")  = py::none())
 
         // Write refined B-factors and occupancies back to ChimeraX atoms via

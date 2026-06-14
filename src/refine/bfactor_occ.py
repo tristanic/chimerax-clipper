@@ -220,7 +220,7 @@ class BFactorOccRefineManager:
                 f'structure (got {len(_structures)}).')
         self._target_structure = _structures[0]
 
-        fobs, phi_fom, usage, f_calc = self._get_hkl_data()
+        fobs, phi_fom, usage, f_bulk = self._get_hkl_data()
         self._atoms = atoms
         _validate_occ_groups(atoms, self._config)
 
@@ -330,7 +330,7 @@ class BFactorOccRefineManager:
         delayed_reaction(
             self._session.triggers, 'new frame',
             _timed_launch,
-            [atoms.pointers, fobs, phi_fom, usage, ignore_hydrogens, f_calc,
+            [atoms.pointers, fobs, phi_fom, usage, ignore_hydrogens, f_bulk,
              b_restraints],
             self._thread_mgr.ready,
             self._apply_results, []
@@ -636,10 +636,13 @@ class BFactorOccRefineManager:
 
     def _get_hkl_data(self):
         """
-        Return (fobs, phi_fom, usage) from the live map manager.
+        Return (fobs, phi_fom, usage, f_bulk) from the live map manager.
 
-        Fetched fresh on every launch() call so that updated sigma_A weights
-        (phi_fom.fom()) from the most recent map recalculation are used.
+        f_bulk is the bulk-solvent contribution (F_total = F_atoms + f_bulk),
+        held fixed during refinement and added to the calculated F_atoms each
+        cycle.  Fetched fresh on every launch() call so that updated sigma_A
+        weights (phi_fom.fom()) and bulk-solvent model from the most recent map
+        recalculation are used.
 
         Raises NotImplementedError for NXmapSet (no crystallographic data).
         Raises RuntimeError if no live map manager is available.
@@ -656,7 +659,7 @@ class BFactorOccRefineManager:
                 'No live map manager is available on the XmapSet. '
                 'B-factor refinement requires a live (Xtal_thread_mgr) map set.')
 
-        return xm.f_obs, xm.weights, xm.usage_flags, xm.f_calc
+        return xm.f_obs, xm.weights, xm.usage_flags, xm.f_bulk
 
     def _compute_smart_tolerances(self, n_atoms, d_min,
                                    delta_factor=1.0, epsilon_factor=1.0):

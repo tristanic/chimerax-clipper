@@ -133,7 +133,7 @@ public:
                       const HKL_data<Phi_fom<ftype32>>& phi_fom,
                       const HKL_data<Flag>&             usage,
                       const RefineConfig&               cfg,
-                      const HKL_data<F_phi<ftype32>>&   fcalc_total
+                      const HKL_data<F_phi<ftype32>>&   f_bulk
                           = HKL_data<F_phi<ftype32>>());
 
     //! Real-space LS constructor (fixed P1 target density).
@@ -181,9 +181,8 @@ private:
     HKL_data<Flag>              usage_;
     Cell                        cell_;
     Grid_sampling               grid_sampling_;
-    // Crystallographic: optional total F_calc (atoms + bulk solvent) from the
-    // live map manager, used to derive F_bulk = F_total_init - F_atoms_init.
-    HKL_data<F_phi<ftype32>>    fcalc_total_init_;
+    // Crystallographic: bulk-solvent contribution F_bulk, supplied by the caller
+    // (Xtal_mgr::f_bulk) and added to F_atoms(current U) in operator().
     HKL_data<F_phi<ftype32>>    fbulk_hkl_;
     bool                        has_bulk_solvent_ = false;
     // Real-space only:
@@ -236,13 +235,17 @@ BFactorOccRefiner::BFactorOccRefiner(const Atom_list&                  atoms,
                                      const HKL_data<Phi_fom<ftype32>>& phi_fom,
                                      const HKL_data<Flag>&             usage,
                                      const RefineConfig&               cfg,
-                                     const HKL_data<F_phi<ftype32>>&   fcalc_total)
+                                     const HKL_data<F_phi<ftype32>>&   f_bulk)
     : atoms_(atoms), fobs_(fobs), phi_fom_(phi_fom), usage_(usage), cfg_(cfg)
 {
-    // Store the total F_calc (atoms + bulk solvent) for F_bulk derivation.
-    // A default-constructed HKL_data has num_obs()==0 and signals "not provided".
-    if (fcalc_total.num_obs() > 0)
-        fcalc_total_init_ = fcalc_total;
+    // Bulk-solvent contribution F_bulk, supplied directly by the crystal manager
+    // (Xtal_mgr::f_bulk).  A default-constructed HKL_data has num_obs()==0 and
+    // signals "no bulk solvent".  Held fixed across the refinement (the atoms do
+    // not move), so F_total = F_atoms(current U) + F_bulk at every step.
+    if (f_bulk.num_obs() > 0) {
+        fbulk_hkl_        = f_bulk;
+        has_bulk_solvent_ = true;
+    }
     init_derived();
 }
 
@@ -861,34 +864,9 @@ double BFactorOccRefiner::operator_realspace_(const Eigen::VectorXd& x, Eigen::V
 
 bool BFactorOccRefiner::refine()
 {
-    // -------------------------------------------------------------------------
-    // Derive F_bulk = F_total_init − F_atoms_init so that every operator() call
-    // can use F_total = F_atoms(current U) + F_bulk.  Runs once on the
-    // background thread; only active when a total F_calc was provided.
-    // -------------------------------------------------------------------------
-    if (!realspace_mode_ && fcalc_total_init_.num_obs() > 0 && !has_bulk_solvent_) {
-        Atom_list atomu_init = atoms_;
-        for (int j = 0; j < n_atoms_; ++j) {
-            if (atomu_init[j].is_null()) continue;
-            if (atomu_init[j].u_aniso_orth().is_null())
-                atomu_init[j].set_u_iso((ftype)current_u_iso_[j]);
-            atomu_init[j].set_occupancy((ftype)current_occ_[j]);
-        }
-        density_xmap_ = ftype32(0);
-        edcalc_(density_xmap_, atomu_init);
-        HKL_data<F_phi<ftype32>> fatoms_init(fobs_.base_hkl_info(), cell_);
-        density_xmap_.fft_to(fatoms_init, cfg_.n_threads);
-
-        fbulk_hkl_ = HKL_data<F_phi<ftype32>>(fobs_.base_hkl_info(), cell_);
-        for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-            if (fcalc_total_init_[ih].missing() || fatoms_init[ih].missing()) continue;
-            std::complex<ftype32> fb =
-                (std::complex<ftype32>)fcalc_total_init_[ih]
-              - (std::complex<ftype32>)fatoms_init[ih];
-            fbulk_hkl_.set_data(ih.hkl(), F_phi<ftype32>(fb));
-        }
-        has_bulk_solvent_ = true;
-    }
+    // F_bulk is supplied directly by the caller (Xtal_mgr::f_bulk) and stored in
+    // the constructor — no reconstruction needed here.  fbulk_hkl_ is added to
+    // F_atoms(current U) inside operator() when has_bulk_solvent_ is set.
 
     Eigen::VectorXd x, lb, ub;
     atoms_to_params(x);
@@ -932,7 +910,7 @@ void BFactorOccRefinerThread::launch(
     const HKL_data<Phi_fom<ftype32>>&           phi_fom,
     const HKL_data<Flag>&                       usage,
     bool                                        ignore_hydrogens,
-    const HKL_data<F_phi<ftype32>>&             fcalc_total,
+    const HKL_data<F_phi<ftype32>>&             f_bulk,
     const BFactorRestraintSpec&                 restraint_spec)
 {
     ready_             = false;
@@ -945,7 +923,7 @@ void BFactorOccRefinerThread::launch(
                                                restraint_spec,
                                                BFactorTargetRestraintSpec());
     refiner_.reset(new BFactorOccRefiner(atoms, fobs, phi_fom, usage, eff,
-                                          fcalc_total));
+                                          f_bulk));
     thread_result_ = std::async(std::launch::async,
                                 &BFactorOccRefinerThread::run_, this);
 }
