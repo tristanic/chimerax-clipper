@@ -280,32 +280,62 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   xmap.fft_to( fphi_atom, nthreads );
 
-  // do density calc from mask
+  // do density calc from mask.
+  //
+  // The solvent mask (hence its transform fphi_mask, and the mean solvent
+  // fraction bulkfrc) is a function of atom positions, elements and
+  // zero-occupancy status ONLY -- invariant to B-factor and occupancy-value
+  // changes.  When those mask-determining inputs are unchanged from the previous
+  // call (e.g. across B-factor/occupancy refinement macrocycles, where
+  // coordinates are fixed) reuse the cached transform fmask_ and skip a full
+  // EDcalc_mask + FFT -- roughly half the cost of this routine.
+  const uint64_t mask_sig = mask_signature(atoms);
+  const bool mask_reused = mask_cache_valid_ && (mask_sig == mask_signature_);
 
-  auto emcalc = EDcalc_mask_vdw<ftype32>();
-  emcalc.set_num_threads(nthreads);
-  emcalc( xmap, atoms );
-  for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
-        !ix.last(); ix.next() )
-    xmap[ix] = 1.0 - xmap[ix];
-  xmap.fft_to( fphi_mask, nthreads );
+  if ( !mask_reused )
+  {
+    auto emcalc = EDcalc_mask_vdw<ftype32>();
+    emcalc.set_num_threads(nthreads);
+    emcalc( xmap, atoms );
+    for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
+          !ix.last(); ix.next() )
+      xmap[ix] = 1.0 - xmap[ix];
 
+    // mean solvent fraction depends only on mask geometry -- compute it here,
+    // while xmap holds the (inverted) mask, and cache it via the bulkfrc member.
+    ftype64 w, s0 = 0.0, s1 = 0.0;
+    for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
+          !ix.last(); ix.next() ) {
+      w = 1.0/ftype64( xmap.multiplicity( ix ) );
+      s0 += w;
+      s1 += w*xmap[ix];
+    }
+    bulkfrc = s1/s0;
+
+    xmap.fft_to( fphi_mask, nthreads );
+    fphi_mask.compute( fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, -u_mask ) );
+    fphi_mask.set_data(HKL(0,0,0), datatypes::F_phi<T>());
+
+    // Cache the smoothed solvent-mask transform and its fingerprint for reuse.
+    fmask_ = fphi_mask;
+    mask_signature_ = mask_sig;
+    mask_cache_valid_ = true;
+  }
+
+  // Use the mask transform without copying it out of the persisted member:
+  // reference the cached fmask_ on reuse, otherwise the freshly-computed local.
+  const HKL_data<F_phi<T> >& mask = mask_reused ? fmask_ : fphi_mask;
 
   HKL_data<F_phi<T> > fphi_mask_final (hkls, cell);
 
-  fphi_mask.compute( fphi_mask, datatypes::Compute_scale_u_iso<datatypes::F_phi<T> >( 1.0, -u_mask ) );
   // set (0,0,0) term to null if it exists
   fphi_atom.set_data(HKL(0,0,0), datatypes::F_phi<T>());
-  fphi_mask.set_data(HKL(0,0,0), datatypes::F_phi<T>());
-
-  // Retain the (smoothed) solvent-mask transform as a first-class object.
-  fmask_ = fphi_mask;
 
   if (bulk_solvent_optimization_needed_)
   {
       HKL_info selected_hkls = select_random_reflections_in_bins(fsig, 500, 20);
       auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
-      auto fphi_mask_temp = reflection_subset(fphi_mask, selected_hkls);
+      auto fphi_mask_temp = reflection_subset(mask, selected_hkls);
       auto fsig_temp = reflection_subset(fsig, selected_hkls);
       auto fphi_temp = reflection_subset(fphi, selected_hkls);
 
@@ -336,7 +366,7 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
                 << " scale: " << bulkscl << std::endl;
       bulk_solvent_optimization_needed_ = false;
   }
-  fphi_mask_final.compute(fphi_mask,
+  fphi_mask_final.compute(mask,
       datatypes::Compute_scale_u_iso<datatypes::F_phi<T>>(1.0, -bulk_u));
 
   // Assemble F_total = F_atoms + k_sol·F_mask_final, capturing the bulk
@@ -352,17 +382,42 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
           bulkscl * std::complex<T>(fphi_mask_final[ih]);
   }
 
-  // store stats
-  ftype64 w, s0 = 0.0, s1 = 0.0;
-  for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
-        !ix.last(); ix.next() ) {
-    w = 1.0/ftype64( xmap.multiplicity( ix ) );
-    s0 += w;
-    s1 += w*xmap[ix];
-  }
-  bulkfrc = s1/s0;
+  // bulkfrc (mean solvent fraction) is computed alongside the mask above and
+  // cached in the member, so it persists across mask-reuse calls.
 
   return true;
+}
+
+template <class T>
+uint64_t SFcalc_obs_bulk_vdw<T>::mask_signature( const Atom_list& atoms ) const
+{
+  // 64-bit FNV-1a over exactly the inputs EDcalc_mask_vdw consumes: the atom
+  // count, and per non-null atom its orthogonal coordinates, element name and a
+  // zero-occupancy flag.  A moved atom, changed element, or occupancy crossing
+  // zero changes the hash and so invalidates the cached mask.  Returned by value
+  // as a plain integer (no heap allocation) so the cached member is safe across
+  // this exported class's DLL boundary.
+  uint64_t h = 1469598103934665603ull;            // FNV-1a offset basis
+  auto mix = [&h](const void* p, size_t n) {
+    const unsigned char* b = reinterpret_cast<const unsigned char*>(p);
+    for ( size_t i = 0; i < n; ++i ) { h ^= b[i]; h *= 1099511628211ull; }
+  };
+  const size_t n = atoms.size();
+  mix(&n, sizeof(n));
+  for ( const auto& a : atoms )
+  {
+    const unsigned char null_flag = a.is_null() ? 1 : 0;
+    mix(&null_flag, 1);
+    if ( null_flag ) continue;
+    const Coord_orth c = a.coord_orth();
+    const double xyz[3] = { c.x(), c.y(), c.z() };
+    mix(xyz, sizeof(xyz));
+    const String& el = a.element();
+    mix(el.c_str(), el.length());
+    const unsigned char occ_zero = (a.occupancy() == 0.0) ? 1 : 0;
+    mix(&occ_zero, 1);
+  }
+  return h;
 }
 
 // compile templates

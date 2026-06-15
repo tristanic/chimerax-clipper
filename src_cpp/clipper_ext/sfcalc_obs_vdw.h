@@ -22,6 +22,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <cstdint>
 
 #include <clipper/clipper.h>
 #include <clipper/clipper-contrib.h>
@@ -70,6 +71,23 @@ private:
     T bulk_u;
     T tolerance_frac_;
     HKL_data<F_phi<T>> fmask_, fbulk_;
+    //! Cache for the solvent-mask transform.  The mask (and hence fmask_, plus
+    //! the mean solvent fraction bulkfrc) is a function of atom positions,
+    //! elements and zero-occupancy status ONLY -- it is invariant to B-factor
+    //! and occupancy-value changes.  When those inputs are unchanged from the
+    //! previous call (e.g. across B-factor/occupancy refinement macrocycles,
+    //! where coordinates are fixed) the cached fmask_ is reused and a full
+    //! EDcalc_mask + FFT is skipped -- roughly half the cost of operator().
+    //! mask_signature_ fingerprints exactly those inputs; mask_cache_valid_
+    //! guards the first call.
+    bool mask_cache_valid_ = false;
+    //! 64-bit FNV-1a fingerprint of the mask-determining inputs (atom count, and
+    //! per-atom coordinates, element and zero-occupancy flag).  A plain integer
+    //! (not a heap-allocating std::string) so the member is trivially destructible
+    //! and safe across the DLL boundary of this CLIPPER_CX_IMEX-exported class.
+    uint64_t mask_signature_ = 0;
+    //! Compute the mask-determining fingerprint for `atoms`.
+    uint64_t mask_signature(const Atom_list& atoms) const;
 }; // class SFcalc_obs_bulk_vdw
 
 
