@@ -50,10 +50,29 @@ classifiers = ["Development Status :: 4 - Beta"]
   "**",
 ]
 
+# Public C++ headers shipped for downstream consumers (e.g. ISOLDE, third-party
+# CIFFile users).  This tree is AUTO-GENERATED from the canonical source headers at
+# build time (copied before compilation) — there is no hand-maintained duplicate.
+# One key per header directory: the destination key preserves the directory layout,
+# and the *.h glob selects headers only (excludes .cpp/Makefiles).  Adding a new dep
+# header subdirectory requires a new key here.
 [tool.chimerax.extra-files]
-"src/include" = [
-  "src_cpp/include/**"
-]
+"src/include/clipper_ext"      = ["src_cpp/clipper_ext/*.h"]
+"src/include/clipper"          = ["src_cpp/deps/clipper/*.h"]
+"src/include/clipper/ccp4"     = ["src_cpp/deps/clipper/ccp4/*.h"]
+"src/include/clipper/cctbx"    = ["src_cpp/deps/clipper/cctbx/*.h"]
+"src/include/clipper/cif"      = ["src_cpp/deps/clipper/cif/*.h"]
+"src/include/clipper/cns"      = ["src_cpp/deps/clipper/cns/*.h"]
+"src/include/clipper/contrib"  = ["src_cpp/deps/clipper/contrib/*.h"]
+"src/include/clipper/core"     = ["src_cpp/deps/clipper/core/*.h"]
+"src/include/clipper/examples" = ["src_cpp/deps/clipper/examples/*.h"]
+"src/include/clipper/minimol"  = ["src_cpp/deps/clipper/minimol/*.h"]
+"src/include/clipper/mmdb"     = ["src_cpp/deps/clipper/mmdb/*.h"]
+"src/include/clipper/mmdbold"  = ["src_cpp/deps/clipper/mmdbold/*.h"]
+"src/include/clipper/mtz"      = ["src_cpp/deps/clipper/mtz/*.h"]
+"src/include/clipper/phs"      = ["src_cpp/deps/clipper/phs/*.h"]
+"src/include/ccp4"             = ["src_cpp/deps/libccp4/ccp4/*.h"]
+"src/include/mmdb2"            = ["src_cpp/deps/mmdb2/mmdb2/*.h"]
 
 [[tool.chimerax.provider."data formats"]]
 name = "MTZ"
@@ -373,7 +392,6 @@ sources = [
 ]
 include-dirs = [
   "extern/pybind11/include",
-  "src_cpp/include",
 ]
 include-modules = [
   "chimerax.core",
@@ -412,7 +430,6 @@ sources = [
 ]
 include-dirs = [
   "extern/pybind11/include",
-  "src_cpp/include",
 ]
 include-modules = [
   "chimerax.core",
@@ -495,7 +512,7 @@ include-dirs = [
   "src_cpp/deps/libccp4",
   "src_cpp/deps/mmdb2",
   "src",
-  "src_cpp/include",
+  "src_cpp",
 ]
 library-dirs = [
   "src/lib",
