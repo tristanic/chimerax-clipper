@@ -306,6 +306,10 @@ Xtal_mgr_base::scaled_fcalc()
 
 } // scaled_fcalc
 
+// NOTE: scaled_fcalc_ / scaled_fobs_ are unused alternates — the live scaled_fcalc()
+// / scaled_fobs() above go through aniso_scale.h (now log-space).  These still use the
+// legacy non-log BasisFn_aniso_gaussian and the det<=0 warning; do not re-enable them
+// without migrating them to the log-space basis too.
 HKL_data<F_phi<ftype32>>
 Xtal_mgr_base::scaled_fcalc_(const HKL_data<F_phi<ftype32>>& fcalc,
     const HKL_data<F_sigF<ftype32>>& fobs, std::unique_ptr<BasisFn_base, BasisFn_Deleter>& basisfn)

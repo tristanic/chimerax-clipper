@@ -61,9 +61,10 @@ private:
 
 
 // Smooth, NORMALISED least-squares residual on intensities — the differentiable
-// analogue of quick_r (which sums |·| and so is non-smooth).  S(h) = rfn.f(ih)
-// is the fitted anisotropic-Gaussian scale.  The result is the dimensionless
-// ratio Σ(Fc²/S − Fo²)² / Σ(Fo²)² (an R²-like quantity, O(0.01)); the
+// analogue of quick_r (which sums |·| and so is non-smooth).  The scale is fitted
+// in LOG space, so fh = rfn.f(ih) ~ log(Io/Ic) and the intensity scale bringing
+// Fc² to Fo² is exp(fh).  The result is the dimensionless ratio
+// Σ(Fc²·exp(fh) − Fo²)² / Σ(Fo²)² (an R²-like quantity, O(0.01)); the
 // normalisation is essential so the L-BFGS-B gradient is well-scaled —
 // un-normalised intensity residuals reach ~1e16 and blow the optimiser up.
 template <class T>
@@ -75,9 +76,9 @@ double quick_lsq(const HKL_data<F_phi<T>>& fcalc, const HKL_data<F_sigF<T>>& fob
     {
         if ( !fobs[ih].missing() && !fcalc[ih].missing() ) {
             const double eps = ih.hkl_class().epsilon();
-            const double s   = rfn.f(ih);
-            if (!(s > 0.0)) continue;                       // skip s<=0 or NaN
-            const double f1 = pow(fcalc[ih].f(), 2.0)/eps / s;
+            const double fh  = rfn.f(ih);                   // log intensity scale
+            if (!std::isfinite(fh)) continue;
+            const double f1 = pow(fcalc[ih].f(), 2.0)/eps * std::exp(fh);
             const double f2 = pow(fobs[ih].f(),  2.0)/eps;
             if (!std::isfinite(f1) || !std::isfinite(f2)) continue;
             const double d  = f1 - f2;
@@ -164,8 +165,14 @@ void optimize_bulk_params(
         T k_start, T ua_start, T& k_out, T& ua_out)
 {
     BulkSolventObjective<T>    obj(fphi, fphi_atom, fphi_mask, fsig, hkls, cell);
-    BasisFn_aniso_gaussian     basisfn;
-    TargetFn_scaleFobsFcalc<T> targetfn(fsig, fphi);   // reads fphi (assembled below)
+    // Log-space anisotropic scale: log-Gaussian basis + log target → a LINEAR
+    // least-squares fit solved in one closed-form pass by a plain ResolutionFn
+    // (stable, no nonlinear convergence to throw mid line-search).  fh = rfn.f(ih)
+    // ~ log(Io/Ic); quick_lsq applies exp(fh) as the intensity scale.
+    BasisFn_log_aniso_gaussian basisfn;
+    TargetFn_scaleLogF1F2<F_phi<T>, F_sigF<T>> targetfn(fphi, fsig);  // reads fphi (assembled below)
+    if (params.size() != 7) params.assign(7, 0.0);
+    (void)tolerance;   // unused: the linear ResolutionFn fit has no tolerance knob
 
     LBFGSpp::LBFGSBParam<double> p;
     p.epsilon        = 1e-3;
@@ -181,12 +188,12 @@ void optimize_bulk_params(
     x[1] = std::min(std::max((double)ua_start, lb[1]), ub[1]);
 
     for (int outer = 0; outer < 4; ++outer) {
-        // (1) Fit the aniso scale at the current (k, U) (fphi assembled there).
+        // (1) Fit the (log-space, linear) aniso scale at the current (k, U)
+        //     (fphi assembled there).
         obj.assemble(x[0], x[1]);
-        std::unique_ptr<ResolutionFn_nonlinear> rfn;
+        std::unique_ptr<ResolutionFn> rfn;
         try {
-            rfn.reset(new ResolutionFn_nonlinear(hkls, basisfn, targetfn, params,
-                                                 10.0, false, tolerance));
+            rfn.reset(new ResolutionFn(hkls, basisfn, targetfn, params));
             params = rfn->params();
         } catch (const std::exception&) {
             if (!rfn) break;   // cannot fit a scale at all → keep current (k, U)
@@ -309,13 +316,12 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
       T k_start, ua_start;
       if (!bulk_solvent_ever_optimized_) {
-          // Cold start: seed the aniso-Gaussian params and the (k_sol, U) guess.
-          T min_r;
-          fphi_temp.compute(fphi_atom_temp, fphi_mask_temp, Compute_add_scaled_fphi<T>(0.5));
-          *params_ = guess_initial_aniso_gaussian_params(fsig_temp, fphi_temp, min_r);
+          // Cold start: the log-space aniso scale is a linear fit (no seeding
+          // needed), so just start params at zeros and the (k_sol, U) at defaults.
+          *params_ = std::vector<ftype>(7, 0.0);
           k_start = 0.35; ua_start = Util::b2u(0);
       } else {
-          // Warm start from the previous solve (params_ already populated).
+          // Warm start (k_sol, U) from the previous solve.
           k_start = bulkscl; ua_start = bulk_u;
       }
 
