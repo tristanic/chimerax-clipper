@@ -302,12 +302,30 @@ library-modules = [
 ]
 
 [tool.chimerax.library.clipper_cx.platform.win]
+# Eigen (>=5.0.1, vendored in extern/eigen) and LBFGSpp require C++14.  MSVC's
+# floor is already C++14 so /std:c++11 was a silent no-op here, but Clang/GCC
+# enforce it strictly — set C++14 explicitly so the standard matches on every
+# platform.  The bundle builder skips its default -std/-std: only when an
+# extension already supplies one (see bundle_builder_toml.py).
+extra-compile-args = [
+  "/std:c++14",
+]
 extra-link-args = [
   "/FORCE:MULTIPLE",
   "/IGNORE:4088"
 ]
 define-macros = [
   "NOMINMAX",
+]
+
+[tool.chimerax.library.clipper_cx.platform.mac]
+extra-compile-args = [
+  "-std=c++14",
+]
+
+[tool.chimerax.library.clipper_cx.platform.linux]
+extra-compile-args = [
+  "-std=c++14",
 ]
 
 [tool.chimerax.library._symmetry]
@@ -539,6 +557,11 @@ library-modules = [
 ]
 
 [tool.chimerax.extension.clipper_python.platform.win]
+# C++14 for Eigen/LBFGSpp (pulled in via clipper_ext/adp_occ_refiner.h) — see
+# the clipper_cx note above.
+extra-compile-args = [
+  "/std:c++14",
+]
 extra-link-args = [
   "/FORCE:MULTIPLE",
   "/IGNORE:4088"
@@ -549,6 +572,7 @@ define-macros = [
 
 [tool.chimerax.extension.clipper_python.platform.mac]
 extra-compile-args = [
+  "-std=c++14",
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
 ]
@@ -560,6 +584,7 @@ extra-link-args = [
 
 [tool.chimerax.extension.clipper_python.platform.linux]
 extra-compile-args = [
+  "-std=c++14",
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
 ]
