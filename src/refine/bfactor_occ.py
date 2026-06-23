@@ -128,7 +128,8 @@ class BFactorOccRefineManager:
                  b_min_resolution_factor=2.0,
                  n_threads=None,
                  log_level=None,
-                 rwork_tolerance=0.02):
+                 rfree_tolerance=0.02,
+                 gap_tolerance=0.07):
         self._session      = session
         self._sym_mgr      = symmetry_manager
         self._map_set      = map_set
@@ -137,8 +138,23 @@ class BFactorOccRefineManager:
         self._launch_time       = None        # set by timing wrapper in launch()
         self._rwork_before      = None        # R-work captured at launch() time
         self._rfree_before      = None        # R-free captured at launch() time
-        self._rwork_tolerance   = rwork_tolerance  # max allowed R-work increase
+        # Overfitting guards.  R-work is deliberately NOT guarded — a small R-work
+        # rise accompanied by an R-free fall is a *good* result.  The two guards
+        # target the two failure modes:
+        #   rfree_tolerance — max allowed per-run INCREASE in R-free (catches a
+        #     single bad cycle; an absolute R-free ceiling is meaningless since the
+        #     healthy value is wholly resolution-dependent).
+        #   gap_tolerance   — absolute CEILING on the R-free − R-work gap (catches
+        #     slow cumulative overfitting that a per-run check can't see).  Enforced
+        #     only when this run also *widens* the gap, so an already-overfit model
+        #     is never blocked from improving.  A fixed (not resolution-scaled)
+        #     ceiling keeps this engine-only; clients may pass a resolution-aware value.
+        # Set either to None to disable that guard.
+        self._rfree_tolerance   = rfree_tolerance
+        self._gap_tolerance     = gap_tolerance
         self._n_atoms_at_launch = 0           # passive length guard
+        self._evaluate_only     = False       # set per-launch; skips write-back + bail-out
+        self._last_rfactors     = None        # (rwork_before, rfree_before, rwork_after, rfree_after)
         self._cancel_results    = False       # set by proactive safety hooks
         self._watch_handles     = []          # (trigger_obj, handler) to clean up
         self._atoms             = None
@@ -174,7 +190,8 @@ class BFactorOccRefineManager:
                auto_tolerances=True,
                delta_tolerance_factor=1.0,
                epsilon_tolerance_factor=1.0,
-               b_restraints=None):
+               b_restraints=None,
+               evaluate_only=False):
         """
         Start a refinement cycle in the background.
 
@@ -205,6 +222,13 @@ class BFactorOccRefineManager:
         epsilon_tolerance_factor : float
             Multiplier on the auto-scaled lbfgs_epsilon.  Same semantics.
             Default 1.0.  Ignored when auto_tolerances=False.
+        evaluate_only : bool
+            If True, refine and compute the before/after R-factors (available
+            afterwards via last_rfactors / initial_rfactors / compute_rfactors)
+            but DO NOT write the result back to the model and DO NOT apply the
+            overfitting bail-out.  Intended for scoring trial settings (e.g. an
+            ISOLDE restraint-weight scan) without altering the structure, so
+            trials are independent.  Default False == normal write-back behaviour.
         """
         if self.thread_running:
             raise RuntimeError(
@@ -269,6 +293,8 @@ class BFactorOccRefineManager:
 
         # Passive guard: record atom count; bail in _apply_results() if it changes.
         self._n_atoms_at_launch = len(atoms)
+        self._evaluate_only     = evaluate_only
+        self._last_rfactors     = None
         self._cancel_results    = False
 
         # Proactive guards: cancel the running thread and log immediately if
@@ -343,6 +369,31 @@ class BFactorOccRefineManager:
     @property
     def ready(self):
         return self._thread_mgr is not None and self._thread_mgr.ready()
+
+    def initial_rfactors(self):
+        """Standard (R_work, R_free) at the INPUT parameters of the most recent
+        launch().  Crystallographic path only; blocks until the thread finishes,
+        so valid once ready() is True.  Returns (-1.0, -1.0) if no launch() has
+        created a thread yet."""
+        if self._thread_mgr is None:
+            return (-1.0, -1.0)
+        return self._thread_mgr.initial_rfactors()
+
+    def compute_rfactors(self):
+        """Standard (R_work, R_free) at the REFINED parameters of the most recent
+        launch().  Crystallographic path only; blocks until the thread finishes,
+        so valid once ready() is True.  Returns (-1.0, -1.0) if no launch() has
+        created a thread yet."""
+        if self._thread_mgr is None:
+            return (-1.0, -1.0)
+        return self._thread_mgr.compute_rfactors()
+
+    @property
+    def last_rfactors(self):
+        """The (rwork_before, rfree_before, rwork_after, rfree_after) tuple from
+        the most recent run, or None until a run has produced R-factors (i.e. an
+        evaluate_only run, or a normal run with an overfitting tolerance set)."""
+        return self._last_rfactors
 
     # ------------------------------------------------------------------
     # Internal
@@ -546,6 +597,10 @@ class BFactorOccRefineManager:
 
             self._atoms             = refined_atoms
             self._n_atoms_at_launch = len(refined_atoms)
+            # _apply_results is shared with launch(); reset so a prior
+            # crystallographic evaluate_only=True can't leak into this run.
+            self._evaluate_only     = False
+            self._last_rfactors     = None
             self._cancel_results    = False
             context_ptrs = (context_atoms.pointers.tolist()
                             if context_atoms is not None else [])
@@ -739,22 +794,64 @@ class BFactorOccRefineManager:
 
         mgr = self._thread_mgr
 
-        # Bail-out: compute R-factors from the REFINED parameters before
-        # touching the ChimeraX model.  If R-work increases beyond the
-        # tolerance, discard the results entirely.
-        if self._rwork_tolerance is not None and self._rwork_before is not None:
+        # Measure before/after R-factors when needed — either for the overfitting
+        # bail-out (a tolerance is set) or for evaluate_only scoring.  Compare with
+        # the SAME metric on both sides: the refiner's own initial_rfactors()
+        # (standard R at the input parameters) vs compute_rfactors() (standard R at
+        # the refined parameters).  Using the refiner for both makes the delta the
+        # true change, immune to the small scale-model offset between the refiner and
+        # the live map manager — and avoids the old FOM-weighted-vs-standard mismatch
+        # that spuriously tripped the guard on incomplete models.  Skipped entirely
+        # (no extra EDcalc+FFT) when neither a tolerance nor evaluate_only applies,
+        # preserving the original fast path.
+        self._last_rfactors = None
+        rwork_before = rfree_before = rwork_new = rfree_new = None
+        if (self._evaluate_only
+                or self._rfree_tolerance is not None
+                or self._gap_tolerance is not None):
             try:
+                rwork_before, rfree_before = mgr.initial_rfactors()
                 rwork_new, rfree_new = mgr.compute_rfactors()
-                delta_rw = rwork_new - self._rwork_before
-                if rwork_new > 0.0 and delta_rw > self._rwork_tolerance:
-                    self._session.logger.warning(
-                        f'B-factor refinement reverted: R-work would increase '
-                        f'by {delta_rw:.4f} (tolerance {self._rwork_tolerance:.4f}). '
-                        f'Rw {self._rwork_before:.4f} → {rwork_new:.4f}  '
-                        f'Rf {self._rfree_before:.4f} → {rfree_new:.4f}')
-                    return   # discard without touching ChimeraX atoms
+                self._last_rfactors = (rwork_before, rfree_before,
+                                       rwork_new, rfree_new)
             except Exception:
-                pass   # if check fails, proceed with applying
+                rwork_before = rfree_before = rwork_new = rfree_new = None
+
+        # Overfitting bail-out — normal mode only.  Discard the result if it overfits
+        # (R-free rises, or the R-free−R-work gap widens) beyond tolerance.  R-work is
+        # NOT guarded — a small R-work rise with R-free falling is a desirable outcome.
+        # In evaluate_only mode we deliberately skip this so EVERY trial is measured,
+        # including overfit ones the caller wants to see and reject itself.
+        if (not self._evaluate_only
+                and (self._rfree_tolerance is not None or self._gap_tolerance is not None)
+                and rfree_before is not None and rfree_new is not None
+                and rfree_before > 0.0 and rfree_new > 0.0):
+            delta_rfree = rfree_new - rfree_before
+            gap_before  = rfree_before - rwork_before
+            gap_after   = rfree_new - rwork_new
+            # R-free: reject a per-run increase beyond tolerance.
+            rfree_bad = (self._rfree_tolerance is not None
+                         and delta_rfree > self._rfree_tolerance)
+            # Gap: reject if it exceeds the absolute ceiling AND this run widened it
+            # (so an already-overfit model can still be improved).
+            gap_bad = (self._gap_tolerance is not None
+                       and gap_after > self._gap_tolerance
+                       and gap_after > gap_before)
+            if rfree_bad or gap_bad:
+                self._session.logger.warning(
+                    f'B-factor refinement reverted (overfitting guard): '
+                    f'ΔR-free {delta_rfree:+.4f} '
+                    f'(tol {self._rfree_tolerance}); '
+                    f'R-free−R-work gap {gap_before:.4f}→{gap_after:.4f} '
+                    f'(ceiling {self._gap_tolerance}).  '
+                    f'Rw {rwork_before:.4f}→{rwork_new:.4f}  '
+                    f'Rf {rfree_before:.4f}→{rfree_new:.4f}')
+                return   # discard without touching ChimeraX atoms
+
+        # evaluate_only: results are recorded in self._last_rfactors; never write
+        # back to the model, so trials are independent.
+        if self._evaluate_only:
+            return
 
         mgr.apply_to_atoms()   # C++ writes back per (Atom*, altloc) pair
 

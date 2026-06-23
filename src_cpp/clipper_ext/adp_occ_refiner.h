@@ -130,6 +130,12 @@ public:
     //! returns {-1, -1} in real-space mode.  Blocks if the thread is running.
     std::pair<double, double> compute_rfactors();
 
+    //! Standard R-work/R-free at the INITIAL parameters (captured at the start of
+    //! refine()), using the same metric as compute_rfactors().  Lets the caller
+    //! compare before→after like-for-like.  {-1, -1} in real-space mode / pre-run.
+    //! Blocks if the thread is running.
+    std::pair<double, double> initial_rfactors();
+
     //! Synchronous diagnostic: compute ρ_calc on the P1 grid without running
     //! the optimiser.  Atom coordinates are shifted by -target_origin (same as
     //! operator_realspace_()) before EDcalc, so any misregistration between the

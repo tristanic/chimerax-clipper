@@ -229,6 +229,14 @@ void declare_adp_occ_refiner(py::module& m)
                 return py::make_tuple(r.first, r.second);
             })
 
+        // Standard R-work/R-free at the initial (pre-refinement) parameters — same
+        // metric as compute_rfactors(), for a like-for-like before/after comparison.
+        .def("initial_rfactors",
+            [](Class& self) -> py::tuple {
+                auto r = self.initial_rfactors();
+                return py::make_tuple(r.first, r.second);
+            })
+
         // Synchronous diagnostic: compute ρ_calc on the P1 grid (no optimisation).
         // Returns a Python Xmap_float object (same grid as target_map) so the
         // caller can pass it directly to _debug_show_p1_target() alongside the

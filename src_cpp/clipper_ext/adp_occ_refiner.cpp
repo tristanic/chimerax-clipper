@@ -163,6 +163,12 @@ public:
     const std::vector<double>& refined_u_iso() const { return current_u_iso_; }
     const std::vector<double>& refined_occ()   const { return current_occ_; }
 
+    //! Standard R-work/R-free at the INITIAL parameters, captured at the start of
+    //! refine() (before optimisation).  Same metric as compute_rfactors(), so the
+    //! before→after comparison in the manager's bail-out is exactly like-for-like.
+    //! {-1, -1} in real-space mode or if refine() has not run.
+    std::pair<double, double> initial_rfactors() const { return {rwork_before_, rfree_before_}; }
+
     //! Signal the refinement to stop at the next functor evaluation.
     void cancel() { cancel_.store(true, std::memory_order_relaxed); }
 
@@ -185,6 +191,9 @@ private:
     // (Xtal_mgr::f_bulk) and added to F_atoms(current U) in operator().
     HKL_data<F_phi<ftype32>>    fbulk_hkl_;
     bool                        has_bulk_solvent_ = false;
+    // Standard R-work/R-free at the initial params, set at the start of refine().
+    double                      rwork_before_ = -1.0;
+    double                      rfree_before_ = -1.0;
     // Real-space only:
     Xmap<ftype32>               xmap_target_;   // fixed P1 target density
     Coord_orth                  target_origin_; // origin of P1 cell in original frame
@@ -868,6 +877,16 @@ bool BFactorOccRefiner::refine()
     // the constructor — no reconstruction needed here.  fbulk_hkl_ is added to
     // F_atoms(current U) inside operator() when has_bulk_solvent_ is set.
 
+    // Record the standard R-factors at the INITIAL parameters (current_u_iso_ still
+    // hold the input values here), so the manager can compare before→after using the
+    // same metric.  Crystallographic path only; compute_rfactors() returns {-1,-1}
+    // in real-space mode.
+    if (!realspace_mode_) {
+        auto rf0 = compute_rfactors();
+        rwork_before_ = rf0.first;
+        rfree_before_ = rf0.second;
+    }
+
     Eigen::VectorXd x, lb, ub;
     atoms_to_params(x);
     build_bounds(lb, ub);
@@ -1172,30 +1191,34 @@ std::pair<double, double> BFactorOccRefiner::compute_rfactors()
         }
     }
 
-    // Isotropic scale k = Σ(m|Fo||Fc|) / Σ|Fc|²  (working set only, flag != 0)
-    // so the reported R-factors use a scale that is not contaminated by the free set.
+    // Isotropic scale k = Σ(|Fo||Fc|) / Σ|Fc|²  (working set only, flag != 0):
+    // the least-squares scale of |Fc| onto |Fo|.  STANDARD (not FOM-weighted) so the
+    // reported R-factors are the same quantity the manager/GUI reports and the
+    // before/after bail-out comparison is like-for-like.  (FOM-weighting here used to
+    // inflate the "R" by ~(1−⟨m⟩), spuriously tripping the bail-out on incomplete
+    // models where ⟨m⟩ ≪ 1.)
     ftype sum_cross = 0.0, sum_sq = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
         if (fobs_[ih].missing() || usage_[ih].missing()
             || usage_[ih].flag() == 0) continue;
         ftype fc = fcalc_hkl_[ih].f();
         ftype fo = fobs_[ih].f();
-        ftype m  = phi_fom_[ih].fom();
-        sum_cross += m * fo * fc;
+        sum_cross += fo * fc;
         sum_sq    += fc * fc;
     }
     ftype k = (sum_sq > ftype(1e-10)) ? sum_cross / sum_sq : ftype(1.0);
 
-    // R-work / R-free.  Convention: flag != 0 → working; flag == 0 → free.
+    // Standard R-work / R-free: Σ|k·|Fc| − |Fo|| / Σ|Fo|.
+    // Convention: flag != 0 → working; flag == 0 → free.
     double rw_num = 0.0, rw_den = 0.0;
     double rf_num = 0.0, rf_den = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
         if (fobs_[ih].missing() || usage_[ih].missing()) continue;
         ftype fc  = k * fcalc_hkl_[ih].f();
-        ftype mfo = phi_fom_[ih].fom() * fobs_[ih].f();
-        ftype res = std::abs(fc - mfo);
-        if (usage_[ih].flag() != 0) { rw_num += res; rw_den += mfo; }
-        else                         { rf_num += res; rf_den += mfo; }
+        ftype fo  = fobs_[ih].f();
+        ftype res = std::abs(fc - fo);
+        if (usage_[ih].flag() != 0) { rw_num += res; rw_den += fo; }
+        else                         { rf_num += res; rf_den += fo; }
     }
     double rwork = (rw_den > 1e-10) ? rw_num / rw_den : -1.0;
     double rfree = (rf_den > 1e-10) ? rf_num / rf_den : -1.0;
@@ -1207,6 +1230,13 @@ std::pair<double, double> BFactorOccRefinerThread::compute_rfactors()
     if (thread_result_.valid()) thread_result_.get();   // block if running
     if (!refiner_) return {-1.0, -1.0};
     return refiner_->compute_rfactors();
+}
+
+std::pair<double, double> BFactorOccRefinerThread::initial_rfactors()
+{
+    if (thread_result_.valid()) thread_result_.get();   // block if running
+    if (!refiner_) return {-1.0, -1.0};
+    return refiner_->initial_rfactors();
 }
 
 Xmap<ftype32>* BFactorOccRefinerThread::compute_realspace_density(
