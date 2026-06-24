@@ -1,7 +1,7 @@
 [build-system]
 requires = [
   "ChimeraX-BundleBuilder>=1.4.0",
-  "ChimeraX-Core >=1.12rc0, ==1.12.*",
+  "ChimeraX-Core >=1.13.dev0, ==1.13.*",
   "ChimeraX-Atomic ~=1.67",
   "ChimeraX-AtomicLibrary ~=14.4",
   "ChimeraX-Arrays ~=1.1.0",
@@ -15,7 +15,7 @@ license = { text = "OSI Approved :: GNU Lesser General Public License v3 or late
 authors = [{ name = "Tristan Croll", email = "tcroll@altoslabs.com" }]
 description = "Clipper: Efficient handling of volumetric data and symmetry"
 dependencies = [
-  "ChimeraX-Core >=1.12rc0, ==1.12.*",
+  "ChimeraX-Core >=1.13.dev0, ==1.13.*",
   "ChimeraX-Atomic ~=1.67",
   "ChimeraX-AtomicLibrary ~=14.4",
   "ChimeraX-Arrays ~=1.1.0",
