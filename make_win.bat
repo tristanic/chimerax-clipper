@@ -31,10 +31,19 @@ REM Default to the ChimeraX daily build; "release" selects the stable install.
 set CHIMERAX_EXE="C:\Program Files\ChimeraX-Daily\bin\ChimeraX-console.exe"
 set DO_CLEAN=
 set DO_INSTALL=
+set DO_INSTALL_HOOK=
 for %%A in (%*) do (
-    if /i "%%A"=="release"     set CHIMERAX_EXE="C:\Program Files\ChimeraX\bin\ChimeraX-console.exe"
-    if /i "%%A"=="clean"       set DO_CLEAN=1
-    if /i "%%A"=="app-install" set DO_INSTALL=1
+    if /i "%%A"=="release"      set CHIMERAX_EXE="C:\Program Files\ChimeraX\bin\ChimeraX-console.exe"
+    if /i "%%A"=="clean"        set DO_CLEAN=1
+    if /i "%%A"=="app-install"  set DO_INSTALL=1
+    if /i "%%A"=="install-hook" set DO_INSTALL_HOOK=1
+)
+
+REM Install the user-space build-speedup hook (routes cl.exe through sccache).
+REM Re-run after a ChimeraX update; it installs into ChimeraX's user site dir.
+if defined DO_INSTALL_HOOK (
+    set "CXC_HOOK_SRC=%CD%\tools\chimerax_clipper_parallel_build.py"
+    %CHIMERAX_EXE% --nogui --silent --exit --script "%CD%\tools\install_parallel_build_hook.py"
 )
 
 if defined DO_CLEAN   %CHIMERAX_EXE% --nogui --safemode --exit --cmd "devel clean ."
