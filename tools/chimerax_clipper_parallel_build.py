@@ -115,6 +115,44 @@ def _install_compiler_cache_hook():
         # Only wrap cl.exe (the compiler). Linking/lib steps and every Unix
         # command fall through untouched; sccache itself ignores non-compiles.
         if cmd and str(cmd[0]).lower().endswith("cl.exe"):
+            # distutils glues the source file onto MSVC's /Tp (C++) or /Tc (C)
+            # flag with no space, e.g. "/Tpsrc_cpp/deps/.../hybrid_36.cpp".
+            # cl.exe parses that fine, but sccache -- which hashes the input file
+            # itself -- mis-parses the glued, relative, forward-slash form: it
+            # fails to strip the flag and resolves the leading slash to the drive
+            # root ("C:/Tpsrc_cpp/..."), then errors hashing the missing file.
+            # Rewrite the path to an absolute, native-separator form (anchored at
+            # the build cwd; idempotent for already-absolute paths) so sccache
+            # gets a clean, readable file.
+            import os
+            try:
+                _CPP_EXTS = (".cpp", ".cxx", ".cc", ".c++", ".cp")
+                fixed = []
+                for a in cmd:
+                    s = str(a)
+                    for flag in ("/Tp", "/Tc", "-Tp", "-Tc"):
+                        if s.startswith(flag) and len(s) > len(flag):
+                            path = os.path.abspath(s[len(flag):])
+                            ext = os.path.splitext(path)[1].lower()
+                            forces_cpp = flag[1:].lower() == "tp"
+                            # sccache does NOT strip MSVC's glued /Tp<file> /
+                            # /Tc<file> form -- it swallows the whole token as a
+                            # (broken) input path. /Tp/.Tc only force a language;
+                            # where the extension already implies it (.cpp via /Tp,
+                            # .c via /Tc -- every source in this build), drop the
+                            # flag and pass the bare absolute path, which sccache
+                            # parses correctly. Keep the flag only if extension and
+                            # forced language disagree (rare) so semantics are safe.
+                            if (forces_cpp and ext in _CPP_EXTS) or \
+                               (not forces_cpp and ext == ".c"):
+                                s = path
+                            else:
+                                s = flag + path
+                            break
+                    fixed.append(s)
+                cmd = fixed
+            except Exception:
+                pass  # never let path-fixing break a compile
             cmd = ["sccache", *cmd]
         # Call through to MSVC's own spawn so its PATH/env setup and
         # long-command-line response-file fallback are preserved.
