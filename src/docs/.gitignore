@@ -1,0 +1,6 @@
+# This directory is populated by Sphinx (run make_docs after building).
+# The ChimeraX bundle builder raises a silent SystemExit at packaging time
+# if src/docs/ is missing, so we commit this file to keep the directory
+# present in a fresh checkout — while ignoring everything Sphinx generates.
+*
+!.gitignore

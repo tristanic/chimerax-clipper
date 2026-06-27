@@ -35,7 +35,11 @@ __pycache__/
 
 # Distribution / packaging
 src/include/
-src/docs/
+# Sphinx auto-populates src/docs/ (run make_docs after the first build).
+# Track the directory itself — the bundle builder SystemExits silently at
+# packaging time if it's missing — but ignore its generated contents.
+src/docs/*
+!src/docs/.gitignore
 bin/
 build/
 develop-eggs/
