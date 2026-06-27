@@ -188,7 +188,7 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
 }
 
 template<typename T>
-void numpy_import_core_(const Xmap<T>& xmap, py::array_t<T> vals, const Coord_grid& origin)
+void numpy_import_core_(Xmap<T>& xmap, py::array_t<T> vals, const Coord_grid& origin)
 {
     auto vbuf = vals.request();
     T* vptr = (T*)vbuf.ptr;
@@ -230,8 +230,14 @@ void add_xmap_numpy_functions(py::class_<C, Xmap_base>& pyclass)
         {
             numpy_export_core_(self, target, origin, n_threads);
          })
-        // TODO: decide how to handle imports
-        //.def("import_numpy", [](C& self, py::array_t<T> vals))
+        // Import from a numpy array of shape (nu, nv, nw) — Clipper-native ordering,
+        // the same shape produced by export_section_numpy.  Use in conjunction with
+        // data.transpose() when starting from a ChimeraX (nz, ny, nx) region array.
+        .def("import_section_numpy",
+            [](C& self, const Coord_grid& origin, py::array_t<T> vals)
+            {
+                numpy_import_core_(self, vals, origin);
+            })
         ;
 }
 

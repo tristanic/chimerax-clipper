@@ -22,6 +22,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <cstdint>
 
 #include <clipper/clipper.h>
 #include <clipper/clipper-contrib.h>
@@ -49,17 +50,44 @@ public:
             const HKL_data<datatypes::F_sigF<T> >& fsig, const Atom_list& atoms );
     const T& bulk_frac() const { return bulkfrc; }
     const T& bulk_scale() const { return bulkscl; }
+    //! Bulk-solvent structure factors from the most recent operator() call.
+    //! f_mask: FFT of the (smoothed) solvent mask.
+    //! f_bulk: the additive bulk contribution k_sol·exp(-B_sol)·F_mask, so that
+    //! F_total = F_atoms + f_bulk.  Both are empty until operator() has run.
+    const HKL_data<F_phi<T>>& f_mask() const { return fmask_; }
+    const HKL_data<F_phi<T>>& f_bulk() const { return fbulk_; }
     const size_t& n_threads() const { return nthreads; }
     void set_n_threads(size_t n) { nthreads=n; }
     //! If called, then the bulk solvent scale and B-factor will be re-optimised on the next run.
     void set_bulk_solvent_optimization_needed() { bulk_solvent_optimization_needed_ = true; }
 private:
     bool bulk_solvent_optimization_needed_ = true;
+    //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
+    //! from the stored (bulkscl, bulk_u) rather than cold-starting.
+    bool bulk_solvent_ever_optimized_ = false;
     std::vector<ftype> *const params_;
     size_t nthreads;
     T bulkfrc, bulkscl;
     T bulk_u;
     T tolerance_frac_;
+    HKL_data<F_phi<T>> fmask_, fbulk_;
+    //! Cache for the solvent-mask transform.  The mask (and hence fmask_, plus
+    //! the mean solvent fraction bulkfrc) is a function of atom positions,
+    //! elements and zero-occupancy status ONLY -- it is invariant to B-factor
+    //! and occupancy-value changes.  When those inputs are unchanged from the
+    //! previous call (e.g. across B-factor/occupancy refinement macrocycles,
+    //! where coordinates are fixed) the cached fmask_ is reused and a full
+    //! EDcalc_mask + FFT is skipped -- roughly half the cost of operator().
+    //! mask_signature_ fingerprints exactly those inputs; mask_cache_valid_
+    //! guards the first call.
+    bool mask_cache_valid_ = false;
+    //! 64-bit FNV-1a fingerprint of the mask-determining inputs (atom count, and
+    //! per-atom coordinates, element and zero-occupancy flag).  A plain integer
+    //! (not a heap-allocating std::string) so the member is trivially destructible
+    //! and safe across the DLL boundary of this CLIPPER_CX_IMEX-exported class.
+    uint64_t mask_signature_ = 0;
+    //! Compute the mask-determining fingerprint for `atoms`.
+    uint64_t mask_signature(const Atom_list& atoms) const;
 }; // class SFcalc_obs_bulk_vdw
 
 

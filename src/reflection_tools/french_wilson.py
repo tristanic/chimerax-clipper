@@ -24,6 +24,71 @@
 
 _MIN_REFLECTIONS_PER_BIN = 40
 
+
+def _smooth_mean_intensity_curve(i_sigi, n_bins):
+    '''
+    Estimate a smooth, strictly-positive mean intensity Sigma(s^2) for
+    French-Wilson normalisation, returned as (bin_centre_s2, bin_sigma) numpy
+    arrays suitable for numpy.interp.
+
+    The Wilson prior used by French & Wilson requires the expected (mean)
+    intensity in a resolution shell to be positive. A raw per-shell average is
+    a noisy local estimate that, for very weak high-resolution data, readily
+    scatters to zero or negative - which makes the normaliser non-physical and
+    blows up the posterior. Here, shells whose observed mean is positive keep
+    their measured value (no bias where the data are good); shells where the
+    mean has fallen to/below zero are repaired with a log-linear Wilson-plot fit
+    through the positive shells, so Sigma is positive at every resolution. This
+    is the pragmatic analogue of the smooth, strictly-positive Sigma_N that
+    Phaser fits by maximum likelihood.
+    '''
+    import numpy
+    s2 = []
+    ie = []
+    ih = i_sigi.first_data
+    while not ih.last():
+        d = i_sigi[ih]
+        if not d.missing and d.sigi > 0:
+            s2.append(ih.invresolsq())
+            ie.append(d.i / ih.hkl_class.epsilon)
+        i_sigi.next_data(ih)
+    s2 = numpy.asarray(s2, dtype=float)
+    ie = numpy.asarray(ie, dtype=float)
+
+    # Equal-count resolution shells.
+    order = numpy.argsort(s2)
+    s2s = s2[order]
+    ies = ie[order]
+    nref = len(s2s)
+    edges = numpy.linspace(0, nref, n_bins + 1).astype(int)
+    centres = []
+    means = []
+    for b in range(n_bins):
+        lo, hi = edges[b], edges[b + 1]
+        if hi <= lo:
+            continue
+        centres.append(s2s[lo:hi].mean())
+        means.append(ies[lo:hi].mean())
+    centres = numpy.asarray(centres)
+    means = numpy.asarray(means)
+
+    floor = max(1e-6 * (means.max() if means.size else 1.0), 1e-12)
+    pos = means > floor
+    if int(pos.sum()) >= 3:
+        # Wilson plot: log<I> is ~linear in s^2; a low-order fit through the
+        # positive shells extrapolates a sensible positive value into the weak ones.
+        deg = min(2, int(pos.sum()) - 1)
+        coeffs = numpy.polyfit(centres[pos], numpy.log(means[pos]), deg)
+        fit = numpy.exp(numpy.polyval(coeffs, centres))
+        sigma = numpy.where(pos, means, fit)
+    else:
+        # Pathologically few positive shells: fall back to a constant positive mean.
+        const = means[pos].mean() if pos.any() else floor
+        sigma = numpy.full(means.shape, max(float(const), floor))
+    sigma = numpy.maximum(sigma, floor)
+    return centres, sigma
+
+
 def french_wilson_analytical(i_sigi, max_bins = 60):
     '''
     Perform French & Wilson scaling (conversion of intensities to amplitudes)
@@ -42,8 +107,6 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
         HKL_data_I_sigI, HKL_data_I_sigI_ano, HKL_data_F_sigF, F_sigF, I_sigI
     )
     from chimerax.clipper.clipper_python import (
-        TargetFn_meanInth_I_sigI_float,
-        TargetFn_meanInth_I_sigI_ano_float,
         TargetFn_scaleI1I2_I_sigI_float,
         BasisFn_spline, BasisFn_binner,
         ResolutionFn
@@ -73,11 +136,13 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
     n_bins = n_reflections // reflections_per_bin
 
     import numpy
-    params = [1.0]*n_bins #    numpy.ones(n_bins, numpy.float32)
-    #basisfn = BasisFn_spline(hkls, n_bins, 1.0)
+    params = [1.0]*n_bins
     basisfn = BasisFn_binner(i_sigi, n_bins, 1.0)
-    target = TargetFn_meanInth_I_sigI_float(i_sigi, 1.0)
-    rfn = ResolutionFn(hkls, basisfn, target, params)
+    # Smooth, strictly-positive per-shell mean intensity Sigma(s^2) used to
+    # normalise each reflection.  Repairs weak/negative high-resolution shells
+    # so the French-Wilson normaliser is never zero or negative (the failure
+    # mode of a raw binned mean).  See _smooth_mean_intensity_curve.
+    bin_centres, bin_sigma = _smooth_mean_intensity_curve(i_sigi, n_bins)
 
     scaled_is = HKL_data_I_sigI(hkls)
     s_isigi_data = I_sigI()
@@ -101,7 +166,7 @@ def french_wilson_analytical(i_sigi, max_bins = 60):
             scaled_is[ih.hkl] = s_isigi_data
             ih.next()
             continue
-        imean = rfn.f(ih)
+        imean = float(numpy.interp(ih.invresolsq(), bin_centres, bin_sigma))
         eps = ih.hkl_class.epsilon
         eobs_sq = isigi_data.i / eps / imean
         sig_eobs_sq = isigi_data.sigi / eps / imean

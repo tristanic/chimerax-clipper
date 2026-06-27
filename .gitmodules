@@ -5,3 +5,9 @@
 	path = extern/pocketfft
 	url = https://gitlab.mpcdf.mpg.de/mtr/pocketfft.git
 	branch = cpp
+[submodule "extern/eigen"]
+	path = extern/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "extern/lbfgspp"]
+	path = extern/lbfgspp
+	url = https://github.com/yixuan/LBFGSpp.git

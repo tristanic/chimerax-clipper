@@ -61,10 +61,35 @@ endif
 ifeq ($(OS),Darwin)
 CHIMERAX_EXE = $(CHIMERAX_APP)/Contents/bin/ChimeraX
 export MACOSX_DEPLOYMENT_TARGET=10.13
+# Route compilation through ccache when available. distutils' customize_compiler
+# honours CC/CXX for both the (serial) static-library phase and the (parallel)
+# extension phase, so unchanged vendored sources become cache hits on rebuild.
+CCACHE := $(shell command -v ccache 2>/dev/null)
+ifdef CCACHE
+export CC := ccache clang
+export CXX := ccache clang++
+endif
 endif
 ifeq ($(OS),Linux)
 CHIMERAX_EXE = $(CHIMERAX_APP)
+# Same ccache routing as macOS. cc/c++ are the generic driver names present on
+# essentially all Linux toolchains, so this works whether the system compiler is
+# gcc or clang.
+CCACHE := $(shell command -v ccache 2>/dev/null)
+ifdef CCACHE
+export CC := ccache cc
+export CXX := ccache c++
 endif
+endif
+
+# --- Per-lane test isolation -------------------------------------------------
+# Route every ChimeraX launch through run_chimerax.sh so each worktree/lane
+# installs into (and tests from) its own isolated ChimeraX user directory --
+# see run_chimerax.sh and tools/_isolated_chimerax.py. The CHIMERAX_APP block
+# above is retained for its side effects (e.g. MACOSX_DEPLOYMENT_TARGET); this
+# last assignment of CHIMERAX_EXE wins. On Windows use make_win.bat instead.
+REL_TOK = $(if $(RELEASE),release,)
+CHIMERAX_EXE = $(dir $(lastword $(MAKEFILE_LIST)))run_chimerax.sh $(REL_TOK)
 
 BUNDLE_BASE_NAME = $(subst ChimeraX-,,$(BUNDLE_NAME))
 SOURCE = src
@@ -98,4 +123,19 @@ debug:
 clean:
 	$(CHIMERAX_EXE) --nogui --safemode --cmd "devel clean . ; exit"
 
-.PHONY: docs
+# Install a user-space startup hook that parallelises ChimeraX's serial
+# static-library compile loop (the macOS build bottleneck). It lives in the
+# ChimeraX user site-packages -- no write access to the .app bundle needed --
+# and patches the live bundle_builder at start-up, so it survives daily updates
+# with no re-run. See tools/chimerax_clipper_parallel_build.py.
+install-parallel-build-hook:
+	CXC_HOOK_SRC="$(CURDIR)/tools/chimerax_clipper_parallel_build.py" \
+	  "$(CHIMERAX_EXE)" --nogui --silent --exit \
+	  --script "$(CURDIR)/tools/install_parallel_build_hook.py"
+
+uninstall-parallel-build-hook:
+	CXC_HOOK_UNINSTALL=1 \
+	  "$(CHIMERAX_EXE)" --nogui --silent --exit \
+	  --script "$(CURDIR)/tools/install_parallel_build_hook.py"
+
+.PHONY: docs install-parallel-build-hook uninstall-parallel-build-hook

@@ -179,13 +179,15 @@ public:
         bulk_solvent_calculator_.set_bulk_solvent_optimization_needed();
     }
 
-    inline const ftype& bulk_frac() const
+    // Return by value: the underlying SFcalc stores these as ftype32 (float), so a
+    // const ftype& (double) return would bind to a float→double temporary and dangle.
+    inline ftype bulk_frac() const
     {
         if (!fcalc_initialized())
             throw std::runtime_error("Coefficients have not been calculated yet!");
         return bulk_solvent_calculator_.bulk_frac();
     }
-    inline const ftype& bulk_scale() const
+    inline ftype bulk_scale() const
     {
         if (!fcalc_initialized())
             throw std::runtime_error("Coefficients have not been calculated yet!");
@@ -201,6 +203,22 @@ public:
         if (!fcalc_initialized())
             throw std::runtime_error("Coefficients have not been calculated yet!");
         return fcalc_;
+    }
+
+    // Bulk-solvent structure factors from the most recent generate_fcalc():
+    // f_bulk is the additive bulk contribution (F_total = F_atoms + f_bulk);
+    // f_mask is the (smoothed) solvent-mask transform.
+    inline const HKL_data<F_phi<ftype32>>& fbulk() const
+    {
+        if (!fcalc_initialized())
+            throw std::runtime_error("Coefficients have not been calculated yet!");
+        return bulk_solvent_calculator_.f_bulk();
+    }
+    inline const HKL_data<F_phi<ftype32>>& fmask() const
+    {
+        if (!fcalc_initialized())
+            throw std::runtime_error("Coefficients have not been calculated yet!");
+        return bulk_solvent_calculator_.f_mask();
     }
 
     // Fcalc scaled to Fobs
@@ -470,8 +488,8 @@ public:
     std::vector<std::string> map_names() const { deletion_guard(); return mgr_->map_names(); }
 
     inline void bulk_solvent_optimization_needed() { deletion_guard(); mgr_->bulk_solvent_optimization_needed(); }
-    inline const ftype& bulk_frac() { deletion_guard(); return mgr_->bulk_frac(); }
-    inline const ftype& bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
+    inline ftype bulk_frac() { deletion_guard(); return mgr_->bulk_frac(); }
+    inline ftype bulk_scale() { deletion_guard(); return mgr_->bulk_scale(); }
 
     inline const HKL_data<F_sigF<ftype32>>& fobs() const { deletion_guard(); return mgr_->fobs(); }
 
@@ -482,6 +500,10 @@ public:
     HKL_data<F_phi<ftype32>> fcalc();
 
     HKL_data<F_phi<ftype32>> scaled_fcalc();
+
+    // Bulk-solvent structure factors (finalise thread and return a copy)
+    HKL_data<F_phi<ftype32>> fbulk();
+    HKL_data<F_phi<ftype32>> fmask();
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> base_fofc();

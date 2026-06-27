@@ -377,6 +377,9 @@ class MapMgr(Model):
         the index of the Place to be used to transform the coordinates of each
         atom. Unlike cover_coords(), the mask will be periodically updated in
         response to atom movements.
+
+        When transforms and transform_indices are omitted (or None), a single
+        identity transform is used so that all atoms are treated as-is.
         '''
         zm = self._zone_mgr
         zm.set_symmetry_map(atoms, transforms, transform_indices)

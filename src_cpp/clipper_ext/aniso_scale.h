@@ -10,28 +10,29 @@ namespace clipper_cx
 struct Packaged_ResolutionFn
 {
     Packaged_ResolutionFn () {}
-    //std::unique_ptr<TargetFn_scaleF1F2<f1, f2>> targetfn;
     std::unique_ptr<TargetFn_base> targetfn;
-    BasisFn_aniso_gaussian aniso_basisfn;
-    std::unique_ptr<ResolutionFn_nonlinear> resolution_fn;
+    BasisFn_log_aniso_gaussian aniso_basisfn;
+    std::unique_ptr<ResolutionFn> resolution_fn;
 };
 
+// Anisotropic scaling of Fcalc onto Fobs, fitted in LOG space.  The log-Gaussian
+// basis + log target make this a linear least-squares problem, solved in a single
+// closed-form pass by a plain ResolutionFn starting from zeros — stable across
+// diverse datasets, with no isotropic pre-fit, no nonlinear convergence to babysit
+// and no non-positive-definite failure mode (cf. Clipper's own SFscale_aniso).
+// The fitted basis value fh = resolution_fn->f(ih) ~ log(Io/Ic), so the amplitude
+// scale to bring Fc -> Fo is exp(0.5*fh) (and Fo -> Fc is exp(-0.5*fh)).
 template <typename T>
 Packaged_ResolutionFn aniso_scale_fn(const HKL_data<F_phi<T>>& fcalc,
     const HKL_data<F_sigF<T>>& fobs, U_aniso_orth& uaniso, std::vector<ftype>& aniso_params)
 {
     const auto& hkls = fcalc.hkl_info();
     Packaged_ResolutionFn ret;
-    //ret.targetfn = std::unique_ptr<TargetFn_scaleF1F2<f1, f2>>(new TargetFn_scaleF1F2<f1, f2>(farr1, farr2));
-    ret.targetfn = std::unique_ptr<TargetFn_base>(new TargetFn_scaleFobsFcalc<T>(fobs, fcalc));
-    // First fit an isotropic Gaussian to improve stability of aniso step
-    // BasisFn_gaussian iso_basisfn;
-    // std::vector<ftype> iso_params = {1.0, 1.0};
-    // ResolutionFn_nonlinear iso_rfn(hkls, iso_basisfn, *(ret.targetfn), iso_params);
-    // iso_params = iso_rfn.params();
-    // std::vector<ftype> aniso_params = {iso_params[0], iso_params[1], iso_params[1], iso_params[1], 0.0, 0.0, 0.0};
-    ret.resolution_fn = std::unique_ptr<ResolutionFn_nonlinear>(
-        new ResolutionFn_nonlinear(hkls, ret.aniso_basisfn, *(ret.targetfn), aniso_params, 10.0));
+    ret.targetfn = std::unique_ptr<TargetFn_base>(
+        new TargetFn_scaleLogF1F2<F_phi<T>, F_sigF<T>>(fcalc, fobs));
+    aniso_params = std::vector<ftype>(7, 0.0);
+    ret.resolution_fn = std::unique_ptr<ResolutionFn>(
+        new ResolutionFn(hkls, ret.aniso_basisfn, *(ret.targetfn), aniso_params));
     aniso_params = ret.resolution_fn->params();
     uaniso = ret.aniso_basisfn.u_aniso_orth(ret.resolution_fn->params());
     return ret;
@@ -51,7 +52,8 @@ void scale_fcalc_to_fobs(const HKL_data<F_phi<T>>& fcalc,
     {
         if (!fobs[ih].missing() && !fcalc[ih].missing())
         {
-            scaled_fcalc[ih].f() = fcalc[ih].f()/sqrt(aniso_rfn.f(ih));
+            // fh = aniso_rfn.f(ih) ~ log(Io/Ic); amplitude scale Fc -> Fo = exp(0.5*fh).
+            scaled_fcalc[ih].f() = fcalc[ih].f() * exp(0.5 * aniso_rfn.f(ih));
             scaled_fcalc[ih].phi() = fcalc[ih].phi();
         }
     }
@@ -80,7 +82,8 @@ void aniso_scale_fobs_to_fcalc(const HKL_data<F_phi<T>>& fcalc,
     {
         if (!fobs[ih].missing() && !fcalc[ih].missing())
         {
-            auto scale = sqrt(aniso_rfn.f(ih));
+            // Inverse of the Fc -> Fo scale: Fo -> Fc = exp(-0.5*fh).
+            auto scale = exp(-0.5 * aniso_rfn.f(ih));
             scaled_fobs[ih].f() = fobs[ih].f()*scale;
             scaled_fobs[ih].sigf() = fobs[ih].sigf()*scale;
         }

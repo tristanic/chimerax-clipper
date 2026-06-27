@@ -1,7 +1,7 @@
 [build-system]
 requires = [
   "ChimeraX-BundleBuilder>=1.4.0",
-  "ChimeraX-Core >=1.12.0, ==1.12.*",
+  "ChimeraX-Core >=1.13.dev0, ==1.13.*",
   "ChimeraX-Atomic ~=1.67",
   "ChimeraX-AtomicLibrary ~=14.4",
   "ChimeraX-Arrays ~=1.1.0",
@@ -15,7 +15,7 @@ license = { text = "OSI Approved :: GNU Lesser General Public License v3 or late
 authors = [{ name = "Tristan Croll", email = "tcroll@altoslabs.com" }]
 description = "Clipper: Efficient handling of volumetric data and symmetry"
 dependencies = [
-  "ChimeraX-Core >=1.12.0, ==1.12.*",
+  "ChimeraX-Core >=1.13.dev0, ==1.13.*",
   "ChimeraX-Atomic ~=1.67",
   "ChimeraX-AtomicLibrary ~=14.4",
   "ChimeraX-Arrays ~=1.1.0",
@@ -50,10 +50,29 @@ classifiers = ["Development Status :: 4 - Beta"]
   "**",
 ]
 
+# Public C++ headers shipped for downstream consumers (e.g. ISOLDE, third-party
+# CIFFile users).  This tree is AUTO-GENERATED from the canonical source headers at
+# build time (copied before compilation) — there is no hand-maintained duplicate.
+# One key per header directory: the destination key preserves the directory layout,
+# and the *.h glob selects headers only (excludes .cpp/Makefiles).  Adding a new dep
+# header subdirectory requires a new key here.
 [tool.chimerax.extra-files]
-"src/include" = [
-  "src_cpp/include/**"
-]
+"src/include/clipper_ext"      = ["src_cpp/clipper_ext/*.h"]
+"src/include/clipper"          = ["src_cpp/deps/clipper/*.h"]
+"src/include/clipper/ccp4"     = ["src_cpp/deps/clipper/ccp4/*.h"]
+"src/include/clipper/cctbx"    = ["src_cpp/deps/clipper/cctbx/*.h"]
+"src/include/clipper/cif"      = ["src_cpp/deps/clipper/cif/*.h"]
+"src/include/clipper/cns"      = ["src_cpp/deps/clipper/cns/*.h"]
+"src/include/clipper/contrib"  = ["src_cpp/deps/clipper/contrib/*.h"]
+"src/include/clipper/core"     = ["src_cpp/deps/clipper/core/*.h"]
+"src/include/clipper/examples" = ["src_cpp/deps/clipper/examples/*.h"]
+"src/include/clipper/minimol"  = ["src_cpp/deps/clipper/minimol/*.h"]
+"src/include/clipper/mmdb"     = ["src_cpp/deps/clipper/mmdb/*.h"]
+"src/include/clipper/mmdbold"  = ["src_cpp/deps/clipper/mmdbold/*.h"]
+"src/include/clipper/mtz"      = ["src_cpp/deps/clipper/mtz/*.h"]
+"src/include/clipper/phs"      = ["src_cpp/deps/clipper/phs/*.h"]
+"src/include/ccp4"             = ["src_cpp/deps/libccp4/ccp4/*.h"]
+"src/include/mmdb2"            = ["src_cpp/deps/mmdb2/mmdb2/*.h"]
 
 [[tool.chimerax.provider."data formats"]]
 name = "MTZ"
@@ -247,12 +266,16 @@ define-macros = [
 
 [tool.chimerax.library.clipper_cx]
 sources = [
+  "src_cpp/clipper_ext/chimerax_bridge.cpp",
   "src_cpp/clipper_ext/xtal_mgr.cpp",
   "src_cpp/clipper_ext/edcalc_ext.cpp",
   "src_cpp/clipper_ext/sfcalc_obs_vdw.cpp",
+  "src_cpp/clipper_ext/adp_occ_refiner.cpp",
 ]
 include-dirs = [
   "src_cpp/deps",
+  "extern/eigen",
+  "extern/lbfgspp/include",
 ]
 library-dirs = [
   "src/lib",
@@ -279,11 +302,30 @@ library-modules = [
 ]
 
 [tool.chimerax.library.clipper_cx.platform.win]
+# Eigen (>=5.0.1, vendored in extern/eigen) and LBFGSpp require C++14.  MSVC's
+# floor is already C++14 so /std:c++11 was a silent no-op here, but Clang/GCC
+# enforce it strictly — set C++14 explicitly so the standard matches on every
+# platform.  The bundle builder skips its default -std/-std: only when an
+# extension already supplies one (see bundle_builder_toml.py).
+extra-compile-args = [
+  "/std:c++14",
+]
 extra-link-args = [
   "/FORCE:MULTIPLE",
+  "/IGNORE:4088"
 ]
 define-macros = [
   "NOMINMAX",
+]
+
+[tool.chimerax.library.clipper_cx.platform.mac]
+extra-compile-args = [
+  "-std=c++14",
+]
+
+[tool.chimerax.library.clipper_cx.platform.linux]
+extra-compile-args = [
+  "-std=c++14",
 ]
 
 [tool.chimerax.library._symmetry]
@@ -368,7 +410,6 @@ sources = [
 ]
 include-dirs = [
   "extern/pybind11/include",
-  "src_cpp/include",
 ]
 include-modules = [
   "chimerax.core",
@@ -407,7 +448,6 @@ sources = [
 ]
 include-dirs = [
   "extern/pybind11/include",
-  "src_cpp/include",
 ]
 include-modules = [
   "chimerax.core",
@@ -481,6 +521,7 @@ sources = [
   "src_cpp/bindings/wrap_clipper_types.cpp",
   "src_cpp/bindings/wrap_hkl_info.cpp",
   "src_cpp/bindings/wrap_containers.cpp",
+  "src_cpp/bindings/ext/wrap_adp_occ_refiner.cpp",
   "src_cpp/bindings/clipper_pybind11.cpp",
 ]
 include-dirs = [
@@ -489,7 +530,7 @@ include-dirs = [
   "src_cpp/deps/libccp4",
   "src_cpp/deps/mmdb2",
   "src",
-  "src_cpp/include",
+  "src_cpp",
 ]
 library-dirs = [
   "src/lib",
@@ -516,8 +557,14 @@ library-modules = [
 ]
 
 [tool.chimerax.extension.clipper_python.platform.win]
+# C++14 for Eigen/LBFGSpp (pulled in via clipper_ext/adp_occ_refiner.h) — see
+# the clipper_cx note above.
+extra-compile-args = [
+  "/std:c++14",
+]
 extra-link-args = [
   "/FORCE:MULTIPLE",
+  "/IGNORE:4088"
 ]
 define-macros = [
   "NOMINMAX",
@@ -525,6 +572,7 @@ define-macros = [
 
 [tool.chimerax.extension.clipper_python.platform.mac]
 extra-compile-args = [
+  "-std=c++14",
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
 ]
@@ -536,6 +584,7 @@ extra-link-args = [
 
 [tool.chimerax.extension.clipper_python.platform.linux]
 extra-compile-args = [
+  "-std=c++14",
   "-fvisibility=hidden",
   "-fvisibility-inlines-hidden",
 ]

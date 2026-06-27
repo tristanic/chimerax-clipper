@@ -2,7 +2,7 @@
 
 A ChimeraX plugin providing macromolecular crystallographic data handling: electron density maps, structure factors, and crystallographic symmetry. It is the primary crystallographic infrastructure layer for [ISOLDE](https://isolde.cimr.cam.ac.uk/), which lives in a separate, tightly-coupled repository. Changes to public API here frequently require corresponding changes in ISOLDE.
 
-Built on Kevin Cowtan's [Clipper library](http://www.ysbl.york.ac.uk/~cowtan/clipper/), wrapped via pybind11. Licensed LGPLv3+.
+Built on Kathryn Cowtan's [Clipper library](http://www.ysbl.york.ac.uk/~cowtan/clipper/), wrapped via pybind11. Licensed LGPLv3+.
 
 ## Architecture
 
@@ -101,17 +101,40 @@ If ChimeraX already provides something (atomic data access, file I/O, coordinate
 ### 3. Public API stability vs. ISOLDE
 This plugin and ISOLDE are co-evolved. Removing or renaming any symbol that ISOLDE imports will break ISOLDE. When modifying the public interface (anything importable from `chimerax.clipper`), check whether ISOLDE uses it before removing it.
 
-### 4. C++ standard is C++11
-ChimeraX's build system compiles all C++ sources with `/std:c++11` (MSVC) or
-`-std=c++11` (GCC/Clang). C++14/17 features that will silently compile on some
-toolchains but hard-fail here include:
+### 4. C++ standard: C++11 default, C++14 for the Eigen-using extensions
+The bundle builder injects `/std:c++11` (MSVC) / `-std=c++11` (GCC/Clang) into an extension
+*unless that extension already supplies a `-std=`/`/std:` flag* in `extra-compile-args`
+(see `bundle_builder_toml.py`). Most targets are C++11. The two Eigen/LBFGSpp consumers —
+the **`clipper_cx`** library and the **`clipper_python`** bindings (Eigen reaches the
+bindings via `clipper_ext/adp_occ_refiner.h`'s `Eigen::VectorXd` interface) — are compiled
+with **C++14** (`/std:c++14` win, `-std=c++14` mac/linux) because Eigen ≥5.0.1 hard-requires
+it (`#error Eigen requires at least c++14 support`). Do **not** jump to C++17:
+`std::random_shuffle` (used in `util.h`) was removed in C++17.
+
+**MSVC masks standard-version bugs.** MSVC has no real `/std:c++11` mode (its floor is C++14),
+so code that needs C++14 compiles silently on Windows and only fails on Clang/GCC. This is
+exactly how the Eigen C++14 requirement stayed invisible until a macOS build (2026-06). The
+flip side, for the C++11 targets: avoid C++14/17 features that compile on MSVC but hard-fail
+on Clang/GCC —
 - Structured bindings: `auto [a, b] = f();` → use `auto p = f(); p.first; p.second`
 - `if constexpr`, `std::string_view`, fold expressions, etc.
 
 ### 5. C++ changes require a clean rebuild
 The build system does not always detect incremental C++ changes correctly. When in doubt, `clean` first.
 
-### 6. Windows DLL export warnings (C4251)
+### 6. `chimerax_bridge` — non-template functions live in the `.cpp`
+The non-template `clipper_atoms_from_cx_atoms` family (incl.
+`clipper_atoms_from_cx_atoms_with_map`) is **defined in
+`src_cpp/clipper_ext/chimerax_bridge.cpp`** (compiled into `clipper_cx.dll`) and
+declared with `CLIPPER_CX_IMEX` in `chimerax_bridge.h`. Every pybind11 translation
+unit (e.g. `wrap_xtal_mgr.cpp`, `wrap_adp_occ_refiner.cpp`) therefore links to the
+single exported definition — no ODR violations, no LNK2001, and a clean linker
+exit code even with `/FORCE:MULTIPLE`. Only the *template* helper
+`cl_atom_from_cx_atom` remains `inline` in the header (templates must be
+header-visible). Do **not** move the non-template definitions back into the
+header.
+
+### 7. Windows DLL export warnings (C4251)
 Exporting classes with private `std::future`, `std::unique_ptr`, or other STL members via
 `CLIPPER_CX_IMEX` generates C4251 warnings on MSVC. These are suppressed with
 `#pragma warning(disable: 4251)` at the top of the relevant `.cpp` file. The warnings are
@@ -131,6 +154,12 @@ Bundled C++ (source-compiled):
 Git submodules:
 - `extern/pybind11` — C++/Python bindings
 - `extern/pocketfft` — header-only FFT
+- `extern/eigen` — Eigen3 (MPL2, header-only); **pin to ≥ 5.0.1** — Eigen master nightly has a
+  regression where `has_unary_operator`/`has_binary_operator` SFINAE gives false positives on
+  MSVC for `scalar_zero_op`, causing C2064 (`__forceinline` operator()() accepted with extra args).
+  Eigen ≥5.0.1 **requires C++14**, so the extensions that include it (`clipper_cx`,
+  `clipper_python`) set `-std=c++14`/`/std:c++14` in `pyproject.toml` (see gotcha #4).
+- `extern/lbfgspp` — LBFGSpp L-BFGS-B (MIT, header-only); depends on Eigen
 
 ## Version bumping
 

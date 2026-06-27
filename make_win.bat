@@ -27,17 +27,31 @@ if not defined VCINSTALLDIR (
 set DISTUTILS_USE_SDK=1
 set MSSdk=1
 
-REM Default to the ChimeraX daily build; "release" selects the stable install.
-set CHIMERAX_EXE="C:\Program Files\ChimeraX-Daily\bin\ChimeraX-console.exe"
+REM ChimeraX launches go through run_chimerax.bat so each worktree/lane installs
+REM into its own isolated ChimeraX user directory (see run_chimerax.bat). The
+REM "release" token (stable vs daily install) is forwarded to it; "clean",
+REM "app-install" and "install-hook" are consumed here.
+set "RELEASE_TOK="
 set DO_CLEAN=
 set DO_INSTALL=
+set DO_INSTALL_HOOK=
 for %%A in (%*) do (
-    if /i "%%A"=="release"     set CHIMERAX_EXE="C:\Program Files\ChimeraX\bin\ChimeraX-console.exe"
-    if /i "%%A"=="clean"       set DO_CLEAN=1
-    if /i "%%A"=="app-install" set DO_INSTALL=1
+    if /i "%%A"=="release"      set "RELEASE_TOK=release"
+    if /i "%%A"=="clean"        set DO_CLEAN=1
+    if /i "%%A"=="app-install"  set DO_INSTALL=1
+    if /i "%%A"=="install-hook" set DO_INSTALL_HOOK=1
 )
 
-if defined DO_CLEAN   %CHIMERAX_EXE% --nogui --safemode --exit --cmd "devel clean ."
-if defined DO_INSTALL %CHIMERAX_EXE% --nogui --safemode --exit --cmd "devel install ."
+REM Install the user-space build-speedup hook (routes cl.exe through sccache).
+REM Re-run after a ChimeraX update; it installs into the ChimeraX user site dir.
+REM Routed through run_chimerax.bat so it lands in the same (lane-isolated or
+REM standard) user dir the build/install below will use.
+if defined DO_INSTALL_HOOK (
+    set "CXC_HOOK_SRC=%CD%\tools\chimerax_clipper_parallel_build.py"
+    call "%~dp0run_chimerax.bat" %RELEASE_TOK% --nogui --silent --exit --script "%CD%\tools\install_parallel_build_hook.py"
+)
+
+if defined DO_CLEAN   call "%~dp0run_chimerax.bat" %RELEASE_TOK% --nogui --safemode --exit --cmd "devel clean ."
+if defined DO_INSTALL call "%~dp0run_chimerax.bat" %RELEASE_TOK% --nogui --safemode --exit --cmd "devel install ."
 
 endlocal

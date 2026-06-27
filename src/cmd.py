@@ -276,7 +276,7 @@ def set_camera_auto(session, flag):
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
-        BoolArg, FloatArg,
+        BoolArg, FloatArg, IntArg, StringArg,
         OpenFileNameArg, SaveFileNameArg,
         create_alias
         )

@@ -70,70 +70,10 @@ T quick_r(const HKL_data<F_phi<T>>& fcalc, const HKL_data<F_sigF<T>>& fobs,
 
 }
 
-template <typename T>
-std::vector<ftype> guess_initial_aniso_gaussian_params(
-    const HKL_data<F_sigF<T>>& fobs, const HKL_data<F_phi<T>>& fcalc, T& r)
-{
-    // Fit an isotropic gaussian to the data, and use this to construct the
-    // input to the anisotropic version.
-    const auto& hkls = fobs.base_hkl_info();
-
-    // Get initial guess by comparing the average amplitudes of the lowest- and highest-resolution 
-    // 5% of reflections.
-    Resolution_ordinal s_ord;
-    s_ord.init(fobs, 1.0);
-
-    T sum_fobs_lo = 0, sum_fcalc_lo=0, sum_fobs_hi = 0, sum_fcalc_hi = 0;
-    for (auto ih = fobs.first(); !ih.last(); ih.next())
-    {
-        if (!fobs[ih].missing() && !fcalc[ih].missing())
-        {
-          auto ord = s_ord.ordinal(ih.invresolsq());
-          if ( ord < 1.0/20.0 )
-          {
-            sum_fobs_lo += fobs[ih].f();
-            sum_fcalc_lo += fcalc[ih].f();
-          } else if (ord > 19.0/20.0)
-          {
-            sum_fobs_hi += fobs[ih].f();
-            sum_fcalc_hi += fcalc[ih].f();
-          }
-        }
-    }
-
-    auto p0 = log(pow(sum_fcalc_lo/sum_fobs_lo, 2));
-    auto p1 = (p0-log(pow(sum_fcalc_hi/sum_fobs_hi, 2)))/hkls.resolution().invresolsq_limit();
-
-    std::vector<ftype> params = {p0, p1};
-
-    std::cout << "Initial params: " << p0 << ", " << p1 << std::endl; // DELETEME
-
-    BasisFn_gaussian basisfn;
-    //TargetFn_scaleF1F2<F_phi<T>, F_sigF<T>> target(fcalc, fobs);
-    TargetFn_scaleFobsFcalc<T> target(fobs, fcalc);
-    ResolutionFn_nonlinear rfn(hkls, basisfn, target, params, 0.0);
-    params = rfn.params();
-
-    std::cout << "Fitted params: " << params[0] << ", " << params[1] << std::endl; // DELETEME
-    // std::cerr << "Initial Gaussian params: " << params[0] << ", " << params[1] << std::endl;
-    std::vector<ftype> output_params(7,0);
-    output_params[0] = params[0];
-    output_params[1] = params[1];
-    output_params[2] = params[1];
-    output_params[3] = params[1];
-    BasisFn_aniso_gaussian aniso_basisfn;
-    ResolutionFn_nonlinear aniso_rfn(hkls, aniso_basisfn, target, output_params, 0.0);
-    try {
-      r = quick_r(fcalc, fobs, aniso_rfn);
-      output_params = aniso_rfn.params();
-    } catch (std::runtime_error&) {}
-    std::cout << "Fitted aniso params: ";
-    for (auto p: output_params)
-      std::cout << p << ", ";
-    std::cout << std::endl;
-
-    return output_params;
-}
+// (guess_initial_aniso_gaussian_params removed.)  The anisotropic scaling now
+// fits in log space via BasisFn_log_aniso_gaussian + TargetFn_scaleLogF1F2 (a
+// linear least-squares solve, see aniso_scale.h and the bulk-solvent optimiser),
+// which is stable from zeros and needs no isotropic-then-anisotropic seeding.
 
 
 template<typename T>

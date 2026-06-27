@@ -76,6 +76,7 @@ void init_skeleton(py::module& m);
 
 // ChimeraX extensions
 void init_xtal_mgr(py::module& m);
+void init_adp_occ_refiner(py::module& m);
 
 using namespace clipper;
 
@@ -138,4 +139,5 @@ PYBIND11_MODULE(clipper_python, m) {
     // ChimeraX extensions
     py::module cx_ext = m.def_submodule("ext", "ChimeraX extensions");
     init_xtal_mgr(cx_ext);
+    init_adp_occ_refiner(cx_ext);
 }
