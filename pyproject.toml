@@ -45,6 +45,8 @@ classifiers = ["Development Status :: 4 - Beta"]
   "*.pdb",
   "*.mtz",
   "*.ccp4",
+  "*.cif",
+  "*.hkl",
 ]
 "src/docs" = [
   "**",
