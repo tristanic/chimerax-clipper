@@ -97,6 +97,12 @@ class SmallMoleculeXmapMgr:
         # added, so nothing extra is needed here.
         pass
 
+    def bulk_solvent_optimization_needed(self):
+        # No-op: small-molecule crystals are densely packed and have no bulk
+        # solvent to (re-)optimise. Present for Xtal_thread_mgr interface parity
+        # (XmapSet calls it whenever the model changes).
+        pass
+
     def recalculate_all_maps(self, *args):
         '''Start a background recalculation. Coordinates are snapshotted on the
         calling (main) thread; only the GIL-releasing compute runs in the worker.'''
