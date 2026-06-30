@@ -273,14 +273,15 @@ def set_camera_auto(session, flag):
     from . import symmetry
     symmetry.auto_reset_camera = flag
 
-def open_cod_crystal(session, path, hkl_path=None):
+def open_small_molecule(session, path, hkl=None):
     '''
-    Open a small-molecule (COD) CIF as a live crystal structure: the model in its
-    unit cell, crystallographic symmetry, and - when reflections are available -
-    live 2mFo-DFc / mFo-DFc electron-density maps that update as the model changes.
+    Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
+    its unit cell, crystallographic symmetry, and - when reflections are available
+    (an `hkl` file, or a sibling .hkl) - live 2mFo-DFc / mFo-DFc electron-density
+    maps that update as the model changes.
     '''
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, path, hkl_path=hkl_path)
+    return show_cod_crystal(session, path, hkl_path=hkl)
 
 
 def fetch_cod_crystal(session, cod_id, ignore_cache=False):
@@ -351,17 +352,17 @@ def register_clipper_cmd(logger):
     )
     register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
 
-    crystal_desc = CmdDesc(
+    smallmol_desc = CmdDesc(
         required=[
             ('path', OpenFileNameArg),
         ],
         keyword=[
-            ('hkl_path', OpenFileNameArg),
+            ('hkl', OpenFileNameArg),
         ],
-        synopsis='Open a small-molecule (COD) CIF as a live crystal structure: model '
-                 'in the unit cell, symmetry, and live electron-density maps'
+        synopsis='Open a small-molecule CIF as a live crystal structure: model in the '
+                 'unit cell, symmetry, and (with reflections) live electron-density maps'
     )
-    register('clipper crystal', crystal_desc, open_cod_crystal, logger=logger)
+    register('clipper smallmol', smallmol_desc, open_small_molecule, logger=logger)
 
     cod_desc = CmdDesc(
         required=[
