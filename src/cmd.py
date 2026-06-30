@@ -273,6 +273,40 @@ def set_camera_auto(session, flag):
     from . import symmetry
     symmetry.auto_reset_camera = flag
 
+def open_cod_crystal(session, path, hkl_path=None):
+    '''
+    Open a small-molecule (COD) CIF as a live crystal structure: the model in its
+    unit cell, crystallographic symmetry, and - when reflections are available -
+    live 2mFo-DFc / mFo-DFc electron-density maps that update as the model changes.
+    '''
+    from .io.small_molecule import show_cod_crystal
+    return show_cod_crystal(session, path, hkl_path=hkl_path)
+
+
+def fetch_cod_crystal(session, cod_id, ignore_cache=False):
+    '''
+    Fetch a structure (and, if deposited, its reflections) from the Crystallography
+    Open Database by numeric COD ID, and open it as a live crystal structure.
+    '''
+    from chimerax.core.errors import UserError
+    cod_id = str(cod_id).strip()
+    if not cod_id.isdigit():
+        raise UserError('COD identifiers are numeric; got "%s"' % cod_id)
+    from chimerax.core.fetch import fetch_file
+    base = 'https://www.crystallography.net/cod/%s' % cod_id
+    cif = fetch_file(session, base + '.cif', 'COD %s' % cod_id,
+        '%s.cif' % cod_id, 'COD', ignore_cache=ignore_cache)
+    hkl = None
+    try:
+        hkl = fetch_file(session, base + '.hkl', 'COD %s reflections' % cod_id,
+            '%s.hkl' % cod_id, 'COD', ignore_cache=ignore_cache)
+    except Exception:
+        session.logger.info('(CLIPPER) No reflections deposited for COD %s; '
+            'showing model + symmetry only.' % cod_id)
+    from .io.small_molecule import show_cod_crystal
+    return show_cod_crystal(session, cif, hkl_path=hkl)
+
+
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
@@ -316,6 +350,30 @@ def register_clipper_cmd(logger):
         synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
     )
     register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
+
+    crystal_desc = CmdDesc(
+        required=[
+            ('path', OpenFileNameArg),
+        ],
+        keyword=[
+            ('hkl_path', OpenFileNameArg),
+        ],
+        synopsis='Open a small-molecule (COD) CIF as a live crystal structure: model '
+                 'in the unit cell, symmetry, and live electron-density maps'
+    )
+    register('clipper crystal', crystal_desc, open_cod_crystal, logger=logger)
+
+    cod_desc = CmdDesc(
+        required=[
+            ('cod_id', StringArg),
+        ],
+        keyword=[
+            ('ignore_cache', BoolArg),
+        ],
+        synopsis='Fetch a structure from the Crystallography Open Database (by numeric '
+                 'COD ID) and open it as a live crystal structure'
+    )
+    register('clipper cod', cod_desc, fetch_cod_crystal, logger=logger)
 
     save_desc = CmdDesc(
         required=[

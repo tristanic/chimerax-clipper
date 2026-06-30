@@ -87,6 +87,43 @@ def test_clipper_frame_geometry(session):
     assert worst < 0.01, worst   # Clipper-frame coords match to <0.001 A; corecif's were ~0.017
 
 
+def test_live_map_engine(session):
+    '''The live-map compute engine (SmallMoleculeXmapMgr): the 2mFo-DFc map must
+    place atoms on positive density, and the anisotropic+spline scaling must give an
+    R-work close to the published value (which a crude overall scale would not - it
+    left a large heavy-atom residual). Exercised headlessly; the GUI display itself
+    needs an OpenGL context.'''
+    import numpy
+    from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
+    from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
+        _clipper_frame_coords, _small_molecule_map_data)
+    from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
+    from chimerax.clipper.clipper_python import Coord_orth, Map_stats
+    cif = os.path.join(_DATA, 'cod_1100908.cif')   # C2/c, Cu on a 2-fold; published R 0.041
+    model = open_small_molecule_cif(session, cif)
+    try:
+        cell, sg, grid = crystal_symmetry_from_cif_file(cif)
+        model.atoms.coords = _clipper_frame_coords(model, cif, cell)
+        smd = _small_molecule_map_data(model, cif, None, cell, sg, grid)
+        mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
+            smd['grid'], smd['scaffold'], smd['fobs'], structure=model,
+            scaffold_to_model=smd['scaffold_to_model'])
+        mgr.add_xmap('2mFo-DFc', is_difference_map=False)
+        mgr.add_xmap('mFo-DFc', is_difference_map=True)
+        # R-work close to the published 0.041 (aniso+spline scaling).
+        assert abs(mgr.rwork - 0.041) < 0.02, mgr.rwork
+        # 2mFo-DFc places atoms on positive density.
+        xm = mgr.get_xmap_ref('2mFo-DFc')
+        st = Map_stats(xm)
+        vals = numpy.array([xm.get_data(
+            Coord_orth(float(x[0]), float(x[1]), float(x[2])).coord_frac(cell).coord_grid(
+                xm.grid_sampling)) for x in model.atoms.coords])
+        assert (vals > st.mean).mean() > 0.9, (vals > st.mean).mean()
+        assert (vals.mean() - st.mean) / st.std_dev > 2.0
+    finally:
+        session.models.close([model])
+
+
 def run_all(session):
     tests = [v for k, v in sorted(globals().items())
              if k.startswith('test_') and callable(v)]
