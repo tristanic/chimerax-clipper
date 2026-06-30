@@ -468,9 +468,13 @@ def sfcalc_scaffold(path, cell, spacegroup, grid):
     u_iso = numpy.zeros(n, numpy.double)
     u_aniso = numpy.ones((n, 6), numpy.double) * numpy.nan
     xm = Xmap_double(spacegroup, cell, grid)
+    from ..scattering import clipper_species_from_type_symbol
     for i, r in enumerate(arows):
         labels.append(r[0])
-        elements.append(_element_from_type_symbol(r[1]))
+        # Honour an ionic scattering type declared in the CIF type_symbol
+        # (e.g. "O2-", "Ca2+"); fall back to the neutral element otherwise.
+        elements.append(clipper_species_from_type_symbol(
+            r[1], _element_from_type_symbol(r[1])))
         cf = Coord_frac(float(_strip_su(r[2])), float(_strip_su(r[3])), float(_strip_su(r[4])))
         co = cf.coord_orth(cell)
         coords[i] = (co.x, co.y, co.z)

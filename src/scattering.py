@@ -79,6 +79,32 @@ def _normalize(identifier):
     return ''.join(out)
 
 
+def clipper_species_from_type_symbol(type_symbol, neutral_fallback):
+    '''Map a CIF ``_atom_site_type_symbol`` to a Clipper scattering-factor species.
+
+    Small-molecule CIFs commonly declare an ionic scattering type even for bonded
+    atoms (e.g. ``O2-``, ``Ca2+``) -- that is the species the structure was refined
+    against. Unlike the macromolecular path (which keeps bonded atoms neutral per
+    the IAM convention), this honours the CIF-declared charge directly: it returns
+    the charged species when Clipper tabulates it, otherwise ``neutral_fallback``.
+    '''
+    if not type_symbol:
+        return neutral_fallback
+    valid = valid_scattering_species()
+    candidate = _normalize(type_symbol)
+    if candidate in valid:
+        return candidate
+    # Some CIFs omit the '1' for monovalent ions ("Na+" rather than the table's
+    # "Na1+"); retry with it inserted.
+    import re
+    m = re.fullmatch(r'([A-Za-z]+)([+-])', candidate)
+    if m:
+        alt = '{}1{}'.format(m.group(1), m.group(2))
+        if alt in valid:
+            return alt
+    return neutral_fallback
+
+
 def _session_for(atoms):
     try:
         structures = atoms.unique_structures
