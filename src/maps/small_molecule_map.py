@@ -73,10 +73,10 @@ class SmallMoleculeXmapMgr:
         return self._rwork
 
     def add_xmap(self, name, b_sharp=0, is_difference_map=False, **kw):
-        from ..clipper_python import Xmap_double
+        from ..clipper_python import Xmap_float
         self._maps[name] = {
             'is_difference': bool(is_difference_map),
-            'current': Xmap_double(self.spacegroup, self.cell, self.grid_sampling),
+            'current': Xmap_float(self.spacegroup, self.cell, self.grid_sampling),
             'pending': None,
         }
         # Compute an initial map so something shows immediately.
@@ -154,11 +154,16 @@ class SmallMoleculeXmapMgr:
         '''Fcalc (FFT, no bulk solvent) -> scale -> 2Fo-Fc / Fo-Fc coefficients ->
         real-space maps. Runs in the worker thread; SFcalc and fft_from release the
         GIL so graphics keep rendering.'''
-        from ..clipper_python import HKL, Resolution, SFcalc_aniso_fft_double, Xmap_double
-        from ..clipper_python.data64 import HKL_data_F_phi_double
+        # Float (ftype32) throughout, to match the live-map display path: the
+        # XmapHandler fills a float32 numpy array via Xmap.export_section_numpy,
+        # which is typed to the Xmap's scalar - a double Xmap would make pybind
+        # fill a discarded float64 copy, leaving the displayed map all zeros.
+        from ..clipper_python import (HKL, Resolution, SFcalc_aniso_fft_float,
+            Xmap_float)
+        from ..clipper_python.data32 import HKL_data_F_phi_float
 
-        fcalc = HKL_data_F_phi_double(self.hklinfo)
-        sfcalc = SFcalc_aniso_fft_double(2.5, self.FFT_RATE, 0.0)
+        fcalc = HKL_data_F_phi_float(self.hklinfo)
+        sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0)
         sfcalc(fcalc, atoms)
         hkls, cdata = fcalc.data          # cdata[:,0]=Fc, cdata[:,1]=phi (radians)
         Fc = cdata[:, 0]
@@ -192,8 +197,8 @@ class SmallMoleculeXmapMgr:
 
         for m in self._maps.values():
             amp = fofc if m['is_difference'] else twofofc
-            coeffs = HKL_data_F_phi_double(self.hklinfo)
+            coeffs = HKL_data_F_phi_float(self.hklinfo)
             coeffs.set_data(hkls_i, numpy.stack([amp, phi_f], axis=1))
-            xmap = Xmap_double(self.spacegroup, self.cell, self.grid_sampling)
+            xmap = Xmap_float(self.spacegroup, self.cell, self.grid_sampling)
             xmap.fft_from(coeffs)
             m['pending'] = xmap
