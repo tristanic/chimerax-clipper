@@ -560,4 +560,4 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
     s2m = numpy.array([name_to_idx.get(lbl, -1) for lbl in scaffold['labels']], int)
     return {'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
             'resolution': res, 'scaffold': scaffold, 'fobs': fo_aligned,
-            'structure': model, 'scaffold_to_model': s2m}
+            'structure': model, 'scaffold_to_model': s2m, 'path': path}

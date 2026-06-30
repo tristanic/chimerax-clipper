@@ -341,7 +341,11 @@ class XmapSet(MapSetBase):
 
     @property
     def path(self):
-        return self.crystal_data.path
+        if self.crystal_data is not None:
+            return self.crystal_data.path
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data.get('path')
+        return None
 
     @property
     def box_params(self):
@@ -431,7 +435,7 @@ class XmapSet(MapSetBase):
     def experimental_data(self):
         if self.crystal_data is not None:
             return self.crystal_data.experimental_data.datasets
-        return None
+        return {}
 
     @property
     def hklinfo(self):
