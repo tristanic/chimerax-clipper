@@ -27,7 +27,8 @@ def atom_list_from_sel(atom_list):
     from the relevant atom properties.
     '''
     n = len(atom_list)
-    elements = atom_list.element_names.tolist()
+    from .scattering import ionic_scattering_names
+    elements = ionic_scattering_names(atom_list)
     coords = atom_list.coords
     occupancies = atom_list.occupancies
     import numpy

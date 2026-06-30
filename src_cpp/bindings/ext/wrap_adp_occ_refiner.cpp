@@ -156,12 +156,13 @@ void declare_adp_occ_refiner(py::module& m)
                const HKL_data<Flag>&                    usage,
                bool                                     ignore_hydrogens,
                const HKL_data<F_phi<ftype32>>&          f_bulk,
-               py::object                               restraints)
+               py::object                               restraints,
+               std::vector<std::string>                 elements)
             {
                 auto result =
                     clipper_cx::bridge::clipper_atoms_from_cx_atoms_with_map(
                         (atomstruct::Atom**)cx_ptrs.data(),
-                        cx_ptrs.size(), ignore_hydrogens);
+                        cx_ptrs.size(), ignore_hydrogens, elements);
                 cx::BFactorRestraintSpec rspec = parse_pairwise_restraints(restraints);
                 self.launch(result.first, result.second, fobs, phi_fom, usage,
                             ignore_hydrogens, f_bulk, rspec);
@@ -172,7 +173,8 @@ void declare_adp_occ_refiner(py::module& m)
             py::arg("usage"),
             py::arg("ignore_hydrogens") = false,
             py::arg("f_bulk") = HKL_data<F_phi<ftype32>>(),
-            py::arg("restraints")  = py::none())
+            py::arg("restraints")  = py::none(),
+            py::arg("elements") = std::vector<std::string>())
 
         // Write refined B-factors and occupancies back to ChimeraX atoms via
         // the stored (Atom*, altloc, index) mapping.  Must be called from the
@@ -196,15 +198,17 @@ void declare_adp_occ_refiner(py::module& m)
                const Coord_orth&         target_origin,
                bool                      ignore_hydrogens,
                py::object                restraints,
-               py::object                target_restraints)
+               py::object                target_restraints,
+               std::vector<std::string>  refined_elements,
+               std::vector<std::string>  context_elements)
             {
                 auto refined_result =
                     clipper_cx::bridge::clipper_atoms_from_cx_atoms_with_map(
                         (atomstruct::Atom**)refined_ptrs.data(),
-                        refined_ptrs.size(), ignore_hydrogens);
+                        refined_ptrs.size(), ignore_hydrogens, refined_elements);
                 auto context_atoms = clipper_cx::bridge::clipper_atoms_from_cx_atoms(
                     (atomstruct::Atom**)context_ptrs.data(),
-                    context_ptrs.size(), ignore_hydrogens);
+                    context_ptrs.size(), ignore_hydrogens, context_elements);
                 cx::BFactorRestraintSpec rspec = parse_pairwise_restraints(restraints);
                 cx::BFactorTargetRestraintSpec tspec = parse_target_restraints(target_restraints);
                 self.launch_realspace(refined_result.first, refined_result.second,
@@ -217,7 +221,9 @@ void declare_adp_occ_refiner(py::module& m)
             py::arg("target_origin"),
             py::arg("ignore_hydrogens") = false,
             py::arg("restraints")        = py::none(),
-            py::arg("target_restraints") = py::none())
+            py::arg("target_restraints") = py::none(),
+            py::arg("refined_elements") = std::vector<std::string>(),
+            py::arg("context_elements") = std::vector<std::string>())
 
         // Compute R-work and R-free from the current refined parameters.
         // Runs one extra EDcalc + FFT; only meaningful for the crystallographic

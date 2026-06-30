@@ -22,6 +22,7 @@
 #pragma once
 #include <utility>
 #include <vector>
+#include <string>
 #include <atomstruct/Atom.h>
 #include <atomstruct/Residue.h>
 #include <clipper/clipper.h>
@@ -60,12 +61,20 @@ clipper::Atom cl_atom_from_cx_atom(atomstruct::Atom* cxatom, Types ... args)
 // Non-template conversion functions — defined in chimerax_bridge.cpp and
 // exported from clipper_cx so that multiple pybind11 translation units can
 // call them without each TU emitting its own duplicate COMDAT symbol.
+//
+// `elements`, when non-empty, supplies an explicit scattering-factor identifier
+// (e.g. "Fe2+", "Cl1-") per *input* atom, indexed by position in `cxatoms`; all
+// altlocs of an atom share its entry. It overrides the atom's neutral element so
+// the caller can request ionic form factors. When empty, the neutral element is
+// used (original behaviour).
 CLIPPER_CX_IMEX clipper::Atom_list
-clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens);
+clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens,
+                            const std::vector<std::string>& elements = {});
 
 CLIPPER_CX_IMEX clipper::Atom_list
 clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
-                                     size_t n_threads, bool ignore_hydrogens);
+                                     size_t n_threads, bool ignore_hydrogens,
+                                     const std::vector<std::string>& elements = {});
 
 //! Maps one entry in the Clipper Atom_list back to its origin in ChimeraX.
 //! altloc == '\0' means a single-conformer atom (no altloc).
@@ -84,7 +93,8 @@ struct CLIPPER_CX_IMEX AtomAltlocIndex {
 CLIPPER_CX_IMEX
 std::pair<clipper::Atom_list, std::vector<AtomAltlocIndex>>
 clipper_atoms_from_cx_atoms_with_map(
-    atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens);
+    atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens,
+    const std::vector<std::string>& elements = {});
 
 } // namespace bridge
 } // namespace clipper_cx

@@ -108,11 +108,13 @@ void declare_xtal_thread_mgr(py::module& m)
             const HKL_data<I_sigI_ano<ftype32>>&, const size_t>(),
             py::arg("hkl_info"), py::arg("free_flags"), py::arg("grid_sampling"),
             py::arg("i_obs_anom"), py::arg("num_threads") = 1)
-        .def("init", &Class::init)
+        .def("init", &Class::init,
+            py::arg("cxatoms"), py::arg("elements")=std::vector<std::string>())
         .def_property("num_threads", &Class::num_threads, &Class::set_num_threads)
         .def_property_readonly("thread_running", &Class::thread_running)
         .def("ready", &Class::ready)
-        .def("recalculate_all_maps", &Class::recalculate_all)
+        .def("recalculate_all_maps", &Class::recalculate_all,
+            py::arg("cxatoms"), py::arg("elements")=std::vector<std::string>())
         .def("apply_new_maps", &Class::apply_new_maps)
         .def("bulk_solvent_optimization_needed", &Class::bulk_solvent_optimization_needed)
         .def_property_readonly("free_flag", &Class::freeflag)

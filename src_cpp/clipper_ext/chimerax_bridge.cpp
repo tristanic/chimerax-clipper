@@ -28,8 +28,21 @@
 namespace clipper_cx {
 namespace bridge {
 
+namespace {
+// Apply an explicit scattering-factor identifier for input atom `i`, if one was
+// supplied. `elements` is indexed by input-atom position so every altloc of an
+// atom shares its entry.
+inline void apply_element_override(clipper::Atom& a,
+    const std::vector<std::string>& elements, size_t i)
+{
+    if (i < elements.size() && !elements[i].empty())
+        a.set_element(clipper::String(elements[i]));
+}
+} // anonymous namespace
+
 clipper::Atom_list
-clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens)
+clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens,
+                            const std::vector<std::string>& elements)
 {
     auto al = clipper::Atom_list();
     for (size_t i = 0; i < n; ++i)
@@ -42,9 +55,15 @@ clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hy
         if (altlocs.size())
         {
             for (const auto& altloc: altlocs)
-                al.push_back(cl_atom_from_cx_atom<char>(cxa, altloc));
+            {
+                auto a = cl_atom_from_cx_atom<char>(cxa, altloc);
+                apply_element_override(a, elements, i);
+                al.push_back(a);
+            }
         } else {
-            al.push_back(cl_atom_from_cx_atom<>(cxa));
+            auto a = cl_atom_from_cx_atom<>(cxa);
+            apply_element_override(a, elements, i);
+            al.push_back(a);
         }
     }
     return al;
@@ -52,12 +71,13 @@ clipper_atoms_from_cx_atoms(atomstruct::Atom** cxatoms, size_t n, bool ignore_hy
 
 clipper::Atom_list
 clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
-                                     size_t n_threads, bool ignore_hydrogens)
+                                     size_t n_threads, bool ignore_hydrogens,
+                                     const std::vector<std::string>& elements)
 {
     const size_t min_threaded_size   = 10000;
     const size_t min_atoms_per_thread = 4000;
     if (n_threads == 1 || n < min_threaded_size)
-        return clipper_atoms_from_cx_atoms(cxatoms, n, ignore_hydrogens);
+        return clipper_atoms_from_cx_atoms(cxatoms, n, ignore_hydrogens, elements);
 
     size_t atoms_per_thread = std::max(min_atoms_per_thread, n / n_threads + 1);
     std::vector<std::future<clipper::Atom_list>> results;
@@ -68,7 +88,7 @@ clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
     {
         end = std::min(n, start + atoms_per_thread);
         results.push_back(std::async(std::launch::async,
-            [&atom_count, ignore_hydrogens](atomstruct::Atom** atoms, size_t s, size_t e)
+            [&atom_count, &elements, ignore_hydrogens](atomstruct::Atom** atoms, size_t s, size_t e)
             {
                 auto al = clipper::Atom_list();
                 size_t counter = 0;
@@ -82,11 +102,15 @@ clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
                     {
                         for (const auto& altloc: altlocs)
                         {
-                            al.push_back(cl_atom_from_cx_atom<char>(cxa, altloc));
+                            auto a = cl_atom_from_cx_atom<char>(cxa, altloc);
+                            apply_element_override(a, elements, j);
+                            al.push_back(a);
                             counter++;
                         }
                     } else {
-                        al.push_back(cl_atom_from_cx_atom<>(cxa));
+                        auto a = cl_atom_from_cx_atom<>(cxa);
+                        apply_element_override(a, elements, j);
+                        al.push_back(a);
                         counter++;
                     }
                 }
@@ -110,7 +134,8 @@ clipper_atoms_from_cx_atoms_threaded(atomstruct::Atom** cxatoms, size_t n,
 
 std::pair<clipper::Atom_list, std::vector<AtomAltlocIndex>>
 clipper_atoms_from_cx_atoms_with_map(
-    atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens)
+    atomstruct::Atom** cxatoms, size_t n, bool ignore_hydrogens,
+    const std::vector<std::string>& elements)
 {
     clipper::Atom_list al;
     std::vector<AtomAltlocIndex> mapping;
@@ -126,11 +151,15 @@ clipper_atoms_from_cx_atoms_with_map(
         {
             for (const auto& altloc : altlocs)
             {
-                al.push_back(cl_atom_from_cx_atom<char>(cxa, altloc));
+                auto a = cl_atom_from_cx_atom<char>(cxa, altloc);
+                apply_element_override(a, elements, i);
+                al.push_back(a);
                 mapping.push_back({cxa, altloc, idx++, (int)i});
             }
         } else {
-            al.push_back(cl_atom_from_cx_atom<>(cxa));
+            auto a = cl_atom_from_cx_atom<>(cxa);
+            apply_element_override(a, elements, i);
+            al.push_back(a);
             mapping.push_back({cxa, '\0', idx++, (int)i});
         }
     }

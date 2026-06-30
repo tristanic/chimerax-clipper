@@ -75,7 +75,7 @@ private:
     T cutoff_radius( const Atom& a) const
     {
         try {
-            T atom_radius = data::vdw_radii.at(a.element().c_str());
+            T atom_radius = data::vdw_radius(a.element());
             auto uiso = a.u_iso();
             uiso = std::max(uiso, 0.0);
             return std::max(atom_radius * (0.4 + 1.5 * pow(uiso, 0.5)), 3.0);

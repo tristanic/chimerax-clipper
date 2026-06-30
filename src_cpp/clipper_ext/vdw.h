@@ -21,6 +21,8 @@
 
 #pragma once
 #include <unordered_map>
+#include <string>
+#include <cctype>
 #include <clipper/clipper.h>
 
 //! Van der Waals radii for use in map calculations. Mostly as per CCTBX,
@@ -129,5 +131,21 @@ namespace data
         {"Cf", 1.63},
         {"Pu", 2.00} // Yes, there **is** actually someone crazy enough to use plutonium in a crystal!
     };
+
+    //! Van der Waals radius for an element identifier, tolerating an ionic charge
+    //  suffix: an atom whose element has been set to an ionic scattering-factor
+    //  name ("Zn2+", "Cl1-") resolves to the (charge-independent) entry for its
+    //  base element ("Zn", "Cl"). Throws std::out_of_range if the base element is
+    //  unknown, matching unordered_map::at.
+    inline clipper::ftype32 vdw_radius(const std::string& element)
+    {
+        std::string base;
+        for (char c : element)
+        {
+            if (std::isalpha(static_cast<unsigned char>(c))) base += c;
+            else break;
+        }
+        return vdw_radii.at(base);
+    }
 } // namespace clipper_cx::data
 } // namespace clipper_cx

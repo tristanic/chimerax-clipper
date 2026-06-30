@@ -34,6 +34,18 @@ using namespace clipper;
 
 void init_atomsf(py::module&m)
 {
+m.def("scattering_factor_names", []() {
+        std::vector<std::string> names;
+        for (const auto& s : clipper::data::sf_element_names())
+            names.push_back(std::string(s));
+        return names;
+    },
+    "List of every element/ion identifier with a tabulated X-ray scattering "
+    "factor (e.g. 'C', 'Fe', 'Fe2+', 'Cl1-'). An identifier absent from this "
+    "list must not be passed to a scattering-factor calculation: Clipper raises "
+    "a fatal error on an unknown type rather than falling back to the neutral "
+    "element.");
+
 py::class_<AtomShapeFn> atomsf(m, "AtomShapeFn");
 atomsf
     .def(py::init<>())

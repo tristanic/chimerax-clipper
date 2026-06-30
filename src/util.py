@@ -88,23 +88,10 @@ def set_to_default_cartoon(session, model = None):
     color.color(session, objects, color='byhetero', target='a')
 
 
-def atom_list_from_sel(atom_list):
-    '''
-    Takes a ChimeraX Atoms object, and creates a Clipper Atoms_list object
-    from the relevant atom properties.
-    '''
-    n = len(atom_list)
-    elements = atom_list.element_names.tolist()
-    coords = atom_list.coords
-    occupancies = atom_list.occupancies
-    import numpy
-    from math import pi
-    u_iso = numpy.sqrt(atom_list.bfactors/(8*pi**2))
-    u_aniso = numpy.ones([n,6],numpy.double)*numpy.nan
-    u_aniso[atom_list.has_aniso_u] = atom_list.filter(atom_list.has_aniso_u).aniso_u6
-    from .clipper_python import Atom_list
-    clipper_atom_list = Atom_list(elements, coords, occupancies, u_iso, u_aniso)
-    return clipper_atom_list
+# Re-exported from .main so there is a single implementation (which assigns
+# ionic scattering factors to monatomic ions); kept importable here because
+# existing callers do `from .util import atom_list_from_sel`.
+from .main import atom_list_from_sel
 
 def _model_volume(model, exclude_hydrogens=True, radius_scale=1):
     from math import pi

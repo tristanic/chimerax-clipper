@@ -20,7 +20,7 @@
 // of these is redistributed under its own license terms.
 
 #pragma once
-//#include <string>
+#include <string>
 #include <unordered_map>
 #include <future>
 #include <memory>
@@ -456,7 +456,11 @@ public:
     // worker threads up to the num_threads() limit). New maps will be stored
     // in xmap_thread_results_ until pushed to the manager by apply_new_maps();
 
-    void recalculate_all(std::vector<uintptr_t> cxatoms);
+    // `elements`, when non-empty, gives an explicit scattering-factor identifier
+    // (e.g. "Fe2+") per atom in `cxatoms`, so ionic form factors are used for
+    // monatomic ions. Computed once on the Python side and reused each frame.
+    void recalculate_all(std::vector<uintptr_t> cxatoms,
+                         std::vector<std::string> elements = {});
     //void recalculate_all(const Atom_list& atoms);
     // Swap newly-created maps into the manager seen by Python. This will return
     // an error if recalculate_all() wasn't called first, or block until the
@@ -513,7 +517,8 @@ public:
     // Finalise thread and return a copy
     HKL_data<Phi_fom<ftype32>> weights();
 
-    void init(std::vector<uintptr_t> cxatoms);
+    void init(std::vector<uintptr_t> cxatoms,
+              std::vector<std::string> elements = {});
 
     void add_xmap(const std::string& name,
         const ftype& bsharp, bool is_difference_map=false,

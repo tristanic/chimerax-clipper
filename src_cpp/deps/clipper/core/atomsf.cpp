@@ -479,6 +479,15 @@ SFdata sfdata[] = {
         {  0.061815,  0.606541,  3.245363, 13.616438,  3.245364,  0.000000}}
 };
 
+std::vector<String> sf_element_names()
+{
+  const int ntyp = sizeof(sfdata) / sizeof(sfdata[0]);
+  std::vector<String> names;
+  names.reserve( ntyp );
+  for ( int i = 0; i < ntyp; i++ ) names.push_back( String( sfdata[i].name ) );
+  return names;
+}
+
 } // namespace data
 
 

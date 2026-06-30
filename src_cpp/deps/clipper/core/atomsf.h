@@ -145,6 +145,16 @@ namespace clipper
   };
 
 
+  namespace data {
+    //! Return the identifiers of every tabulated scattering-factor species.
+    /*! Names are returned exactly as stored in the internal table — neutral
+      elements ("C", "Fe") and ions alike ("Fe2+", "Cl1-"). Use this to validate
+      an identifier before passing it to AtomShapeFn, which raises a fatal error
+      (rather than falling back to the neutral element) on an unknown type. */
+    CLIPPER_IMEX std::vector<String> sf_element_names();
+  } // namespace data
+
+
 } // namespace clipper
 
 #endif

@@ -61,7 +61,7 @@ bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& 
     {
         if (ignore_zero_occ_atoms_ && a.occupancy() == 0) continue;
         try {
-            atom_radius = clipper_cx::data::vdw_radii.at(a.element().c_str());
+            atom_radius = clipper_cx::data::vdw_radius(a.element());
         } catch (...) {
             std::stringstream str;
             str << "Could not find van der Waals radius for atom name " << a.element();
@@ -146,7 +146,7 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
                     const auto& a = atoms[j];
                     if (a.is_null()) continue;
                     if (izo && a.occupancy() == 0) continue;
-                    const auto& atom_radius = clipper_cx::data::vdw_radii.at(a.element().c_str());
+                    const auto atom_radius = clipper_cx::data::vdw_radius(a.element());
                     xyz = a.coord_orth();
                     cg = xmap.coord_map(xyz).coord_grid();
                     g0 = cg + gd.min();

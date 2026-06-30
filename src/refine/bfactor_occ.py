@@ -353,11 +353,13 @@ class BFactorOccRefineManager:
         # The optional pairwise restraint spec is passed straight through as a
         # single tuple (or None); C++ unpacks it (see parse_pairwise_restraints).
         from ..delayed_reaction import delayed_reaction
+        from ..scattering import ionic_scattering_names
+        elements = ionic_scattering_names(atoms)
         delayed_reaction(
             self._session.triggers, 'new frame',
             _timed_launch,
             [atoms.pointers, fobs, phi_fom, usage, ignore_hydrogens, f_bulk,
-             b_restraints],
+             b_restraints, elements],
             self._thread_mgr.ready,
             self._apply_results, []
         )
@@ -655,6 +657,11 @@ class BFactorOccRefineManager:
             # captured by the closure below.
             # Restraint specs pass straight through as single tuples (or None);
             # C++ unpacks them (see parse_pairwise_restraints / parse_target_restraints).
+            from ..scattering import ionic_scattering_names
+            refined_elements = ionic_scattering_names(refined_atoms)
+            context_elements = (ionic_scattering_names(context_atoms)
+                                if context_atoms is not None else [])
+
             def _timed_launch(refined_ptrs, ctx_ptrs, xmap, origin, ignore_h):
                 if self._log_level == 'debug':
                     from time import perf_counter
@@ -662,7 +669,9 @@ class BFactorOccRefineManager:
                 self._thread_mgr.launch_realspace(
                     refined_ptrs, ctx_ptrs, xmap, origin, ignore_h,
                     restraints=b_restraints,
-                    target_restraints=b_target_restraints)
+                    target_restraints=b_target_restraints,
+                    refined_elements=refined_elements,
+                    context_elements=context_elements)
 
             from ..delayed_reaction import delayed_reaction
             delayed_reaction(

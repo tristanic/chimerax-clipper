@@ -510,7 +510,8 @@ class XmapSet(MapSetBase):
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms
-        xm.init(atoms.pointers)
+        from ..scattering import ionic_scattering_names
+        xm.init(atoms.pointers, ionic_scattering_names(atoms))
         end_time = time()
         print(f'Launching live xmap mgr took {end_time-start_time} seconds.')
 
@@ -789,10 +790,15 @@ class XmapSet(MapSetBase):
         import ctypes
         # from .. import atom_list_from_sel
         from ..delayed_reaction import delayed_reaction
+        from ..scattering import ionic_scattering_names
         xm = self.live_xmap_mgr
         # ca = self._clipper_atoms = atom_list_from_sel(atoms)
+        # Ionic scattering factors for any monatomic ions; recomputed here (rather
+        # than cached) so it tracks ions added/removed during modelling. The
+        # per-atom species aligns by index with atoms.pointers.
+        elements = ionic_scattering_names(atoms)
         delayed_reaction(self.session.triggers, 'new frame',
-            xm.recalculate_all_maps, [atoms.pointers,],
+            xm.recalculate_all_maps, [atoms.pointers, elements],
             xm.ready,
             self._apply_new_maps, []
             )
