@@ -519,7 +519,10 @@ def show_cod_crystal(session, path, hkl_path=None):
     else:
         session.logger.info('(CLIPPER) No reflections found for %s; showing model '
             '+ symmetry only.' % os.path.basename(path))
-    return mmgr.crystal_mgr
+    crystal_mgr = mmgr.crystal_mgr
+    if crystal_mgr.id is None:
+        session.models.add([crystal_mgr])
+    return crystal_mgr
 
 
 def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
