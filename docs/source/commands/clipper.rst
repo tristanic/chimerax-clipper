@@ -9,7 +9,9 @@ crystallographic data: real-space volumetric maps of any kind may be associated
 with your model to provide a unified visualisation scheme
 (see :ref:`associate`). Using Clipper you can open (:ref:`open`) and save
 (:ref:`save`) structure factors in MTZ format, and explore the detailed fit of
-you model to maps (see :ref:`spotlight` and :ref:`isolate`). Where applicable,
+you model to maps (see :ref:`spotlight` and :ref:`isolate`). Small-molecule
+crystals (e.g. from the Crystallography Open Database) can be opened with live
+symmetry and maps using :ref:`smallmol` and :ref:`cod`. Where applicable,
 a model initialised for ChimeraX-Clipper will provide a real-time display of
 crystallographic symmetry-related molecules.
 
@@ -55,6 +57,88 @@ will be sharpened, while higher-resolution maps will be smoothed. The sharper
 of the two maps will be displayed as a transparent surface, the other as a
 wireframe. Finally, a standard mFo-DFc map will be generated and displayed
 with contours at ± 3 sigma.
+
+.. _`smallmol`:
+
+clipper smallmol
+----------------
+
+Syntax: clipper smallmol *path* [**hkl** *path*]
+
+Open a small-molecule CIF (the "core CIF" dialect used by, e.g., the
+Crystallography Open Database) as a live crystal structure: the model in its
+unit cell, crystallographic symmetry mates, and - when experimental reflections
+are available - live-updating electron-density maps. This is the small-molecule
+counterpart to :ref:`open` (which handles macromolecular MTZ/structure-factor
+data); use *smallmol* for single-molecule crystals where the unit cell and
+symmetry come from the model's own CIF.
+
+*path* is the model CIF. Reflections may be supplied in either of two ways:
+
+* explicitly, with the **hkl** keyword, pointing at a small-molecule
+  structure-factor file (itself a CIF, conventionally with a ``.hkl``
+  extension, containing a ``_refln_`` loop of squared structure factors
+  ``F_squared_meas``); or
+* implicitly - if **hkl** is omitted, a sibling file alongside *path* with the
+  same stem and a ``.hkl`` extension is used automatically when present.
+
+If no reflections are found the model is still opened with its unit cell and
+symmetry, but no maps are created.
+
+When reflections are present, two live maps are generated (with "(LIVE)"
+prepended to their names) and recomputed as the model moves:
+
+* a **2mFo-DFc** map, contoured over the model, and
+* an **mFo-DFc** difference map.
+
+These follow the small-molecule conventions rather than the macromolecular ones
+used by :ref:`open`. Structure factors are calculated by FFT with **no bulk
+solvent** (small-molecule crystals are densely packed) and scaled onto the
+observed amplitudes with an anisotropic-Gaussian-plus-isotropic-spline scaling;
+there is no σA weighting and no free set. The difference map is contoured at an
+**absolute level in e/Å³** (not the ± 3 σ used for macromolecular maps): the
+familiar "3 σ" rule of thumb is calibrated for protein maps and is misleading at
+small-molecule data quality, where a residual peak is best judged against an
+absolute electron-density scale.
+
+.. _`cod`:
+
+clipper cod
+-----------
+
+Syntax: clipper cod *id* [**ignoreCache** *true/false* (false)]
+
+Fetch a structure from the Crystallography Open Database
+(https://www.crystallography.net) by its numeric COD *id*, then open it with
+:ref:`smallmol`. Both the model (``<id>.cif``) and, when the entry provides
+them, its structure factors (``<id>.hkl``) are downloaded; roughly 10% of COD
+entries include structure factors, and only those will produce live maps.
+
+Downloads are cached locally; pass **ignoreCache true** to force a fresh fetch.
+
+For example, ``clipper cod 1100908`` fetches the Cu complex used as a bundled
+example (see :ref:`smallmol_examples`).
+
+.. _`smallmol_examples`:
+
+Example data
+------------
+
+A couple of small-molecule examples (model + structure factors) are installed
+alongside the bundle so the above commands can be tried offline:
+
+* ``cod_1100908`` - a Cu complex in C 1 2/c 1 (#15), with the metal on a 2-fold
+  special position (published R = 0.041);
+* ``cod_2213867`` - an organic structure in P b c a (#61).
+
+To locate them, run this in the ChimeraX Python shell (Tools → General → Shell)::
+
+    import os, chimerax.clipper
+    print(os.path.join(os.path.dirname(chimerax.clipper.__file__), 'demo'))
+
+then, for example::
+
+    clipper smallmol <that-folder>/cod_1100908.cif hkl <that-folder>/cod_1100908.hkl
 
 .. _`save`:
 

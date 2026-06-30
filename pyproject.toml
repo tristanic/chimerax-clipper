@@ -51,6 +51,11 @@ classifiers = ["Development Status :: 4 - Beta"]
 "src/docs" = [
   "**",
 ]
+"src/demo" = [
+  "*.cif",
+  "*.hkl",
+  "*.txt",
+]
 
 # Public C++ headers shipped for downstream consumers (e.g. ISOLDE, third-party
 # CIFFile users).  This tree is AUTO-GENERATED from the canonical source headers at
