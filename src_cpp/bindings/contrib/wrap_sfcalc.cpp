@@ -18,7 +18,11 @@ void declare_sfcalc_base(py::module& m, const char* dtype)
             [](const Class& self,
                HKL_data<F_phi<T>>& fphidata,
                const Atom_list& atoms )
-            { return self(fphidata, atoms); })
+            { return self(fphidata, atoms); },
+            // Release the GIL during the structure-factor summation/FFT: it touches
+            // only Clipper C++ objects, so a Python worker thread can overlap it
+            // with the graphics thread (used by the live small-molecule maps).
+            py::call_guard<py::gil_scoped_release>())
         ;
 } // declare_sfcalc_base
 

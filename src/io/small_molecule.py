@@ -419,9 +419,25 @@ def _sfcalc_atom_list(path, cell, spacegroup, grid):
         reciprocal axes and must be scaled by a*_i a*_j before being interpreted as
         a Clipper U_aniso_frac, then transformed to the orthogonal frame.
     '''
+    scaffold = sfcalc_scaffold(path, cell, spacegroup, grid)
+    if scaffold is None:
+        return None
+    return atom_list_from_scaffold(scaffold)
+
+
+def sfcalc_scaffold(path, cell, spacegroup, grid):
+    '''
+    Per-atom structure-factor inputs read once from the CIF, in Clipper's
+    orthogonal frame: elements, Clipper-frame coordinates, special-position-
+    corrected occupancies, isotropic U, and orthogonal anisotropic U. Also returns
+    the atom labels (for aligning live model coordinates by label). The expensive
+    parts (Coord_frac->orth, Xmap.multiplicity, ADP frame conversion) are done here
+    so a live recalc only has to swap in fresh coordinates - see
+    atom_list_from_scaffold.
+    '''
     import numpy
     from chimerax.mmcif import get_cif_tables
-    from ..clipper_python import Atom_list, Coord_frac, Xmap_double, U_aniso_frac
+    from ..clipper_python import Coord_frac, Xmap_double, U_aniso_frac
 
     at, an = get_cif_tables(path, ['atom_site', 'atom_site_aniso'])
     if at is None or not at.has_field('fract_x'):
@@ -445,6 +461,7 @@ def _sfcalc_atom_list(path, cell, spacegroup, grid):
     asx, bsx, csx = cell.a_star, cell.b_star, cell.c_star
     sc6 = numpy.array([asx * asx, bsx * bsx, csx * csx, asx * bsx, asx * csx, bsx * csx])
 
+    labels = []
     elements = []
     coords = numpy.empty((n, 3), numpy.double)
     occupancies = numpy.empty(n, numpy.double)
@@ -452,6 +469,7 @@ def _sfcalc_atom_list(path, cell, spacegroup, grid):
     u_aniso = numpy.ones((n, 6), numpy.double) * numpy.nan
     xm = Xmap_double(spacegroup, cell, grid)
     for i, r in enumerate(arows):
+        labels.append(r[0])
         elements.append(_element_from_type_symbol(r[1]))
         cf = Coord_frac(float(_strip_su(r[2])), float(_strip_su(r[3])), float(_strip_su(r[4])))
         co = cf.coord_orth(cell)
@@ -465,4 +483,14 @@ def _sfcalc_atom_list(path, cell, spacegroup, grid):
             u_iso[i] = float(_strip_su(r[6]))
         else:
             u_iso[i] = 0.05
-    return Atom_list(elements, coords, occupancies, u_iso, u_aniso)
+    return {'labels': labels, 'elements': elements, 'coords': coords,
+            'occupancies': occupancies, 'u_iso': u_iso, 'u_aniso': u_aniso}
+
+
+def atom_list_from_scaffold(scaffold, coords=None):
+    '''Build a Clipper Atom_list from a scaffold (see sfcalc_scaffold), optionally
+    overriding the coordinates (Clipper orthogonal frame, n x 3) for a live recalc.'''
+    from ..clipper_python import Atom_list
+    xyz = scaffold['coords'] if coords is None else coords
+    return Atom_list(scaffold['elements'], xyz, scaffold['occupancies'],
+                     scaffold['u_iso'], scaffold['u_aniso'])

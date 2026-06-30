@@ -276,7 +276,9 @@ template <class Derived, class T, class H>
 void apply_xmap_fft_methods(py::class_<Derived, Xmap_base>& pyclass)
 {
     pyclass
-        .def("fft_from", [](Derived& self, const H& fphidata) { self.fft_from(fphidata); })
+        .def("fft_from", [](Derived& self, const H& fphidata) { self.fft_from(fphidata); },
+            // GIL released so a Python worker thread can overlap the FFT with graphics.
+            py::call_guard<py::gil_scoped_release>())
         .def("fft_to", [](const Derived& self, H& fphidata) { self.fft_to(fphidata); })
         ;
 }
