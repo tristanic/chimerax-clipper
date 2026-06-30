@@ -494,3 +494,70 @@ def atom_list_from_scaffold(scaffold, coords=None):
     xyz = scaffold['coords'] if coords is None else coords
     return Atom_list(scaffold['elements'], xyz, scaffold['occupancies'],
                      scaffold['u_iso'], scaffold['u_aniso'])
+
+
+def show_cod_crystal(session, path, hkl_path=None):
+    '''
+    Open a small-molecule (COD) CIF as a live crystal structure: the model in its
+    unit cell (in Clipper's coordinate frame, so the density aligns and the corecif
+    oblique-cell coordinate error is corrected), crystallographic symmetry, and -
+    when reflections are available - a live 2Fo-Fc / Fo-Fc electron-density map
+    computed by direct FFT with no bulk solvent, updating as the model changes.
+    Returns the crystal SymmetryManager.
+    '''
+    import os
+    from ..crystal import crystal_symmetry_from_cif_file
+    from ..symmetry import get_map_mgr
+    model = open_small_molecule_cif(session, path)
+    cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
+    model.atoms.coords = _clipper_frame_coords(model, path, cell)
+    mmgr = get_map_mgr(model, create=True)
+    smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid)
+    if smd is not None:
+        from ..maps.xmapset import XmapSet
+        XmapSet(mmgr, small_molecule_data=smd)
+    else:
+        session.logger.info('(CLIPPER) No reflections found for %s; showing model '
+            '+ symmetry only.' % os.path.basename(path))
+    return mmgr.crystal_mgr
+
+
+def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
+    '''Assemble the small_molecule_data dict consumed by XmapSet: crystal definition,
+    Fobs amplitudes aligned to a fresh HKL_info, the SF-calc scaffold, and a
+    scaffold->model atom-index map (by label) for live coordinate updates. Returns
+    None if no reflections are available.'''
+    import numpy
+    from .. import HKL_info, HKL_data_F_sigF
+    from ..clipper_python import HKL, Resolution
+
+    refln = None
+    if hkl_path:
+        from chimerax.mmcif import get_cif_tables
+        tbls = get_cif_tables(hkl_path, ['refln'])
+        refln = tbls[0] if tbls else None
+        if refln is not None and not refln.has_field('F_squared_meas'):
+            refln = None
+    if refln is None:
+        refln = _find_reflection_table(path)
+    if refln is None:
+        return None
+
+    rows = refln.fields(('index_h', 'index_k', 'index_l', 'F_squared_meas'),
+                        allow_missing_fields=True)
+    h = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
+    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
+    res = 1.0 / numpy.sqrt(max(HKL(h[i].tolist()).invresolsq(cell) for i in range(len(h))))
+    hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
+    fobs = HKL_data_F_sigF(hklinfo)
+    fo = numpy.sqrt(numpy.clip(fsq, 0, None))
+    fobs.set_data(h, numpy.stack([fo, numpy.ones_like(fo)], axis=1))
+    _, fo_d = fobs.data
+    fo_aligned = fo_d[:, 0]
+
+    scaffold = sfcalc_scaffold(path, cell, spacegroup, grid)
+    name_to_idx = {n: i for i, n in enumerate(model.atoms.names)}
+    s2m = numpy.array([name_to_idx.get(lbl, -1) for lbl in scaffold['labels']], int)
+    return {'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
+            'resolution': res, 'scaffold': scaffold, 'fobs': fo_aligned,
+            'structure': model, 'scaffold_to_model': s2m}

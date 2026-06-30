@@ -102,7 +102,8 @@ class XmapSet(MapSetBase):
         fill_with_fcalc=False,
         exclude_missing_reflections=False,
         show_r_factors=True,
-        auto_add_to_session=True):
+        auto_add_to_session=True,
+        small_molecule_data=None):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -170,6 +171,7 @@ class XmapSet(MapSetBase):
         self._show_r_factors = show_r_factors
 
         xm = self._live_xmap_mgr = None
+        self._small_molecule_data = small_molecule_data
         self._live_update = False
         self._recalc_needed = False
         self._model_changes_handler = None
@@ -180,7 +182,12 @@ class XmapSet(MapSetBase):
         self._maps_initialized=False
         self._f_sigf_data_name = None
 
-        if crystal_data is not None:
+        # Small-molecule live maps supply their crystal definition + Fobs + atom
+        # scaffold directly (see maps.small_molecule_map), bypassing the MTZ /
+        # ReflectionDataContainer / bulk-solvent path entirely.
+        if small_molecule_data is not None:
+            self._init_small_molecule_maps()
+        elif crystal_data is not None:
             self.add([crystal_data])
             self.init_maps(use_static_maps, use_live_maps,
             fsigf_name, bsharp_vals, exclude_free_reflections,
@@ -195,6 +202,31 @@ class XmapSet(MapSetBase):
     @property
     def base_name(self):
         return self._name
+
+    def _init_small_molecule_maps(self):
+        '''Set up live small-molecule maps from self._small_molecule_data (cell,
+        spacegroup, grid, hklinfo, resolution, scaffold, fobs amplitudes, the live
+        structure and a scaffold->model index map). Uses SmallMoleculeXmapMgr (FFT
+        structure factors, no bulk solvent) in place of the C++ Xtal_thread_mgr, and
+        reuses the standard box/spotlight + live-recalc machinery.'''
+        smd = self._small_molecule_data
+        from .. import Unit_Cell, atom_list_from_sel
+        alist = atom_list_from_sel(self.structure.atoms)
+        self._unit_cell = Unit_Cell(alist, self.cell, self.spacegroup, self.grid, 5)
+        if self.spotlight_mode:
+            self._box_changed_cb('init', (self.spotlight_center, self.display_radius))
+        else:
+            self.expand_to_cover_coords(self.master_map_mgr.last_covered_selection, 10)
+        from .small_molecule_map import SmallMoleculeXmapMgr
+        self._live_xmap_mgr = SmallMoleculeXmapMgr(
+            smd['hklinfo'], smd['cell'], smd['spacegroup'], smd['grid'],
+            smd['scaffold'], smd['fobs'],
+            structure=smd.get('structure'),
+            scaffold_to_model=smd.get('scaffold_to_model'))
+        self._maps_initialized = True
+        self.add_live_xmap('2mFo-DFc', is_difference_map=False)
+        self.add_live_xmap('mFo-DFc', is_difference_map=True)
+        self.live_update = True
 
     def init_maps(self, use_static_maps=True, use_live_maps=True,
             fsigf_name=None, bsharp_vals=None, exclude_free_reflections=False,
@@ -405,30 +437,40 @@ class XmapSet(MapSetBase):
     def hklinfo(self):
         if self.crystal_data is not None:
             return self.crystal_data.hklinfo
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data['hklinfo']
         return None
 
     @property
     def cell(self):
         if self.crystal_data is not None:
             return self.crystal_data.cell
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data['cell']
         return None
 
     @property
     def spacegroup(self):
         if self.crystal_data is not None:
             return self.crystal_data.spacegroup
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data['spacegroup']
         return None
 
     @property
     def resolution(self):
         if self.crystal_data is not None:
             return self.crystal_data.resolution.limit
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data['resolution']
         return None
 
     @property
     def grid(self):
         if self.crystal_data is not None:
             return self.crystal_data.grid_sampling
+        if self._small_molecule_data is not None:
+            return self._small_molecule_data['grid']
         return None
 
     @property
