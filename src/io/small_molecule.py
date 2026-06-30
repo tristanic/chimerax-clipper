@@ -32,7 +32,7 @@ data/parameter ratio is still available from the refinement record) set to None;
 the absence is reported, not treated as an error.
 '''
 
-from ..crystal import crystal_symmetry_from_cif_file, _strip_su, _first_cif_field
+from ..symmetry import crystal_symmetry_from_cif_file, _strip_su, _first_cif_field
 
 # Nuclear (neutron) X-H bond lengths in Angstroms, keyed by the bonded heavy-atom
 # element. Small-molecule X-ray refinement places H at the electron-density
@@ -506,7 +506,6 @@ def show_cod_crystal(session, path, hkl_path=None):
     Returns the crystal SymmetryManager.
     '''
     import os
-    from ..crystal import crystal_symmetry_from_cif_file
     from ..symmetry import get_map_mgr
     model = open_small_molecule_cif(session, path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)

@@ -216,10 +216,115 @@ def symmetry_from_model_metadata(model):
     '''
     if 'CRYST1' in model.metadata.keys():
         return symmetry_from_model_metadata_pdb(model)
+    elif getattr(model, 'is_corecif', False):
+        return symmetry_from_corecif(model)
     elif 'cell' in model.metadata.keys():
         return symmetry_from_model_metadata_mmcif(model)
     return simple_p1_box(model)
     # raise TypeError('Model does not appear to have symmetry information!')
+
+
+def symmetry_from_corecif(model):
+    '''
+    Crystallographic symmetry for a small-molecule (corecif) model. corecif
+    consumes the unit cell to place atoms and stores neither the cell nor the
+    symmetry in the model metadata, so both are recovered from the source CIF
+    (model.filename), building the space group from the explicit list of symmetry
+    operators. Returns the 5-tuple (cell, spacegroup, grid, resolution,
+    has_symmetry) expected by SymmetryManager.add_model.
+    '''
+    path = getattr(model, 'filename', None)
+    if path is None:
+        return simple_p1_box(model)
+    try:
+        cell, spacegroup, grid, res = _crystal_symmetry_from_cif(path)
+    except Exception:
+        return simple_p1_box(model)
+    from .clipper_python import Resolution
+    return cell, spacegroup, grid, Resolution(res), True
+
+
+# Small-molecule CIF numbers commonly carry their estimated standard uncertainty in
+# parentheses, e.g. "19.4943(15)"; strip it (and any CIF quoting) before float().
+def _strip_su(value):
+    value = value.strip().strip("'\"")
+    paren = value.find('(')
+    if paren != -1:
+        value = value[:paren]
+    return value
+
+
+def _first_cif_field(table, field):
+    if table is not None and table.has_field(field):
+        v = table.fields((field,))[0][0].strip()
+        if v not in ('', '?', '.'):
+            return v
+    return None
+
+
+def crystal_symmetry_from_cif_file(path):
+    '''Build Clipper Cell, Spacegroup and Grid_sampling from a (small-molecule /
+    core) CIF, with the space group built from its explicit symmetry operators.'''
+    cell, spacegroup, grid, res = _crystal_symmetry_from_cif(path)
+    return cell, spacegroup, grid
+
+
+def _crystal_symmetry_from_cif(path):
+    from chimerax.mmcif import get_cif_tables
+    from .clipper_python import (Cell_descr, Cell, Spgr_descr, Spacegroup,
+        Resolution, Grid_sampling)
+    cell_t, symm_t, sg_t, sgs_t, diffrn_t = get_cif_tables(
+        path, ['cell', 'symmetry', 'space_group', 'space_group_symop', 'diffrn'])
+
+    names = ('length_a', 'length_b', 'length_c',
+             'angle_alpha', 'angle_beta', 'angle_gamma')
+    try:
+        row = cell_t.fields(names)[0]
+        params = [float(_strip_su(v)) for v in row]
+    except Exception:
+        raise TypeError('Could not read unit cell from CIF!')
+    cell = Cell(Cell_descr(*params))
+
+    # Prefer the explicit symop list (covers non-standard settings and the full
+    # range of centrosymmetric / glide / mirror groups); fall back to number/name.
+    ops = []
+    for table, field in ((sgs_t, 'operation_xyz'), (symm_t, 'equiv_pos_as_xyz')):
+        if table is not None and table.has_field(field):
+            rows = table.fields((field,))
+            ops = [r[0].strip().strip("'\"").replace(' ', '') for r in rows]
+            ops = [o for o in ops if o]
+            if ops:
+                break
+    if ops:
+        spacegroup = Spacegroup(Spgr_descr(';'.join(ops), Spgr_descr.TYPE.Symops))
+    elif sg_t is not None and sg_t.has_field('IT_number') and \
+            _first_cif_field(sg_t, 'IT_number'):
+        spacegroup = Spacegroup(Spgr_descr(int(_first_cif_field(sg_t, 'IT_number'))))
+    else:
+        sym = (_first_cif_field(symm_t, 'space_group_name_Hall')
+               or _first_cif_field(symm_t, 'space_group_name_H-M'))
+        if sym is None:
+            raise TypeError('Could not determine space group from CIF!')
+        spacegroup = Spacegroup(Spgr_descr(sym))
+
+    res = _resolution_from_cif(diffrn_t, cell_t)
+    grid = Grid_sampling(spacegroup, cell, Resolution(res))
+    return cell, spacegroup, grid, res
+
+
+def _resolution_from_cif(diffrn_t, cell_t):
+    # High-resolution limit d_min = lambda / (2 sin(theta_max)); theta in degrees.
+    from math import sin, radians
+    wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
+    theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
+    if theta is None:
+        theta = _first_cif_field(cell_t, 'measurement_theta_max')
+    try:
+        if wl is not None and theta is not None:
+            return float(_strip_su(wl)) / (2.0 * sin(radians(float(_strip_su(theta)))))
+    except (ValueError, ZeroDivisionError):
+        pass
+    return 0.84  # sensible small-molecule default when collection limits are absent
 
 def simple_p1_box(model, resolution=3):
     '''
