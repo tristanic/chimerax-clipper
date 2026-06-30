@@ -174,25 +174,32 @@ class SmallMoleculeXmapMgr:
         fit = meas & (fo > 0)
 
         # Scale Fc onto Fo (overall + isotropic B): ln(Fo/Fc) = ln k - (B/4) s^2.
-        kFc = Fc.copy()
+        # Resolution-dependent scale S(s): Fo ~ S*Fc (overall + isotropic B).
+        scale = numpy.ones_like(Fc)
         if fit.sum() > 10:
             ss = numpy.array([HKL([int(h[0]), int(h[1]), int(h[2])]).invresolsq(self.cell)
                               for h in hkls])
             slope, intercept = numpy.polyfit(ss[fit], numpy.log(fo[fit] / Fc[fit]), 1)
-            kFc = numpy.exp(intercept + slope * ss) * Fc
+            scale = numpy.exp(intercept + slope * ss)
         elif fit.sum():
-            k = numpy.sum(fo[fit] * Fc[fit]) / numpy.sum(Fc[fit] ** 2)
-            kFc = k * Fc
+            scale[:] = numpy.sum(fo[fit] * Fc[fit]) / numpy.sum(Fc[fit] ** 2)
+        kFc = scale * Fc
 
         # R-work (over measured reflections), for the status line.
         self._rwork = float(numpy.sum(numpy.abs(fo[fit] - kFc[fit]))
                             / numpy.sum(fo[fit])) if fit.any() else 0.0
 
-        fo_f = numpy.where(self._meas, fo, 0.0)
-        kFc_f = numpy.nan_to_num(kFc)
+        # Put the map on the ABSOLUTE (electrons / A^3) scale by scaling Fo DOWN onto
+        # Fcalc's electron scale (Fo/S ~ Fc); fft_from of electron-scale coefficients
+        # then yields e/A^3, so the difference map can be contoured in absolute units
+        # (the small-molecule convention) rather than sigma.
+        with numpy.errstate(invalid='ignore', divide='ignore'):
+            fobs_e = numpy.where(scale > 0, fo / scale, 0.0)
+        fobs_e = numpy.nan_to_num(fobs_e)
+        Fc_f = numpy.nan_to_num(Fc)
         phi_f = numpy.nan_to_num(phi)
-        twofofc = numpy.where(self._meas, 2.0 * fo_f - kFc_f, 0.0)
-        fofc = numpy.where(self._meas, fo_f - kFc_f, 0.0)
+        twofofc = numpy.where(self._meas, 2.0 * fobs_e - Fc_f, 0.0)
+        fofc = numpy.where(self._meas, fobs_e - Fc_f, 0.0)
         hkls_i = hkls.astype(numpy.int32)
 
         for m in self._maps.values():

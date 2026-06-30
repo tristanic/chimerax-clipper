@@ -225,8 +225,25 @@ class XmapSet(MapSetBase):
             scaffold_to_model=smd.get('scaffold_to_model'))
         self._maps_initialized = True
         self.add_live_xmap('2mFo-DFc', is_difference_map=False)
-        self.add_live_xmap('mFo-DFc', is_difference_map=True)
+        diff = self.add_live_xmap('mFo-DFc', is_difference_map=True)
+        # Small-molecule difference maps are contoured at a fixed ABSOLUTE level
+        # (electrons/A^3), not sigma. The map is on the e/A^3 scale (see
+        # SmallMoleculeXmapMgr), and a well-fit model leaves a near-flat residual
+        # whose sigma is tiny - so the macromolecular +/-3 sigma default sits in the
+        # noise (blobs over every atom). +/-0.3 e/A^3 is the usual small-molecule level.
+        self._set_absolute_difference_contour(diff, level=0.3)
         self.live_update = True
+
+    def _set_absolute_difference_contour(self, handler, level=0.3):
+        # Replace the sigma-relative levels with absolute ones (same signs, so the
+        # positive/negative colours stay correct) and pin them: clearing
+        # _contour_sigma stops XmapHandler_Live._map_recalc_cb from rescaling the
+        # levels by the sigma ratio on each recalculation.
+        import numpy
+        signs = [s.level for s in handler.surfaces] if handler.surfaces else [level, -level]
+        handler.set_parameters(
+            surface_levels=[numpy.sign(c) * level if c else level for c in signs])
+        handler._contour_sigma = None
 
     def init_maps(self, use_static_maps=True, use_live_maps=True,
             fsigf_name=None, bsharp_vals=None, exclude_free_reflections=False,
