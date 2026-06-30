@@ -15,6 +15,7 @@
 
 #include <clipper_ext/xtal_mgr.h>
 #include <clipper_ext/vdw.h>
+#include <clipper_ext/aniso_scale.h>
 
 namespace py=pybind11;
 namespace cx=clipper_cx;
@@ -158,4 +159,18 @@ void init_xtal_mgr(py::module& m)
     declare_xmap_container(m);
     declare_xtal_mgr(m);
     declare_xtal_thread_mgr(m);
+
+    // Anisotropic-Gaussian + isotropic-spline scaling of Fcalc onto Fobs (the same
+    // routine used internally by Xtal_mgr_base), exposed for the small-molecule
+    // live-map manager. Fills scaled_fcalc with Fcalc placed on Fobs' scale.
+    m.def("scale_fcalc_to_fobs",
+        [](const HKL_data<F_phi<ftype32>>& fcalc, const HKL_data<F_sigF<ftype32>>& fobs,
+           HKL_data<F_phi<ftype32>>& scaled_fcalc)
+        {
+            U_aniso_orth uaniso;
+            std::vector<ftype> params;
+            cx::scale_fcalc_to_fobs(fcalc, fobs, scaled_fcalc, uaniso, params);
+        },
+        py::arg("fcalc"), py::arg("fobs"), py::arg("scaled_fcalc"),
+        py::call_guard<py::gil_scoped_release>());
 } // init_xtal_mgr

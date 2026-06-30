@@ -554,12 +554,10 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
     fobs = HKL_data_F_sigF(hklinfo)
     fo = numpy.sqrt(numpy.clip(fsq, 0, None))
     fobs.set_data(h, numpy.stack([fo, numpy.ones_like(fo)], axis=1))
-    _, fo_d = fobs.data
-    fo_aligned = fo_d[:, 0]
 
     scaffold = sfcalc_scaffold(path, cell, spacegroup, grid)
     name_to_idx = {n: i for i, n in enumerate(model.atoms.names)}
     s2m = numpy.array([name_to_idx.get(lbl, -1) for lbl in scaffold['labels']], int)
     return {'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
-            'resolution': res, 'scaffold': scaffold, 'fobs': fo_aligned,
+            'resolution': res, 'scaffold': scaffold, 'fobs': fobs,
             'structure': model, 'scaffold_to_model': s2m, 'path': path}

@@ -24,15 +24,16 @@ class SmallMoleculeXmapMgr:
     FFT_RATE = 1.5
 
     def __init__(self, hklinfo, cell, spacegroup, grid_sampling, scaffold,
-                 fobs_amplitudes, structure=None, scaffold_to_model=None):
+                 fobs, structure=None, scaffold_to_model=None):
         '''
         Args:
             hklinfo, cell, spacegroup, grid_sampling: the crystal definition.
             scaffold: per-atom structure-factor inputs (see
                 io.small_molecule.sfcalc_scaffold) - elements, Clipper-frame
                 coords, occupancies, U_iso, U_aniso, labels.
-            fobs_amplitudes: numpy array of Fo (sqrt of intensity), aligned to
-                hklinfo reflection order; NaN where unmeasured.
+            fobs: an HKL_data_F_sigF of observed amplitudes (Fo = sqrt of
+                intensity), over hklinfo. Used directly by the anisotropic+spline
+                scaling (scale_fcalc_to_fobs).
             structure: optional live AtomicStructure (Clipper-frame coords) whose
                 current coordinates are used on each recalc. If None, the
                 scaffold's static coordinates are used (headless / static use).
@@ -46,7 +47,8 @@ class SmallMoleculeXmapMgr:
         self._scaffold = scaffold
         self._structure = structure
         self._scaffold_to_model = scaffold_to_model
-        self._fo = numpy.asarray(fobs_amplitudes, numpy.double)
+        self._fobs = fobs            # HKL_data_F_sigF, for aniso+spline scaling
+        self._fo = numpy.asarray(fobs.data[1][:, 0], numpy.double)  # aligned to hklinfo
         self._meas = numpy.isfinite(self._fo)
         self._maps = {}            # name -> dict(is_difference, current, pending)
         self._thread = None
@@ -158,49 +160,49 @@ class SmallMoleculeXmapMgr:
         # XmapHandler fills a float32 numpy array via Xmap.export_section_numpy,
         # which is typed to the Xmap's scalar - a double Xmap would make pybind
         # fill a discarded float64 copy, leaving the displayed map all zeros.
-        from ..clipper_python import (HKL, Resolution, SFcalc_aniso_fft_float,
-            Xmap_float)
+        # Float (ftype32) throughout, to match the live-map display path: the
+        # XmapHandler fills a float32 numpy array via Xmap.export_section_numpy,
+        # which is typed to the Xmap's scalar - a double Xmap would make pybind
+        # fill a discarded float64 copy, leaving the displayed map all zeros.
+        from ..clipper_python import SFcalc_aniso_fft_float, Xmap_float
         from ..clipper_python.data32 import HKL_data_F_phi_float
+        from ..clipper_python.ext import scale_fcalc_to_fobs
 
         fcalc = HKL_data_F_phi_float(self.hklinfo)
         sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0)
         sfcalc(fcalc, atoms)
-        hkls, cdata = fcalc.data          # cdata[:,0]=Fc, cdata[:,1]=phi (radians)
+
+        # Scale Fcalc onto Fobs with an anisotropic Gaussian polished by an isotropic
+        # spline (the same refinement-grade scaling Xtal_mgr_base uses) - far better
+        # than an overall+B fit, so the residual no longer piles onto the strongest
+        # scatterer (heavy atoms).
+        scaled = HKL_data_F_phi_float(self.hklinfo)
+        scale_fcalc_to_fobs(fcalc, self._fobs, scaled)
+
+        _, cdata = fcalc.data            # cdata[:,0]=Fc, [:,1]=phi (radians)
         Fc = cdata[:, 0]
         phi = cdata[:, 1]
+        hkls_i, sdata = scaled.data      # sdata[:,0] = scaled Fcalc (~Fo)
+        scF = sdata[:, 0]
         fo = self._fo
-        meas = self._meas & numpy.isfinite(Fc) & (Fc > 0)
-        # Scale fit needs strictly-positive Fo (negative intensities clip to Fo=0).
-        fit = meas & (fo > 0)
 
-        # Scale Fc onto Fo (overall + isotropic B): ln(Fo/Fc) = ln k - (B/4) s^2.
-        # Resolution-dependent scale S(s): Fo ~ S*Fc (overall + isotropic B).
-        scale = numpy.ones_like(Fc)
-        if fit.sum() > 10:
-            ss = numpy.array([HKL([int(h[0]), int(h[1]), int(h[2])]).invresolsq(self.cell)
-                              for h in hkls])
-            slope, intercept = numpy.polyfit(ss[fit], numpy.log(fo[fit] / Fc[fit]), 1)
-            scale = numpy.exp(intercept + slope * ss)
-        elif fit.sum():
-            scale[:] = numpy.sum(fo[fit] * Fc[fit]) / numpy.sum(Fc[fit] ** 2)
-        kFc = scale * Fc
-
-        # R-work (over measured reflections), for the status line.
-        self._rwork = float(numpy.sum(numpy.abs(fo[fit] - kFc[fit]))
+        fit = self._meas & numpy.isfinite(scF) & (scF > 0) & (fo > 0)
+        self._rwork = float(numpy.sum(numpy.abs(fo[fit] - scF[fit]))
                             / numpy.sum(fo[fit])) if fit.any() else 0.0
 
-        # Put the map on the ABSOLUTE (electrons / A^3) scale by scaling Fo DOWN onto
-        # Fcalc's electron scale (Fo/S ~ Fc); fft_from of electron-scale coefficients
-        # then yields e/A^3, so the difference map can be contoured in absolute units
-        # (the small-molecule convention) rather than sigma.
+        # Put Fobs on the ABSOLUTE (electrons / A^3) scale via the same per-reflection
+        # scale S = scaled_Fcalc/Fcalc (so Fo/S ~ Fc); fft_from of electron-scale
+        # coefficients then yields e/A^3, for absolute-level contouring.
         with numpy.errstate(invalid='ignore', divide='ignore'):
-            fobs_e = numpy.where(scale > 0, fo / scale, 0.0)
-        fobs_e = numpy.nan_to_num(fobs_e)
+            S = numpy.where(Fc > 1e-6, scF / Fc, numpy.nan)
+            fobs_e = fo / S
+        valid = self._meas & numpy.isfinite(fobs_e)
+        fobs_e = numpy.where(valid, fobs_e, 0.0)
         Fc_f = numpy.nan_to_num(Fc)
         phi_f = numpy.nan_to_num(phi)
-        twofofc = numpy.where(self._meas, 2.0 * fobs_e - Fc_f, 0.0)
-        fofc = numpy.where(self._meas, fobs_e - Fc_f, 0.0)
-        hkls_i = hkls.astype(numpy.int32)
+        twofofc = numpy.where(valid, 2.0 * fobs_e - Fc_f, 0.0)
+        fofc = numpy.where(valid, fobs_e - Fc_f, 0.0)
+        hkls_i = hkls_i.astype(numpy.int32)
 
         for m in self._maps.values():
             amp = fofc if m['is_difference'] else twofofc
