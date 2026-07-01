@@ -273,18 +273,21 @@ def set_camera_auto(session, flag):
     from . import symmetry
     symmetry.auto_reset_camera = flag
 
-def open_small_molecule(session, path, hkl=None):
+def open_small_molecule(session, path, hkl=None, radiation='auto'):
     '''
     Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
     its unit cell, crystallographic symmetry, and - when reflections are available
     (an `hkl` file, or a sibling .hkl) - live 2mFo-DFc / mFo-DFc electron-density
     maps that update as the model changes.
+
+    radiation: 'xray', 'electron' (micro-ED / 3D-ED), or 'auto' (default; read from
+    the CIF _diffrn_radiation_probe) - selects the scattering-factor table.
     '''
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, path, hkl_path=hkl)
+    return show_cod_crystal(session, path, hkl_path=hkl, radiation=radiation)
 
 
-def fetch_cod_crystal(session, cod_id, ignore_cache=False):
+def fetch_cod_crystal(session, cod_id, ignore_cache=False, radiation='auto'):
     '''
     Fetch a structure (and, if deposited, its reflections) from the Crystallography
     Open Database by numeric COD ID, and open it as a live crystal structure.
@@ -305,17 +308,18 @@ def fetch_cod_crystal(session, cod_id, ignore_cache=False):
         session.logger.info('(CLIPPER) No reflections deposited for COD %s; '
             'showing model + symmetry only.' % cod_id)
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, cif, hkl_path=hkl)
+    return show_cod_crystal(session, cif, hkl_path=hkl, radiation=radiation)
 
 
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
-        BoolArg, FloatArg, IntArg, StringArg,
+        BoolArg, FloatArg, IntArg, StringArg, EnumOf,
         OpenFileNameArg, SaveFileNameArg,
         create_alias
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
+    RadiationArg = EnumOf(['auto', 'xray', 'electron'])
 
     init_desc = CmdDesc(
         keyword=[
@@ -358,9 +362,11 @@ def register_clipper_cmd(logger):
         ],
         keyword=[
             ('hkl', OpenFileNameArg),
+            ('radiation', RadiationArg),
         ],
         synopsis='Open a small-molecule CIF as a live crystal structure: model in the '
-                 'unit cell, symmetry, and (with reflections) live electron-density maps'
+                 'unit cell, symmetry, and (with reflections) live electron-density maps '
+                 '(radiation xray|electron|auto for micro-ED support)'
     )
     register('clipper smallmol', smallmol_desc, open_small_molecule, logger=logger)
 
@@ -370,6 +376,7 @@ def register_clipper_cmd(logger):
         ],
         keyword=[
             ('ignore_cache', BoolArg),
+            ('radiation', RadiationArg),
         ],
         synopsis='Fetch a structure from the Crystallography Open Database (by numeric '
                  'COD ID) and open it as a live crystal structure'

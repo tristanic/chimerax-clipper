@@ -77,20 +77,22 @@ namespace clipper
   {
   public:
     enum TYPE { X, Y, Z, Uiso, Occ, U11, U22, U33, U12, U13, U23 };
+    //! radiation type: selects the X-ray or electron scattering-factor table
+    enum RADIATION { XRAY, ELECTRON };
     //! null constructor
-    AtomShapeFn() {}
+    AtomShapeFn() : radiation_(XRAY) {}
     //! constructor: from atom object
-    AtomShapeFn( const Atom& atom );
+    AtomShapeFn( const Atom& atom, RADIATION radiation = XRAY );
     //! constructor: from coord, element, isotropic U, occupancy
-    AtomShapeFn( const Coord_orth& xyz, const String& element, const ftype u_iso = 0.0, const ftype occ = 1.0 );
+    AtomShapeFn( const Coord_orth& xyz, const String& element, const ftype u_iso = 0.0, const ftype occ = 1.0, RADIATION radiation = XRAY );
     //! constructor: from coord, element, anisotropic U, occupancy
-    AtomShapeFn( const Coord_orth& xyz, const String& element, const U_aniso_orth& u_aniso, const ftype occ = 1.0 );
+    AtomShapeFn( const Coord_orth& xyz, const String& element, const U_aniso_orth& u_aniso, const ftype occ = 1.0, RADIATION radiation = XRAY );
     //! initialiser:  from atom object
-    void init( const Atom& atom );
+    void init( const Atom& atom, RADIATION radiation = XRAY );
     //! initialiser: from coord, element, isotropic U, occupancy
-    void init( const Coord_orth& xyz, const String& element, const ftype u_iso = 0.0, const ftype occ = 1.0 );
+    void init( const Coord_orth& xyz, const String& element, const ftype u_iso = 0.0, const ftype occ = 1.0, RADIATION radiation = XRAY );
     //! initialiser: from coord, element, anisotropic U, occupancy
-    void init( const Coord_orth& xyz, const String& element, const U_aniso_orth& u_aniso, const ftype occ = 1.0 );
+    void init( const Coord_orth& xyz, const String& element, const U_aniso_orth& u_aniso, const ftype occ = 1.0, RADIATION radiation = XRAY );
 
     //! return scattering factor as a function of reflection posn
     ftype f( const Coord_reci_orth& rfl ) const;
@@ -123,6 +125,7 @@ namespace clipper
     ftype aw[6], bw[6];               //!< intermediate results (iso)
     std::vector<Mat33sym<> > uaninv;  //!< intermediate results (aniso)
     bool is_iso;
+    RADIATION radiation_;             //!< X-ray or electron table selector
     std::vector<TYPE> params;
   };
 

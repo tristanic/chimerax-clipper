@@ -24,10 +24,13 @@ class SmallMoleculeXmapMgr:
     FFT_RATE = 1.5
 
     def __init__(self, hklinfo, cell, spacegroup, grid_sampling, scaffold,
-                 fobs, structure=None, scaffold_to_model=None):
+                 fobs, structure=None, scaffold_to_model=None, radiation='xray'):
         '''
         Args:
             hklinfo, cell, spacegroup, grid_sampling: the crystal definition.
+            radiation: 'xray' or 'electron' - selects the scattering-factor table
+                for Fcalc (electron for micro-ED / 3D-ED). Fixed at construction and
+                read only in the worker thread, so it is race-free.
             scaffold: per-atom structure-factor inputs (see
                 io.small_molecule.sfcalc_scaffold) - elements, Clipper-frame
                 coords, occupancies, U_iso, U_aniso, labels.
@@ -47,6 +50,7 @@ class SmallMoleculeXmapMgr:
         self._scaffold = scaffold
         self._structure = structure
         self._scaffold_to_model = scaffold_to_model
+        self._radiation = radiation
         self._fobs = fobs            # HKL_data_F_sigF, for aniso+spline scaling
         self._fo = numpy.asarray(fobs.data[1][:, 0], numpy.double)  # aligned to hklinfo
         self._meas = numpy.isfinite(self._fo)
@@ -164,12 +168,14 @@ class SmallMoleculeXmapMgr:
         # XmapHandler fills a float32 numpy array via Xmap.export_section_numpy,
         # which is typed to the Xmap's scalar - a double Xmap would make pybind
         # fill a discarded float64 copy, leaving the displayed map all zeros.
-        from ..clipper_python import SFcalc_aniso_fft_float, Xmap_float
+        from ..clipper_python import SFcalc_aniso_fft_float, Xmap_float, AtomShapeFn
         from ..clipper_python.data32 import HKL_data_F_phi_float
         from ..clipper_python.ext import scale_fcalc_to_fobs
 
+        radiation = (AtomShapeFn.ELECTRON if str(self._radiation).lower() == 'electron'
+                     else AtomShapeFn.XRAY)
         fcalc = HKL_data_F_phi_float(self.hklinfo)
-        sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0)
+        sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0, radiation=radiation)
         sfcalc(fcalc, atoms)
 
         # Scale Fcalc onto Fobs with an anisotropic Gaussian polished by an isotropic

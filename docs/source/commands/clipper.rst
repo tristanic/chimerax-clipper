@@ -64,6 +64,7 @@ clipper smallmol
 ----------------
 
 Syntax: clipper smallmol *path* [**hkl** *path*]
+[**radiation** *xray/electron/auto* (auto)]
 
 Open a small-molecule CIF (the "core CIF" dialect used by, e.g., the
 Crystallography Open Database) as a live crystal structure: the model in its
@@ -101,12 +102,26 @@ familiar "3 σ" rule of thumb is calibrated for protein maps and is misleading a
 small-molecule data quality, where a residual peak is best judged against an
 absolute electron-density scale.
 
+The **radiation** keyword selects the scattering-factor table used for the
+calculated structure factors:
+
+* ``xray`` (X-ray form factors; Waasmaier & Kirfel, including ionic species
+  declared in the CIF ``_atom_site_type_symbol`` such as ``Cu2+`` / ``O2-``);
+* ``electron`` (electron form factors; Peng / *International Tables* Vol C), for
+  **electron diffraction — micro-ED / 3D-ED** data. Electron scattering senses the
+  electrostatic potential, so the calculated maps and R-factor are correct for
+  electron-diffraction experiments. (Electrons currently use neutral-atom factors;
+  ionic electron factors are a planned addition.)
+* ``auto`` (default) reads ``_diffrn_radiation_probe`` from the CIF and uses
+  electron factors when it names electrons, otherwise X-ray.
+
 .. _`cod`:
 
 clipper cod
 -----------
 
 Syntax: clipper cod *id* [**ignoreCache** *true/false* (false)]
+[**radiation** *xray/electron/auto* (auto)]
 
 Fetch a structure from the Crystallography Open Database
 (https://www.crystallography.net) by its numeric COD *id*, then open it with
@@ -115,6 +130,8 @@ them, its structure factors (``<id>.hkl``) are downloaded; roughly 10% of COD
 entries include structure factors, and only those will produce live maps.
 
 Downloads are cached locally; pass **ignoreCache true** to force a fresh fetch.
+The **radiation** keyword is passed through to :ref:`smallmol` (X-ray, electron
+for micro-ED, or auto-detected from the CIF).
 
 For example, ``clipper cod 1100908`` fetches the Cu complex used as a bundled
 example (see :ref:`smallmol_examples`).

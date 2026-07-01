@@ -124,6 +124,58 @@ def test_live_map_engine(session):
         session.models.close([model])
 
 
+def test_electron_scattering_selected(session):
+    '''Electron scattering factors (micro-ED): selecting radiation='electron' must
+    actually swap the scattering-factor table, so the recomputed R differs from the
+    X-ray value. (On this X-ray dataset the electron R is far worse - the point is
+    only that the electron table is genuinely used; correctness of the electron
+    coefficients is validated separately against Int. Tab. Vol C.)'''
+    from chimerax.clipper.io.small_molecule import extract_cod_structure
+    cif = os.path.join(_DATA, 'cod_1100908.cif')
+    px = extract_cod_structure(session, cif, radiation='xray')
+    pe = extract_cod_structure(session, cif, radiation='electron')
+    assert px['radiation'] == 'xray' and pe['radiation'] == 'electron'
+    assert px['recomputed_r_factor'] is not None
+    assert pe['recomputed_r_factor'] is not None
+    # X-ray reproduces the published R; electron (wrong for X-ray data) differs.
+    assert px['recomputed_r_factor_all'] < 0.06, px['recomputed_r_factor_all']
+    assert abs(px['recomputed_r_factor'] - pe['recomputed_r_factor']) > 1e-2, \
+        (px['recomputed_r_factor'], pe['recomputed_r_factor'])
+
+
+def test_radiation_autodetect(session):
+    '''radiation='auto' reads _diffrn_radiation_probe from the CIF; a standard X-ray
+    entry (no electron probe) resolves to X-ray.'''
+    from chimerax.clipper.io.small_molecule import _radiation_from_cif
+    assert _radiation_from_cif(os.path.join(_DATA, 'cod_1100908.cif')) == 'xray'
+
+
+def test_electron_map_engine(session):
+    '''The live-map engine runs under electron radiation (thread + GIL release) and
+    produces a finite R-work that differs from the X-ray one - i.e. the electron
+    table reaches the FFT Fcalc path, not just the summation R-factor path.'''
+    from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
+    from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
+        _clipper_frame_coords, _small_molecule_map_data)
+    from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
+    cif = os.path.join(_DATA, 'cod_1100908.cif')
+    model = open_small_molecule_cif(session, cif)
+    try:
+        cell, sg, grid = crystal_symmetry_from_cif_file(cif)
+        model.atoms.coords = _clipper_frame_coords(model, cif, cell)
+        def rwork(radiation):
+            smd = _small_molecule_map_data(model, cif, None, cell, sg, grid, radiation)
+            mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
+                smd['grid'], smd['scaffold'], smd['fobs'], structure=model,
+                scaffold_to_model=smd['scaffold_to_model'], radiation=smd['radiation'])
+            mgr.add_xmap('2mFo-DFc', is_difference_map=False)
+            return mgr.rwork
+        rx, re = rwork('xray'), rwork('electron')
+        assert rx > 0 and re > 0 and abs(rx - re) > 1e-2, (rx, re)
+    finally:
+        session.models.close([model])
+
+
 def run_all(session):
     tests = [v for k, v in sorted(globals().items())
              if k.startswith('test_') and callable(v)]

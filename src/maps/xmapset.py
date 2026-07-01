@@ -222,7 +222,8 @@ class XmapSet(MapSetBase):
             smd['hklinfo'], smd['cell'], smd['spacegroup'], smd['grid'],
             smd['scaffold'], smd['fobs'],
             structure=smd.get('structure'),
-            scaffold_to_model=smd.get('scaffold_to_model'))
+            scaffold_to_model=smd.get('scaffold_to_model'),
+            radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
         self.add_live_xmap('2mFo-DFc', is_difference_map=False)
         diff = self.add_live_xmap('mFo-DFc', is_difference_map=True)

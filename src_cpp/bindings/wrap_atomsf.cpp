@@ -47,14 +47,28 @@ m.def("scattering_factor_names", []() {
     "element.");
 
 py::class_<AtomShapeFn> atomsf(m, "AtomShapeFn");
+
+// Registered before the constructor/init defs below so it is usable as a
+// default-argument value (py::arg("radiation")=AtomShapeFn::XRAY).
+py::enum_<AtomShapeFn::RADIATION>(atomsf, "RADIATION")
+    .value("XRAY", AtomShapeFn::RADIATION::XRAY)
+    .value("ELECTRON", AtomShapeFn::RADIATION::ELECTRON)
+    .export_values();
+
 atomsf
     .def(py::init<>())
-    .def(py::init<const Atom&>())
-    .def(py::init<const Coord_orth&, const String&, const ftype, const ftype>())
-    .def(py::init<const Coord_orth&, const String&, const U_aniso_orth&, const ftype>())
-    .def("init", (void (AtomShapeFn::*)(const Atom&)) &AtomShapeFn::init)
-    .def("init", (void (AtomShapeFn::*)(const Coord_orth&, const String&, const ftype, const ftype)) &AtomShapeFn::init)
-    .def("init", (void (AtomShapeFn::*)(const Coord_orth&, const String&, const U_aniso_orth&, const ftype)) &AtomShapeFn::init)
+    .def(py::init<const Atom&, AtomShapeFn::RADIATION>(),
+        py::arg("atom"), py::arg("radiation")=AtomShapeFn::XRAY)
+    .def(py::init<const Coord_orth&, const String&, const ftype, const ftype, AtomShapeFn::RADIATION>(),
+        py::arg("xyz"), py::arg("element"), py::arg("u_iso")=0.0, py::arg("occ")=1.0, py::arg("radiation")=AtomShapeFn::XRAY)
+    .def(py::init<const Coord_orth&, const String&, const U_aniso_orth&, const ftype, AtomShapeFn::RADIATION>(),
+        py::arg("xyz"), py::arg("element"), py::arg("u_aniso"), py::arg("occ")=1.0, py::arg("radiation")=AtomShapeFn::XRAY)
+    .def("init", (void (AtomShapeFn::*)(const Atom&, AtomShapeFn::RADIATION)) &AtomShapeFn::init,
+        py::arg("atom"), py::arg("radiation")=AtomShapeFn::XRAY)
+    .def("init", (void (AtomShapeFn::*)(const Coord_orth&, const String&, const ftype, const ftype, AtomShapeFn::RADIATION)) &AtomShapeFn::init,
+        py::arg("xyz"), py::arg("element"), py::arg("u_iso")=0.0, py::arg("occ")=1.0, py::arg("radiation")=AtomShapeFn::XRAY)
+    .def("init", (void (AtomShapeFn::*)(const Coord_orth&, const String&, const U_aniso_orth&, const ftype, AtomShapeFn::RADIATION)) &AtomShapeFn::init,
+        py::arg("xyz"), py::arg("element"), py::arg("u_aniso"), py::arg("occ")=1.0, py::arg("radiation")=AtomShapeFn::XRAY)
     .def("f", (ftype (AtomShapeFn::*)(const Coord_reci_orth&) const) &AtomShapeFn::f)
     .def("f", (ftype (AtomShapeFn::*)(const ftype&) const) &AtomShapeFn::f)
     .def("rho", (ftype (AtomShapeFn::*)(const Coord_orth&) const) &AtomShapeFn::rho)
