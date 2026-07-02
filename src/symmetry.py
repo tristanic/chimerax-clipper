@@ -373,8 +373,15 @@ def symmetry_from_model_metadata_mmcif(model):
     if not res:
             res = 3.0
 
+    # Extract the real cell + space group only for crystallographic experiments.
+    # Electron *crystallography* (micro-ED / SerialED / 3D-ED) and neutron
+    # diffraction are genuine crystals with a real unit cell, so include them
+    # alongside X-ray; single-particle cryo-EM (em_3d_reconstruction) and other
+    # non-crystalline methods still fall back to a P1 bounding box.
+    CRYSTALLOGRAPHIC_METHODS = (
+        'X-RAY DIFFRACTION', 'ELECTRON CRYSTALLOGRAPHY', 'NEUTRON DIFFRACTION')
     exptl_data = metadata.get('exptl data', None)
-    if exptl_data is None or 'X-RAY DIFFRACTION' not in exptl_data:
+    if exptl_data is None or not any(m in exptl_data for m in CRYSTALLOGRAPHIC_METHODS):
         return simple_p1_box(model, resolution=res)
 
     try:
