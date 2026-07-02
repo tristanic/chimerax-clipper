@@ -24,7 +24,7 @@ clipper open
 ChimeraX open command, with otherwise identical syntax to that described below)*
 
 Syntax: clipper open *path* [**structureModel** *structure*]
-[**overSampling** *number*]
+[**overSampling** *number*] [**radiation** *xray/electron/auto* (auto)]
 
 Open a structure factor file in .mtz or .cif format, and generate maps for the
 model specified with *structureModel*.
@@ -57,6 +57,30 @@ will be sharpened, while higher-resolution maps will be smoothed. The sharper
 of the two maps will be displayed as a transparent surface, the other as a
 wireframe. Finally, a standard mFo-DFc map will be generated and displayed
 with contours at ± 3 sigma.
+
+The **radiation** keyword selects the scattering-factor table used to calculate
+structure factors from the model:
+
+* ``xray`` (default) - X-ray form factors (Waasmaier & Kirfel), for conventional
+  X-ray crystallography;
+* ``electron`` - electron form factors (Peng, *International Tables* Vol C), for
+  **electron diffraction (micro-ED / 3D-ED)** data. Electrons scatter from the
+  electrostatic potential rather than the electron density, so the live maps and
+  the reported R-factors are then correct for an electron-diffraction experiment.
+  Any genuine monatomic ions in the model (e.g. an ordered ``Na+``, ``Ca2+`` or
+  ``Cl-``) use the corresponding Peng-1998 ionic electron factors where tabulated,
+  falling back to the neutral element otherwise;
+* ``auto`` (default) - infer the radiation, in order of reliability, from the
+  associated model's mmCIF ``_exptl.method`` (``ELECTRON CRYSTALLOGRAPHY`` vs
+  ``X-RAY DIFFRACTION``), then from a structure-factor CIF's
+  ``_diffrn_radiation_probe``; anything undeclared (e.g. a bare MTZ with no model
+  metadata) resolves to X-ray. In practice this means electron-diffraction entries
+  are detected automatically while conventional X-ray data is unaffected.
+
+Because the model header is the primary signal, structure factors fetched from
+the PDB are handled correctly with no extra input - e.g. for a micro-ED entry,
+``open 8xyz structureFactors true`` auto-selects electron factors. An explicit
+``radiation xray`` or ``radiation electron`` always overrides the auto-detection.
 
 .. _`smallmol`:
 

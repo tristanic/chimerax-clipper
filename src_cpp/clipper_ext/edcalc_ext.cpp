@@ -280,7 +280,7 @@ bool EDcalc_aniso_thread<T>::edcalc_xmap_thread_(Xmap<T>& xmap,
         remaining_coords.clear();
         U_aniso_orth u (a.u_aniso_orth());
         if ( u.is_null() ) u = U_aniso_orth(a.u_iso());
-        AtomShapeFn sf (a.coord_orth(), a.element(), u, a.occupancy());
+        AtomShapeFn sf (a.coord_orth(), a.element(), u, a.occupancy(), radiation_);
         auto cg = xmap.coord_map(a.coord_orth()).coord_grid();
         g0 = cg+gd.min();
         g1 = cg+gd.max();

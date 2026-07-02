@@ -163,6 +163,13 @@ public:
     inline bool ignore_hydrogens() const { return ignore_hydrogens_; }
     inline void set_ignore_hydrogens(bool flag) { ignore_hydrogens_ = flag; }
 
+    // Scattering-factor table used for Fcalc: X-ray form factors (default) or
+    // electron form factors for micro-ED / 3D-ED. Forwarded to the bulk-solvent
+    // Fcalc engine, which builds each map's model density through it. Must be set
+    // before the first generate_fcalc() (it is read on the calculation thread).
+    inline void set_radiation(AtomShapeFn::RADIATION r) { bulk_solvent_calculator_.set_radiation(r); }
+    inline AtomShapeFn::RADIATION radiation() const { return bulk_solvent_calculator_.radiation(); }
+
     const Xmap_details& map_details(const std::string& name) const { return maps_.at(name); }
 
     size_t n_maps() const { return maps_.size(); }
@@ -499,6 +506,12 @@ public:
 
     inline bool ignore_hydrogens() const { return mgr_->ignore_hydrogens(); }
     inline void set_ignore_hydrogens(bool flag) { mgr_->set_ignore_hydrogens(flag); }
+
+    // X-ray (default) vs electron scattering factors for micro-ED. Set once at
+    // setup, before the first recalculate_all(), so the calculation thread never
+    // races the write.
+    inline AtomShapeFn::RADIATION radiation() const { deletion_guard(); return mgr_->radiation(); }
+    inline void set_radiation(AtomShapeFn::RADIATION r) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_radiation(r); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();

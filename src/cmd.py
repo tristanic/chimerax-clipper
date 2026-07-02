@@ -21,16 +21,64 @@
 
 from chimerax.core.errors import UserError
 
+def _radiation_from_structure(structure_model):
+    '''Radiation implied by the model's mmCIF _exptl.method, or None.
+
+    Deposited PDB entries record the experiment as "ELECTRON CRYSTALLOGRAPHY" vs
+    "X-RAY DIFFRACTION" in _exptl.method - the most reliable radiation signal, and
+    the natural one for `open <pdbid> structureFactors true`. Uses ChimeraX's own
+    metadata accessor rather than re-parsing the header.'''
+    if structure_model is None:
+        return None
+    try:
+        from chimerax.mmcif import get_mmcif_tables_from_metadata
+        tbl = get_mmcif_tables_from_metadata(structure_model, ['exptl'])[0]
+        if not tbl:
+            return None
+        method = tbl.fields(['method'], allow_missing_fields=True)[0][0]
+    except Exception:
+        return None
+    if method and 'electron' in method.lower():
+        return 'electron'
+    if method and 'x-ray' in method.lower():
+        return 'xray'
+    return None
+
+
+def _resolve_macro_radiation(radiation, path, structure_model=None):
+    '''Resolve the macromolecular `radiation` argument to 'xray' or 'electron'.
+
+    Explicit choices pass through. 'auto' consults, in order of reliability, the
+    model's mmCIF _exptl.method, then a structure-factor CIF's
+    _diffrn_radiation_probe; anything undeclared (e.g. a bare MTZ) is X-ray.'''
+    r = (radiation or 'auto').lower()
+    if r in ('xray', 'electron'):
+        return r
+    from_model = _radiation_from_structure(structure_model)
+    if from_model is not None:
+        return from_model
+    if str(path).lower().endswith('.cif'):
+        try:
+            from .io.small_molecule import _radiation_from_cif
+            return _radiation_from_cif(path)
+        except Exception:
+            pass
+    return 'xray'
+
+
 def open_structure_factors(session, path, structure_model = None,
-        over_sampling=2.0, always_raise_errors=True, auto_free_flags=True):
+        over_sampling=2.0, always_raise_errors=True, auto_free_flags=True,
+        radiation='auto'):
     if structure_model is None:
         raise UserError('Reflection data must be associated with an atomic '
             'structure, provided via the structure_model argument.')
     from .symmetry import get_map_mgr
     mmgr = get_map_mgr(structure_model, create=True)
     try:
+        # radiation ('auto'|'xray'|'electron') is resolved centrally in
+        # add_xmapset_from_file ('auto' reads the model's mmCIF _exptl.method).
         xmapset = mmgr.add_xmapset_from_file(path, oversampling_rate=over_sampling,
-            auto_choose_free_flags=auto_free_flags)
+            auto_choose_free_flags=auto_free_flags, radiation=radiation)
         log_str = 'Opened crystallographic dataset from {}\n'.format(path)
         if xmapset.experimental_data:
             log_str += 'Found experimental reflection data: \n'
@@ -55,9 +103,10 @@ def open_structure_factors(session, path, structure_model = None,
             return None, None
 
 def open_structure_factors_and_add_to_session(session, path, structure_model=None,
-        over_sampling=2.0, always_raise_errors=False, auto_free_flags=True):
+        over_sampling=2.0, always_raise_errors=False, auto_free_flags=True,
+        radiation='auto'):
     models, log_str = open_structure_factors(session, path, structure_model,
-        over_sampling, always_raise_errors, auto_free_flags)
+        over_sampling, always_raise_errors, auto_free_flags, radiation)
     if models is not None:
         session.models.add(models)
 
@@ -350,9 +399,11 @@ def register_clipper_cmd(logger):
         keyword=[
             ('structure_model', StructureArg),
             ('over_sampling', FloatArg),
-            ('auto_free_flags', BoolArg)
+            ('auto_free_flags', BoolArg),
+            ('radiation', RadiationArg),
         ],
-        synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
+        synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model '
+                 '(radiation xray|electron for micro-ED / 3D-ED; default xray)'
     )
     register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
 

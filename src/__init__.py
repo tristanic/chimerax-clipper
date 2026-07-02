@@ -258,12 +258,17 @@ def _sf_file_open_info():
         @property
         def open_args(self):
             from chimerax.atomic import StructureArg
-            from chimerax.core.commands import FloatArg, BoolArg
+            from chimerax.core.commands import FloatArg, BoolArg, EnumOf
 
             return {
                 'structure_model':  StructureArg,
                 'over_sampling':    FloatArg,
                 'auto_free_flags':  BoolArg,
+                # X-ray (default) vs electron form factors for micro-ED / 3D-ED,
+                # so `open <mtz/cif> radiation electron` and PDB-fetch structure
+                # factors (`open <id> structureFactors true radiation electron`)
+                # both reach the macromolecular Fcalc path.
+                'radiation':        EnumOf(['auto', 'xray', 'electron']),
             }
     return Info()
 

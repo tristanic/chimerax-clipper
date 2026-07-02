@@ -149,6 +149,7 @@ void declare_xtal_thread_mgr(py::module& m)
         .def("get_xmap_copy", &Class::get_xmap)
         .def("get_map_stats", &Class::get_map_stats)
         .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
+        .def_property("radiation", &Class::radiation, &Class::set_radiation)
         .def("delete", &Class::delete_all)
         ;
 }

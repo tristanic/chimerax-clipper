@@ -103,7 +103,8 @@ class XmapSet(MapSetBase):
         exclude_missing_reflections=False,
         show_r_factors=True,
         auto_add_to_session=True,
-        small_molecule_data=None):
+        small_molecule_data=None,
+        radiation='xray'):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -172,6 +173,11 @@ class XmapSet(MapSetBase):
 
         xm = self._live_xmap_mgr = None
         self._small_molecule_data = small_molecule_data
+        # X-ray (default) vs electron scattering factors for the live Fcalc. For
+        # small-molecule maps radiation travels inside small_molecule_data; for the
+        # macromolecular path it is applied to the C++ Xtal_thread_mgr (see
+        # _launch_live_xmap_mgr).
+        self._radiation = radiation
         self._live_update = False
         self._recalc_needed = False
         self._model_changes_handler = None
@@ -508,11 +514,18 @@ class XmapSet(MapSetBase):
         xm = self._live_xmap_mgr = Xtal_thread_mgr(self.hklinfo,
             crystal_data.free_flags.data, self.grid, f_sigf,
             num_threads=available_cores())
+        # Select the scattering-factor table before the first (threaded) recalc.
+        # Electron factors give an electrostatic-potential map + kinematical R-factor
+        # for micro-ED / 3D-ED; X-ray (default) is byte-identical to before.
+        radiation = getattr(self, '_radiation', 'xray')
+        from ..clipper_python import AtomShapeFn
+        xm.radiation = (AtomShapeFn.ELECTRON if str(radiation).lower() == 'electron'
+                        else AtomShapeFn.XRAY)
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms
         from ..scattering import ionic_scattering_names
-        xm.init(atoms.pointers, ionic_scattering_names(atoms))
+        xm.init(atoms.pointers, ionic_scattering_names(atoms, radiation=radiation))
         end_time = time()
         print(f'Launching live xmap mgr took {end_time-start_time} seconds.')
 
@@ -796,8 +809,10 @@ class XmapSet(MapSetBase):
         # ca = self._clipper_atoms = atom_list_from_sel(atoms)
         # Ionic scattering factors for any monatomic ions; recomputed here (rather
         # than cached) so it tracks ions added/removed during modelling. The
-        # per-atom species aligns by index with atoms.pointers.
-        elements = ionic_scattering_names(atoms)
+        # per-atom species aligns by index with atoms.pointers. Uses the same
+        # radiation as the manager so per-frame recalcs stay on the electron table
+        # for micro-ED (otherwise they would silently revert to X-ray).
+        elements = ionic_scattering_names(atoms, radiation=getattr(self, '_radiation', 'xray'))
         delayed_reaction(self.session.triggers, 'new frame',
             xm.recalculate_all_maps, [atoms.pointers, elements],
             xm.ready,

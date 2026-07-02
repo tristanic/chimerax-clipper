@@ -23,6 +23,7 @@
 
 #include <clipper/clipper.h>
 #include <clipper/clipper-contrib.h>
+#include <clipper/core/atomsf.h>   // for AtomShapeFn::RADIATION (X-ray vs electron)
 #include "imex.h"
 #include "vdw.h"
 
@@ -63,11 +64,18 @@ private:
 
 template<class T> class EDcalc_aniso_thread : public EDcalc_base<T> {
 public:
-    EDcalc_aniso_thread( const size_t n_threads = 2 ) : n_threads_(n_threads) {}
+    // radiation selects the scattering-factor table (X-ray vs electron) handed to
+    // each per-atom AtomShapeFn, so this real-space density calc produces either an
+    // electron-density map (X-ray) or an electrostatic-potential map (electron, for
+    // micro-ED). Default XRAY keeps existing macromolecular output byte-identical.
+    EDcalc_aniso_thread( const size_t n_threads = 2,
+                         AtomShapeFn::RADIATION radiation = AtomShapeFn::XRAY )
+        : n_threads_(n_threads), radiation_(radiation) {}
     bool operator() (Xmap<T>& xmap, const Atom_list& atoms) const;
     bool operator() ( NXmap<T>& nxmap, const Atom_list& atoms) const {return false;}
 private:
     size_t n_threads_;
+    AtomShapeFn::RADIATION radiation_;
     bool edcalc_xmap_thread_(Xmap<T>& xmap, const Atom_list& atoms, size_t start, size_t end) const;
     bool edcalc_nxmap_thread_(NXmap<T>& nxmap, const Atom_list& atoms, size_t start, size_t end) const {return false;}
     // Super-simple heuristic, giving the radius at which the density value should
