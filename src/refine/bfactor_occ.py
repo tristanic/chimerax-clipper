@@ -246,6 +246,22 @@ class BFactorOccRefineManager:
 
         fobs, phi_fom, usage, f_bulk = self._get_hkl_data()
         self._atoms = atoms
+        # Crystallographic refinement uses the dataset's own scattering factors,
+        # which the map manager already knows (X-ray, or electron for micro-ED).
+        # The same choice drives both the C++ table (use_electron_scattering) and
+        # the per-atom identifiers below, so ionic species are validated against —
+        # and logged for — the table actually used.
+        _radiation = ('electron'
+                      if str(getattr(self._map_set, '_radiation', 'xray')).lower() == 'electron'
+                      else 'xray')
+        self._config.use_electron_scattering = (_radiation == 'electron')
+        # Explicit per-launch confirmation of the scattering factors in use. Not
+        # routed through the de-duplicated ionic-species log, so a user-initiated
+        # refinement always reports its radiation even when the map open already
+        # announced the same ionic assignments.
+        self._session.logger.info(
+            '(CLIPPER) B-factor/occupancy refinement using %s scattering factors.'
+            % ('electron' if self._config.use_electron_scattering else 'X-ray'))
         _validate_occ_groups(atoms, self._config)
 
         # Optionally compute data-aware convergence tolerances and apply them
@@ -354,7 +370,7 @@ class BFactorOccRefineManager:
         # single tuple (or None); C++ unpacks it (see parse_pairwise_restraints).
         from ..delayed_reaction import delayed_reaction
         from ..scattering import ionic_scattering_names
-        elements = ionic_scattering_names(atoms)
+        elements = ionic_scattering_names(atoms, radiation=_radiation)
         delayed_reaction(
             self._session.triggers, 'new frame',
             _timed_launch,
@@ -472,7 +488,8 @@ class BFactorOccRefineManager:
                          resolution=None,
                          whole_map=False,
                          b_restraints=None,
-                         b_target_restraints=None):
+                         b_target_restraints=None,
+                         use_electron_scattering=True):
         """
         Refine B-factors against a fixed real-space target density.
 
@@ -517,11 +534,22 @@ class BFactorOccRefineManager:
             an atom-bounded subregion.  ``isolate_and_cover_selection`` is not
             called.  Only valid for non-crystallographic (e.g. cryo-EM) maps;
             raises RuntimeError for XmapHandlerBase subclasses.
+        use_electron_scattering : bool
+            If True (default), use electron scattering factors for the calculated
+            density and Agarwal gradients.  Real-space targets are most often
+            cryo-EM potential maps, for which electron factors are correct; pass
+            False to refine against an X-ray-derived real-space map.
         """
         if self.thread_running:
             raise RuntimeError(
                 'A refinement cycle is already running. '
                 'Wait for ready() before launching a new cycle.')
+        # Real-space maps are usually cryo-EM electrostatic-potential maps, so
+        # electron scattering factors are the sensible default (overridable).
+        self._config.use_electron_scattering = bool(use_electron_scattering)
+        self._session.logger.info(
+            '(CLIPPER) Real-space B-factor/occupancy refinement using %s scattering factors.'
+            % ('electron' if self._config.use_electron_scattering else 'X-ray'))
         if target_volume is None:
             raise ValueError('target_volume must be provided for real-space launch.')
         if whole_map:
@@ -658,8 +686,9 @@ class BFactorOccRefineManager:
             # Restraint specs pass straight through as single tuples (or None);
             # C++ unpacks them (see parse_pairwise_restraints / parse_target_restraints).
             from ..scattering import ionic_scattering_names
-            refined_elements = ionic_scattering_names(refined_atoms)
-            context_elements = (ionic_scattering_names(context_atoms)
+            _radiation = 'electron' if use_electron_scattering else 'xray'
+            refined_elements = ionic_scattering_names(refined_atoms, radiation=_radiation)
+            context_elements = (ionic_scattering_names(context_atoms, radiation=_radiation)
                                 if context_atoms is not None else [])
 
             def _timed_launch(refined_ptrs, ctx_ptrs, xmap, origin, ignore_h):
