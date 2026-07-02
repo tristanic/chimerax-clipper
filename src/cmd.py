@@ -45,24 +45,37 @@ def _radiation_from_structure(structure_model):
     return None
 
 
-def _resolve_macro_radiation(radiation, path, structure_model=None):
+def _resolve_macro_radiation(radiation, path, structure_model=None, logger=None):
     '''Resolve the macromolecular `radiation` argument to 'xray' or 'electron'.
 
     Explicit choices pass through. 'auto' consults, in order of reliability, the
-    model's mmCIF _exptl.method, then a structure-factor CIF's
-    _diffrn_radiation_probe; anything undeclared (e.g. a bare MTZ) is X-ray.'''
+    model's mmCIF _exptl.method, then a positive electron signal from a
+    structure-factor CIF's _diffrn_radiation_probe. When nothing declares the
+    experiment (e.g. a PDB-format model with no mmCIF metadata, or an mmCIF with
+    no _exptl loop) it defaults to X-ray and, if a logger is given, warns - so a
+    silent wrong default on electron data is at least visible and overridable.'''
     r = (radiation or 'auto').lower()
     if r in ('xray', 'electron'):
         return r
+    # Model _exptl.method is authoritative when present and recognised.
     from_model = _radiation_from_structure(structure_model)
     if from_model is not None:
         return from_model
+    # Model didn't declare a recognised experiment; trust only a *positive*
+    # electron probe from a structure-factor CIF (its 'xray' is a bare default).
     if str(path).lower().endswith('.cif'):
         try:
             from .io.small_molecule import _radiation_from_cif
-            return _radiation_from_cif(path)
+            if _radiation_from_cif(path) == 'electron':
+                return 'electron'
         except Exception:
             pass
+    if logger is not None:
+        logger.warning(
+            '(CLIPPER) Could not determine the experiment type from the model '
+            'metadata (no mmCIF _exptl.method); defaulting to X-ray scattering '
+            'factors. If this is electron-diffraction (micro-ED / 3D-ED) data, '
+            're-open with "radiation electron".')
     return 'xray'
 
 

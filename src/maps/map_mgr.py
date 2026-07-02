@@ -296,7 +296,8 @@ class MapMgr(Model):
         # entries get electron scattering factors without any extra argument.
         if str(radiation).lower() not in ('xray', 'electron'):
             from ..cmd import _resolve_macro_radiation
-            radiation = _resolve_macro_radiation(radiation, sffile, self.structure)
+            radiation = _resolve_macro_radiation(radiation, sffile, self.structure,
+                logger=self.session.logger)
         if radiation == 'electron':
             self.session.logger.info('(CLIPPER) Using electron scattering factors '
                 '(micro-ED / 3D-ED) for structure-factor calculation and R-factors.')
