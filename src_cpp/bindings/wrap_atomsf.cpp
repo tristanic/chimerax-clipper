@@ -46,6 +46,16 @@ m.def("scattering_factor_names", []() {
     "a fatal error on an unknown type rather than falling back to the neutral "
     "element.");
 
+m.def("scattering_factor_names_electron", []() {
+        std::vector<std::string> names;
+        for (const auto& s : clipper::data::sf_element_names_electron())
+            names.push_back(std::string(s));
+        return names;
+    },
+    "As scattering_factor_names(), but for the electron scattering-factor table "
+    "(neutral atoms plus Peng-1998 ions). Use to validate an ionic identifier "
+    "before an electron-radiation scattering calculation.");
+
 py::class_<AtomShapeFn> atomsf(m, "AtomShapeFn");
 
 // Registered before the constructor/init defs below so it is usable as a

@@ -80,7 +80,7 @@ namespace clipper
     //! radiation type: selects the X-ray or electron scattering-factor table
     enum RADIATION { XRAY, ELECTRON };
     //! null constructor
-    AtomShapeFn() : radiation_(XRAY) {}
+    AtomShapeFn() : radiation_(XRAY), dz_(0.0) {}
     //! constructor: from atom object
     AtomShapeFn( const Atom& atom, RADIATION radiation = XRAY );
     //! constructor: from coord, element, isotropic U, occupancy
@@ -126,6 +126,7 @@ namespace clipper
     std::vector<Mat33sym<> > uaninv;  //!< intermediate results (aniso)
     bool is_iso;
     RADIATION radiation_;             //!< X-ray or electron table selector
+    ftype dz_;                        //!< signed ionic charge (electron Coulomb term)
     std::vector<TYPE> params;
   };
 
@@ -155,6 +156,9 @@ namespace clipper
       an identifier before passing it to AtomShapeFn, which raises a fatal error
       (rather than falling back to the neutral element) on an unknown type. */
     CLIPPER_IMEX std::vector<String> sf_element_names();
+    //! As sf_element_names(), but for the electron scattering-factor table
+    //! (neutral atoms plus Peng-1998 ions).
+    CLIPPER_IMEX std::vector<String> sf_element_names_electron();
   } // namespace data
 
 

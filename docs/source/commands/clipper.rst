@@ -107,11 +107,14 @@ calculated structure factors:
 
 * ``xray`` (X-ray form factors; Waasmaier & Kirfel, including ionic species
   declared in the CIF ``_atom_site_type_symbol`` such as ``Cu2+`` / ``O2-``);
-* ``electron`` (electron form factors; Peng / *International Tables* Vol C), for
-  **electron diffraction — micro-ED / 3D-ED** data. Electron scattering senses the
-  electrostatic potential, so the calculated maps and R-factor are correct for
-  electron-diffraction experiments. (Electrons currently use neutral-atom factors;
-  ionic electron factors are a planned addition.)
+* ``electron`` (electron form factors; Peng 1996/1998, *International Tables*
+  Vol C), for **electron diffraction — micro-ED / 3D-ED** data. Electron scattering
+  senses the electrostatic potential, so the calculated maps and R-factor are
+  correct for electron-diffraction experiments. Ionic species declared in the CIF
+  (``Cu2+``, ``O2-``, ...) use Peng-1998 ionic electron factors, including the
+  divergent Coulomb term of the ionic charge (the R-factor uses the full ionic
+  factor; live maps use the screened part, since the Coulomb term is a long-range
+  potential with no localised density).
 * ``auto`` (default) reads ``_diffrn_radiation_probe`` from the CIF and uses
   electron factors when it names electrons, otherwise X-ray.
 

@@ -176,6 +176,33 @@ def test_electron_map_engine(session):
         session.models.close([model])
 
 
+def test_ionic_electron_factors(session):
+    '''Ionic electron scattering factors (Peng 1998): the compiled AtomShapeFn must
+    reproduce eq (5) = screened Gaussians + 0.023934*dZ/s^2 exactly, the Coulomb
+    term must NOT leak into X-ray, and Peng-only ions (absent from the X-ray table,
+    e.g. Cr4+) must resolve under electron radiation.'''
+    import numpy
+    from chimerax.clipper.clipper_python import AtomShapeFn, Coord_orth
+    K = 0.023934
+    # (dZ, a[5], b[5]) from Peng 1998 Table 1.
+    peng = {
+        'O2-':  (-2, [0.0421,0.210,0.852,1.82,1.17],   [0.0609,0.559,2.96,11.5,37.7]),
+        'Cu2+': (+2, [0.224,0.544,0.970,0.727,0.182],  [0.145,0.933,2.69,7.11,19.4]),
+    }
+    s = numpy.array([0.05, 0.15, 0.3, 0.6, 1.0])
+    for ion, (dz, a, b) in peng.items():
+        asf = AtomShapeFn(Coord_orth(0, 0, 0), ion, 0.0, 1.0, AtomShapeFn.ELECTRON)
+        got = numpy.array([asf.f(4.0 * x * x) for x in s])
+        ref = sum(a[i] * numpy.exp(-b[i] * s * s) for i in range(5)) + K * dz / (s * s)
+        assert numpy.max(numpy.abs(got - ref)) < 1e-6, (ion, got, ref)
+    # Cr4+ is not in Clipper's X-ray table but is in Peng's electron table.
+    cr = AtomShapeFn(Coord_orth(0, 0, 0), 'Cr4+', 0.0, 1.0, AtomShapeFn.ELECTRON)
+    assert cr.f(4.0 * 0.3 * 0.3) > 0
+    # X-ray must stay finite at low s (no ionic Coulomb 1/s^2 term).
+    xr = AtomShapeFn(Coord_orth(0, 0, 0), 'Cu2+', 0.0, 1.0, AtomShapeFn.XRAY)
+    assert xr.f(4.0 * 0.02 * 0.02) < 30.0
+
+
 def run_all(session):
     tests = [v for k, v in sorted(globals().items())
              if k.startswith('test_') and callable(v)]

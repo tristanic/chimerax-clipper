@@ -505,18 +505,14 @@ def sfcalc_scaffold(path, cell, spacegroup, grid, radiation='xray'):
     u_aniso = numpy.ones((n, 6), numpy.double) * numpy.nan
     xm = Xmap_double(spacegroup, cell, grid)
     from ..scattering import clipper_species_from_type_symbol
-    electron = str(radiation).lower() == 'electron'
     for i, r in enumerate(arows):
         labels.append(r[0])
-        # For X-rays, honour an ionic scattering type declared in the CIF
-        # type_symbol (e.g. "O2-", "Ca2+"), falling back to the neutral element.
-        # The electron table (Peng-1996) is neutral-only, so electron scattering
-        # uses the neutral element (ionic electron factors are a later addition).
-        if electron:
-            elements.append(_element_from_type_symbol(r[1]))
-        else:
-            elements.append(clipper_species_from_type_symbol(
-                r[1], _element_from_type_symbol(r[1])))
+        # Honour an ionic scattering type declared in the CIF type_symbol
+        # (e.g. "O2-", "Ca2+"), validated against the table for this radiation
+        # (X-ray = Waasmaier-Kirfel ions; electron = Peng-1998 ions, which add the
+        # divergent Coulomb term in AtomShapeFn); neutral element otherwise.
+        elements.append(clipper_species_from_type_symbol(
+            r[1], _element_from_type_symbol(r[1]), radiation=radiation))
         cf = Coord_frac(float(_strip_su(r[2])), float(_strip_su(r[3])), float(_strip_su(r[4])))
         co = cf.coord_orth(cell)
         coords[i] = (co.x, co.y, co.z)
