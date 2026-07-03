@@ -195,6 +195,16 @@ class MapMgr(Model):
         return self._mgr
 
     @property
+    def radiation_type(self):
+        '''Scattering regime ('xray'/'electron') of the crystallographic dataset
+        managed here, or None if there is no crystallographic (live) xmapset.'''
+        for xs in self.xmapsets:
+            rt = getattr(xs, 'radiation_type', None)
+            if rt is not None:
+                return rt
+        return None
+
+    @property
     def box_center(self):
         return self.crystal_mgr.spotlight_center
 

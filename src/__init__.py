@@ -29,7 +29,7 @@ from chimerax.atomic import Atom
 
 __version__ = "0.28.dev0"
 
-CLIPPER_STATE_VERSION = 2
+CLIPPER_STATE_VERSION = 3
 
 def get_lib():
     from os import path

@@ -187,6 +187,19 @@ def associate_volumes(session, volumes, to_model=None):
     if mgr.crystal_mgr not in session.models.list():
         session.models.add([mgr.crystal_mgr])
 
+def discard_symmetry(session, models):
+    '''Discard a model's crystallographic symmetry (revert to a P1 box) and
+    rewrite its symmetry metadata so this is preserved across sessions. Useful
+    when a model's original symmetry is irrelevant to its current use (e.g. an
+    old crystal structure reused as a starting model in a cryo-EM map).'''
+    from chimerax.clipper.symmetry import get_symmetry_handler, SymmetryManager
+    for m in models:
+        sh = m if isinstance(m, SymmetryManager) else get_symmetry_handler(m)
+        if sh is None:
+            session.logger.warning('No Clipper symmetry manager for {}; skipping.'.format(m))
+            continue
+        sh.discard_model_symmetry()
+
 def isolate(session, atoms,
         surround_distance=0,
         context_distance=5,
@@ -472,6 +485,16 @@ def register_clipper_cmd(logger):
         synopsis='Switch on/off "Scrolling sphere" visualisation with live atomic symmetry'
     )
     register('clipper spotlight', spot_desc, spotlight, logger=logger)
+
+    discard_sym_desc = CmdDesc(
+        required=[
+            ('models', AtomicStructuresOrSymmetryMgrsArg),
+        ],
+        synopsis='Discard a model\'s crystallographic symmetry (revert to a P1 box) '
+                 'and rewrite its metadata so the change persists across sessions. '
+                 'Fails if a crystal dataset is currently loaded.'
+    )
+    register('clipper discardSymmetry', discard_sym_desc, discard_symmetry, logger=logger)
 
     vol_desc = CmdDesc(
         required=[

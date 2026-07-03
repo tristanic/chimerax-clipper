@@ -907,6 +907,12 @@ class XmapSet(MapSetBase):
             self._r_factor_label.delete()
             self._r_factor_label = None
 
+    @property
+    def radiation_type(self):
+        '''Scattering regime of this crystal dataset: 'xray' or 'electron'
+        (None only if somehow unset). Consumed by child XmapHandler_Live.'''
+        return getattr(self, '_radiation', None)
+
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
         data = {
@@ -914,6 +920,7 @@ class XmapSet(MapSetBase):
             'model state': Model.take_snapshot(self, session, flags),
             'F/sigF': self._f_sigf_data_name,
             'live update': self.live_update,
+            'radiation': getattr(self, '_radiation', 'xray'),
         }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
@@ -928,6 +935,10 @@ class XmapSet(MapSetBase):
         xmapset = XmapSet(cm, auto_add_to_session=False)
         Model.set_state_from_snapshot(xmapset, session, data['model state'])
         xmapset._f_sigf_data_name = data['F/sigF']
+        # v2 sessions lack 'radiation'; default to X-ray so old sessions restore
+        # byte-identically. Set before _end_restore_session_cb relaunches the live
+        # manager, which reads _radiation to pick the scattering-factor table.
+        xmapset._radiation = data.get('radiation', 'xray')
         xmapset._session_restore_live_update = data['live update']
         session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
         return xmapset
@@ -1064,6 +1075,13 @@ class XmapHandler_Live(XmapHandlerBase):
     a box around the centre of rotation, and static display of a given region.
     '''
     SESSION_SAVE=True
+
+    @property
+    def radiation_type(self):
+        # Live crystallographic map: report the scattering regime of the owning
+        # XmapSet ('xray'/'electron'). Overrides the None default on MapHandlerBase.
+        return getattr(self.mapset, 'radiation_type', None)
+
     def __init__(self, mapset, name,
         is_difference_map=False, session_restore=False):
         '''
