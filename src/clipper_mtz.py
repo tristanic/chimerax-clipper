@@ -169,6 +169,10 @@ class ReflectionDataContainer(Model):
         rdc = ReflectionDataContainer(session)
         Model.set_state_from_snapshot(rdc, session, data['model state'])
         rdc.filename = data['original filename']
+        # Restore the (possibly runtime-changed) oversampling rate; the grid is
+        # rebuilt lazily from it. Older sessions predating this key keep the
+        # constructor default.
+        rdc.shannon_rate = data.get('shannon rate', rdc.shannon_rate)
         from chimerax.clipper.clipper_python import (
             Resolution, Spgr_descr, Spacegroup, Cell_descr, Cell, HKL_info
         )

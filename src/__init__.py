@@ -29,7 +29,10 @@ from chimerax.atomic import Atom
 
 __version__ = "0.28.dev0"
 
-CLIPPER_STATE_VERSION = 2
+# v3: XmapHandler_Live snapshots gained bsharp_adjustable / bsharp_designated.
+# Older (<=2) sessions lack them; restore_snapshot falls back to the
+# difference-map rule (not is_difference_map), so they still open cleanly.
+CLIPPER_STATE_VERSION = 3
 
 def get_lib():
     from os import path

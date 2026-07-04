@@ -381,6 +381,26 @@ class MapMgr(Model):
                 self.allow_oversampling_changes(reason)
         return _cm()
 
+    @property
+    def oversampling_rate(self):
+        '''
+        The real-space oversampling (Shannon) rate currently in force. Reads the
+        rate actually applied to the reflection data (kept uniform across
+        datasets by set_oversampling_rate); if this manager has no
+        crystallographic reflection data, returns the default rate used for
+        newly-opened datasets. Assigning to this property is equivalent to
+        calling set_oversampling_rate().
+        '''
+        for xs in self.xmapsets:
+            cd = xs.crystal_data
+            if cd is not None:
+                return cd.shannon_rate
+        return self._default_oversampling_rate
+
+    @oversampling_rate.setter
+    def oversampling_rate(self, rate):
+        self.set_oversampling_rate(rate)
+
     def set_oversampling_rate(self, rate):
         '''
         Change the oversampling (Shannon) rate for all crystallographic maps
