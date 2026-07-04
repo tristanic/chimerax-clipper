@@ -213,13 +213,10 @@ class FastVolumeSurface(VolumeSurface):
         from ..delayed_reaction import delayed_reaction
         from ..contour_thread import Contour_Thread_Mgr
         sct = self._surf_calc_thread = Contour_Thread_Mgr()
-        # Pass the transposed VIEW (v.matrix() is C-contiguous native (z,y,x); .T
-        # presents (x,y,z) to the contour engine). Not ascontiguousarray(): the
-        # engine consumes explicit strides, so Contour_Thread_Mgr.start_compute
-        # takes a cheap linear snapshot of the native buffer and hands the engine
-        # the transposed strides - avoiding the expensive GUI-thread transpose-copy
-        # (the dominant cost for large fully-covered boxes). The view keeps the
-        # underlying buffer alive until the snapshot is taken.
+        # Pass the transposed VIEW (v.matrix() is native (z,y,x); .T presents
+        # (x,y,z) to the contour engine, which consumes explicit strides). The
+        # contour worker references this buffer directly (no copy) and co-owns it,
+        # so it stays valid even if the map is closed mid-contour.
         delayed_reaction(self.volume.session.triggers, 'new frame',
             sct.start_compute, (v.matrix().T, level, det, vertex_transform.matrix, normal_transform.matrix, False, True),
             sct.ready,

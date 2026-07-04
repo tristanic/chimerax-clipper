@@ -134,7 +134,18 @@ public:
     bool return_normals() const { return return_normals_; }
     Contour_Geometry get_result();
 private:
-    std::unique_ptr<float[]> data_;
+    // We do NOT copy the volume data. Instead we keep a reference to the source
+    // numpy array (co-ownership) and let the worker read it directly via data_ptr_.
+    // This keeps the buffer alive even if the map is closed mid-contour (the map's
+    // own reference can drop; ours holds it). The std::future's destructor blocks
+    // until the worker finishes, and data_ref_ is declared before geom_ so it is
+    // destroyed AFTER geom_ - i.e. it always outlives the worker's reads.
+    // Tradeoff (option 2): if the box is refilled in place while a worker is
+    // running (fast spotlight scroll, or unusually fast structure-factor recalc),
+    // that surface can transiently "tear" for one frame; it self-corrects on the
+    // next contour. No copy, no crash.
+    py::array_t<float> data_ref_;
+    float* data_ptr_ = nullptr;
     float threshold_;
     bool flip_triangles_; // if det < 0
     float vertex_transform_[3][4]; // Transform mapping vertices into model coordinates
@@ -146,7 +157,6 @@ private:
     bool working_=false;
     bool ready_=false;
     bool return_normals_=false;
-    void copy_3d_array(py::array_t<float> source);
     Contour_Geometry contour_surface_thread_(float data[], float threshold, bool cap_faces);
 };
 
@@ -156,10 +166,20 @@ void Contour_Thread_Mgr::start_compute(py::array_t<float> data, float threshold,
 {
     if (working_)
         throw std::runtime_error("Contour thread is already running!");
-    // Make a copy of the data to ensure C-contiguity and prevent it going out
-    // of scope
     threshold_=threshold;
-    copy_3d_array(data);
+    // Reference (do NOT copy) the source data; the worker reads it directly via
+    // the raw pointer, and the strides tell surface() how to index it (the map's
+    // native (z,y,x) buffer presented as an (x,y,z) transposed view). Called with
+    // the GIL held, so touching the numpy array here is safe.
+    int stride_size = sizeof(float);
+    for (size_t i=0; i<3; ++i)
+    {
+        // Numpy strides are per byte; surface() wants strides per float.
+        stride_[i] = data.strides(i)/stride_size;
+        size_[i] = data.shape(i);
+    }
+    data_ref_ = data;                             // co-own: keeps the buffer alive
+    data_ptr_ = (float*)data_ref_.request().ptr;  // underlying (contiguous) buffer
     flip_triangles_ = det < 0;
     copy_transform(vertex_transform, vertex_transform_);
     copy_transform(normal_transform, normal_transform_);
@@ -167,30 +187,10 @@ void Contour_Thread_Mgr::start_compute(py::array_t<float> data, float threshold,
     return_normals_ = return_normals;
     ready_=false;
     try {
-        geom_ = std::async(std::launch::async, &Contour_Thread_Mgr::contour_surface_thread_, this, data_.get(), threshold, cap_faces);
+        geom_ = std::async(std::launch::async, &Contour_Thread_Mgr::contour_surface_thread_, this, data_ptr_, threshold, cap_faces);
     } catch (...) {
         working_ = false;
         throw;
-    }
-}
-
-void Contour_Thread_Mgr::copy_3d_array(py::array_t<float> source)
-{
-    int stride_size = sizeof(float);
-    // NOTE: Numpy array strides are per byte regardless of data type, whereas
-    // surface() wants strides per float
-    for (size_t i=0; i<3; ++i)
-    {
-        stride_[i] = source.strides(i)/stride_size;
-        size_[i] = source.shape(i);
-    }
-    auto size = source.shape(0)*source.shape(1)*source.shape(2);
-    data_ = std::unique_ptr<float[]>(new float[size]);
-    auto buf = source.request();
-    float* ptr = (float*)buf.ptr;
-    for (size_t i=0; i<size; ++i)
-    {
-        data_[i] = *ptr++;
     }
 }
 
@@ -225,7 +225,12 @@ Contour_Thread_Mgr::get_result()
     if (!working_)
         throw std::runtime_error("No contour calculation has been started!");
     working_ = false;
-    return geom_.get();
+    auto geom = geom_.get();   // blocks until the worker has finished reading data_ptr_
+    // Release our reference to the source buffer now the worker is done. Called on
+    // the GUI thread with the GIL held, so decref-ing the numpy array is safe.
+    data_ref_ = py::array_t<float>();
+    data_ptr_ = nullptr;
+    return geom;
 }
 
 template<typename T>
