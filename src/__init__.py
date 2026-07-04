@@ -125,6 +125,13 @@ class _ClipperBundle(BundleAPI):
             from .mousemodes import ShiftToReferenceAsuMenuEntry
             from chimerax.mouse_modes import SelectMouseMode
             SelectMouseMode.register_menu_entry(ShiftToReferenceAsuMenuEntry())
+            mw = getattr(session.ui, 'main_window', None)
+            if mw is not None:
+                mw.add_menu_entry(['Tools', 'Clipper'],
+                    'Open structure factors (browse)…',
+                    lambda *_, s=session: _open_structure_factors_with_browser(s),
+                    tool_tip='Open an MTZ/CIF structure-factor file and choose '
+                        'which experimental data, free-R flags and maps to load')
         from chimerax.clipper import cmd
         # cmd.register_mtz_file_format(session)
 
@@ -234,6 +241,23 @@ class _ClipperBundle(BundleAPI):
         return ct.get(class_name)
 
 
+def _open_structure_factors_with_browser(session):
+    '''
+    Tools-menu entry point: prompt for a structure-factor file and open it with
+    the interactive MTZ browser enabled. Routes through the normal file-open
+    provider so the existing model-association dialog is reused; the only
+    difference from a plain open is browse=True.
+    '''
+    from Qt.QtWidgets import QFileDialog
+    filename, _ = QFileDialog.getOpenFileName(None,
+        'Open structure factors (choose data and maps)', '',
+        'Structure factors (*.mtz *.cif)')
+    if not filename:
+        return
+    from chimerax.open_command.cmd import provider_open
+    provider_open(session, [filename], browse=True)
+
+
 def _sf_file_open_info():
     from chimerax.open_command import OpenerInfo
 
@@ -261,12 +285,18 @@ def _sf_file_open_info():
         @property
         def open_args(self):
             from chimerax.atomic import StructureArg
-            from chimerax.core.commands import FloatArg, BoolArg
+            from chimerax.core.commands import (FloatArg, BoolArg, StringArg,
+                OpenFileNameArg, ListOf)
 
             return {
                 'structure_model':  StructureArg,
                 'over_sampling':    FloatArg,
                 'auto_free_flags':  BoolArg,
+                'browse':           BoolArg,
+                'fsigf':            StringArg,
+                'map_columns':      ListOf(StringArg),
+                'free_flags':       StringArg,
+                'free_flags_file':  OpenFileNameArg,
             }
     return Info()
 

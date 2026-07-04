@@ -290,14 +290,24 @@ class MapMgr(Model):
             auto_choose_reflection_data, auto_choose_free_flags)
 
     def add_xmapset_from_file(self, sffile, oversampling_rate=None,
-            auto_choose_reflection_data=True, auto_choose_free_flags=True):
+            auto_choose_reflection_data=True, auto_choose_free_flags=True,
+            free_flag_label=None, free_flags_file=None,
+            fsigf_name=None, map_columns=None, browse=False):
         if oversampling_rate is None:
             oversampling_rate = self._default_oversampling_rate
         from ..clipper_mtz import ReflectionDataContainer
+        # When browsing, keep every experimental dataset so the user can choose
+        # among them; otherwise the automatic single-dataset choice is applied at
+        # load time.
         mtzdata = ReflectionDataContainer(self.session, sffile,
             shannon_rate = oversampling_rate,
-            auto_choose_reflection_data=auto_choose_reflection_data,
+            free_flag_label=free_flag_label,
+            auto_choose_reflection_data=(auto_choose_reflection_data and not browse),
             auto_choose_free_flags=auto_choose_free_flags)
+        # Optionally pull the free-R flags from a separate reflection file.
+        if free_flags_file is not None:
+            from ..clipper_mtz import adopt_free_flags_from_file
+            adopt_free_flags_from_file(self.session, mtzdata, free_flags_file)
         cm = self.crystal_mgr
         if not cm.has_symmetry:
             self.session.logger.info('(CLIPPER) NOTE: No symmetry information found '
@@ -325,8 +335,20 @@ class MapMgr(Model):
                     )
                 cm.add_symmetry_info(mtzdata.cell, mtzdata.spacegroup, mtzdata.grid_sampling,
                 mtzdata.resolution, override=True)
+        # Optional interactive browser: let the user pick the experimental
+        # dataset, the free-R flags, and exactly which maps to open. Strictly
+        # opt-in — the default (browse=False) path is unchanged and silent.
+        if browse and self.session.ui.is_gui and not self.session.in_script:
+            from ..ui.mtz_browser import run_mtz_browser
+            selection = run_mtz_browser(self.session, mtzdata)
+            if selection is None:
+                # User cancelled: fall back to fully automatic behaviour.
+                pass
+            else:
+                fsigf_name = selection.get('fsigf_name', fsigf_name)
+                map_columns = selection.get('map_columns', map_columns)
         from .xmapset import XmapSet
-        return XmapSet(self, mtzdata)
+        return XmapSet(self, mtzdata, fsigf_name=fsigf_name, map_columns=map_columns)
 
     def symmetry_matches(self, xtal_data):
         return (

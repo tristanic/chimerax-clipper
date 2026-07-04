@@ -19,39 +19,6 @@
 # and MMDB libraries, as well as portions of the Intel Math Kernel Library. Each
 # of these is redistributed under its own license terms.
 
-def _first_column_types():
-    from chimerax.clipper import (
-        HKL_data_Flag,
-        HKL_data_D_sigD,
-        HKL_data_F_sigF,
-        HKL_data_F_phi,
-        HKL_data_F_sigF_ano,
-        HKL_data_I_sigI,
-        HKL_data_I_sigI_ano,
-    )
-    first_column_type = {
-        'D':    HKL_data_D_sigD,
-        'F':    {'Q': HKL_data_F_sigF, 'P': HKL_data_F_phi},
-        'G':    HKL_data_F_sigF_ano,
-        'J':    HKL_data_I_sigI,
-        'K':    HKL_data_I_sigI_ano,
-        'I':    HKL_data_Flag
-    }
-
-    expected_following_columns = {
-        'D':    ['Q'],
-        # 'F':    ['Q'],
-        'G':    ['L','G','L'],
-        'J':    ['Q'],
-        'K':    ['M','K','M'],
-        'I':    [],
-    }
-
-
-
-    return (first_column_type, expected_following_columns)
-
-
 def _defaultdict_as_dict(d):
     '''
     Convert a recursively-defined defaultdict back to a normal dict for easier
@@ -67,100 +34,203 @@ def _parse_column_path(cpath):
     crystal, dataset, name = path.split('/')[1:]
     return (crystal, dataset, name, dtype)
 
+
+def _plan_imports(columns, load_map_coeffs=True):
+    '''
+    Decide how to group a flat, ordered list of MTZ columns into importable
+    datasets, WITHOUT touching Clipper (pure and unit-testable).
+
+    Args:
+        columns: ordered list of (crystal, dataset, name, dtype) tuples, with the
+            Miller-index ('H') columns already removed.
+        load_map_coeffs: if False, amplitude/phase (F/phi) map coefficients are
+            recognised (so their columns aren't mis-paired) but omitted from the
+            plan.
+
+    Returns (plans, messages) where each plan is
+    (crystal, dataset, [column names in order], kind) with kind one of
+    'F_sigF', 'F_phi', 'D_sigD', 'F_sigF_ano', 'I_sigI', 'I_sigI_ano', 'Flag';
+    and messages is a list of (level, text) for the caller to log.
+
+    Adjacency of the expected following column type is the primary signal — this
+    is how essentially every producer writes F/sigF and amplitude/phase pairs.
+    When adjacency fails (a mis-ordered or non-adjacent sigma), we fall back to
+    pairing the amplitude/intensity with a sigma column matched *by name*
+    (SIG-prefix etc.) within the same crystal/dataset, so the amplitude is no
+    longer silently dropped.
+    '''
+    from .reflection_classify import labels_match
+    from collections import OrderedDict
+
+    groups = OrderedDict()
+    for idx, c in enumerate(columns):
+        groups.setdefault((c[0], c[1]), []).append(idx)
+
+    def nm(idx):
+        return columns[idx][2]
+
+    def dt(idx):
+        return columns[idx][3]
+
+    plans = []
+    messages = []
+    consumed = set()
+
+    for (crystal, dataset), idxs in groups.items():
+        def next_unconsumed(after_pos):
+            for pos in range(after_pos + 1, len(idxs)):
+                if idxs[pos] not in consumed:
+                    return pos
+            return None
+
+        def find_sigma_by_name(base_name, want_type):
+            for pos in range(len(idxs)):
+                j = idxs[pos]
+                if j in consumed:
+                    continue
+                if dt(j) == want_type and labels_match(base_name, nm(j)):
+                    return pos
+            return None
+
+        def take_adjacent(start_pos, expected_types):
+            positions = []
+            p = start_pos
+            for et in expected_types:
+                p = next_unconsumed(p)
+                if p is None or dt(idxs[p]) != et:
+                    return None
+                positions.append(p)
+            return positions
+
+        def emit(positions, kind):
+            for p in positions:
+                consumed.add(idxs[p])
+            plans.append((crystal, dataset, [nm(idxs[p]) for p in positions], kind))
+
+        for pos, idx in enumerate(idxs):
+            if idx in consumed:
+                continue
+            d = dt(idx)
+            if d == 'F':
+                np = next_unconsumed(pos)
+                if np is not None and dt(idxs[np]) == 'Q':
+                    emit([pos, np], 'F_sigF')
+                elif np is not None and dt(idxs[np]) == 'P':
+                    if load_map_coeffs:
+                        emit([pos, np], 'F_phi')
+                    else:
+                        consumed.update([idx, idxs[np]])
+                else:
+                    qpos = find_sigma_by_name(nm(idx), 'Q')
+                    if qpos is not None:
+                        emit([pos, qpos], 'F_sigF')
+                        messages.append(('info',
+                            'Paired amplitude column "{}" with non-adjacent sigma '
+                            '"{}" by name.'.format(nm(idx), nm(idxs[qpos]))))
+                    else:
+                        ppos = find_sigma_by_name(nm(idx), 'P')
+                        if ppos is not None:
+                            if load_map_coeffs:
+                                emit([pos, ppos], 'F_phi')
+                            else:
+                                consumed.update([idx, idxs[ppos]])
+                        else:
+                            consumed.add(idx)
+                            messages.append(('warning',
+                                'WARNING: amplitude column "/{}/{}/{}" could not be '
+                                'matched to a sigma or phase column and was skipped.'
+                                .format(crystal, dataset, nm(idx))))
+            elif d in ('D', 'J'):
+                kind = 'D_sigD' if d == 'D' else 'I_sigI'
+                np = next_unconsumed(pos)
+                if np is not None and dt(idxs[np]) == 'Q':
+                    emit([pos, np], kind)
+                else:
+                    qpos = find_sigma_by_name(nm(idx), 'Q')
+                    if qpos is not None:
+                        emit([pos, qpos], kind)
+                        messages.append(('info',
+                            'Paired column "{}" with non-adjacent sigma "{}" by '
+                            'name.'.format(nm(idx), nm(idxs[qpos]))))
+                    else:
+                        consumed.add(idx)
+                        messages.append(('warning',
+                            'WARNING: column "/{}/{}/{}" has no matching sigma '
+                            'column and was skipped.'.format(crystal, dataset, nm(idx))))
+            elif d == 'G':
+                seq = take_adjacent(pos, ['L', 'G', 'L'])
+                if seq is not None:
+                    emit([pos] + seq, 'F_sigF_ano')
+                else:
+                    consumed.add(idx)
+                    messages.append(('warning',
+                        'WARNING: anomalous amplitude column "/{}/{}/{}" was not '
+                        'followed by the expected sigF+/F-/sigF- columns and was '
+                        'skipped.'.format(crystal, dataset, nm(idx))))
+            elif d == 'K':
+                seq = take_adjacent(pos, ['M', 'K', 'M'])
+                if seq is not None:
+                    emit([pos] + seq, 'I_sigI_ano')
+                else:
+                    consumed.add(idx)
+                    messages.append(('warning',
+                        'WARNING: anomalous intensity column "/{}/{}/{}" was not '
+                        'followed by the expected sigI+/I-/sigI- columns and was '
+                        'skipped.'.format(crystal, dataset, nm(idx))))
+            elif d == 'I':
+                emit([pos], 'Flag')
+            else:
+                consumed.add(idx)
+                messages.append(('info',
+                    'Discarding unrecognised/unsupported data array "/{}/{}/{} {}"'
+                    .format(crystal, dataset, nm(idx), d)))
+
+    return plans, messages
+
+
 def load_mtz_data(session, filename, load_map_coeffs=True):
-    from chimerax.clipper import CCP4MTZfile, HKL_info, HKL_data_F_phi
+    from chimerax.clipper import (CCP4MTZfile, HKL_info,
+        HKL_data_Flag, HKL_data_D_sigD, HKL_data_F_sigF, HKL_data_F_phi,
+        HKL_data_F_sigF_ano, HKL_data_I_sigI, HKL_data_I_sigI_ano)
+
+    kind_to_type = {
+        'F_sigF':       HKL_data_F_sigF,
+        'F_phi':        HKL_data_F_phi,
+        'D_sigD':       HKL_data_D_sigD,
+        'F_sigF_ano':   HKL_data_F_sigF_ano,
+        'I_sigI':       HKL_data_I_sigI,
+        'I_sigI_ano':   HKL_data_I_sigI_ano,
+        'Flag':         HKL_data_Flag,
+    }
 
     mtzin = CCP4MTZfile()
     hklinfo = HKL_info()
     mtzin.open_read(filename)
-    mtzin.import_hkl_info(hklinfo, True) 
+    mtzin.import_hkl_info(hklinfo, True)
 
-    first_column_type, expected_following_columns = _first_column_types()
+    # Get all column names and types, dropping the Miller indices (already in
+    # hklinfo).
+    columns = []
+    for cpath in (str(p) for p in mtzin.column_paths):
+        crystal, dataset, name, dtype = _parse_column_path(cpath)
+        if dtype == 'H':
+            continue
+        columns.append((crystal, dataset, name, dtype))
 
-    # Get all column names and types
-    column_paths = [str(p) for p in mtzin.column_paths]
+    plans, messages = _plan_imports(columns, load_map_coeffs=load_map_coeffs)
+    for level, text in messages:
+        getattr(session.logger, level)(text)
 
     from collections import defaultdict
     def nested_default_dict():
         return defaultdict(lambda: nested_default_dict())
     crystals = defaultdict(nested_default_dict)
 
-    i = 0
-    while i < len(column_paths):
-        current_path = column_paths[i]
-        crystal, dataset, name, dtype = _parse_column_path(current_path)
-        if dtype == 'H':
-            # HKLs, already captured in hklinfo
-            i += 1
-            continue
-        array_type = first_column_type.get(dtype, None)
-        if array_type is None:
-            session.logger.info('Discarding unrecognised/unsupported data array {}'.format(current_path))
-            i += 1
-            continue
-
-        if dtype == 'F':
-            ncryst, ndat, nname, ndtype = _parse_column_path(column_paths[i+1])
-            real_array_type = array_type.get(ndtype, None)
-            if real_array_type is None:
-                warn_str = ('WARNING: found column "{}" suggesting one of the '
-                'data types ({}), but the following column type "{}" does not '
-                'match any of the expected types ({}). Importing of this '
-                'column has been skipped.')
-                warn_str = warn_str.format(current_path,
-                    ', '.join([atype.__name__ for atype in array_type.values()]),
-                    ndtype, ', '.join(array_type.keys()))
-                session.logger.warning(warn_str)
-                i += 1
-                continue
-            elif real_array_type == HKL_data_F_phi and not load_map_coeffs:
-                i += 2
-                continue
-
-            next_expected = [ndtype]
-            array_type = real_array_type
-        # print('Path {} looks like {}. Trying...'.format(current_path, array_type.__name__))
-        else:
-            next_expected = expected_following_columns[dtype]
-
-        import_names = [name]
-        next_found_names = []
-        next_found_dtypes = []
-        for edtype in next_expected:
-            i += 1
-            npath = column_paths[i]
-            ncryst, ndat, nname, ndtype = _parse_column_path(npath)
-            if ncryst != crystal or ndat != dataset:
-                warn_str = ('WARNING: found column "{}" suggesting data of type '
-                '{}, but reached the end of dataset {} before finding the '
-                'expected matching columns. Make sure your MTZ file is laid out '
-                'in a logical order (e.g. F,sigF; F+,sigF+,F-,sigF-)')
-                warn_str.format(current_path, array_type.__name__,
-                    '/'.join(crystal, dataset))
-                session.logger.warn(warn_str)
-                break
-            next_found_names.append(nname)
-            next_found_dtypes.append(ndtype)
-            if edtype != ndtype:
-                warn_str = ('WARNING: found column "{}" suggesting data of type '
-                '{}, but the data in the following column(s) is not as '
-                'expected. For this data type the following columns should have '
-                'types {}; found {} ({}). This column has been ignored.')
-                warn_str.format(current_path, array_type.__name__,
-                    ','.join(next_expected), ','.join(next_found_dtypes),
-                    ','.join(next_found_names))
-                next_found_names = next_found_names[:-1]
-                next_found_dtypes = next_found_dtypes[:-1]
-                break
-            # print('Found {} dtype {}'.format(nname, ndtype))
-        if len(next_found_names) == len(next_expected):
-            import_path = '/'.join([crystal, dataset])
-            import_names = [name] + next_found_names
-            dset_name = ', '.join(import_names)
-            import_path += '/'+'[{}]'.format(dset_name)
-            this_data = array_type(hklinfo)
-            mtzin.import_hkl_data(this_data, import_path)
-            crystals[crystal][dataset][dset_name] = this_data
-        i += 1
+    for crystal, dataset, names, kind in plans:
+        dset_name = ', '.join(names)
+        import_path = '{}/{}/[{}]'.format(crystal, dataset, dset_name)
+        this_data = kind_to_type[kind](hklinfo)
+        mtzin.import_hkl_data(this_data, import_path)
+        crystals[crystal][dataset][dset_name] = this_data
 
     return hklinfo, _defaultdict_as_dict(crystals)

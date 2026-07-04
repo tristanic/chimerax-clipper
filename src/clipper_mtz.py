@@ -93,6 +93,18 @@ class ReflectionDataContainer(Model):
                 return c
         return None
 
+    def set_free_flags(self, name, array):
+        '''
+        Replace the container's current free-R flag set. `array` must be a
+        HKL_data_Flag defined over this container's hklinfo. Used to apply a
+        free-flag column chosen in the MTZ browser, or one adopted from a
+        separate reflection file (see adopt_free_flags_from_file).
+        '''
+        existing = self.free_flags
+        if existing is not None:
+            existing.delete()
+        self.add([ReflectionDataFreeFlags(name, self.session, array)])
+
     @property
     def experimental_data(self):
         for c in self.child_models():
@@ -324,13 +336,15 @@ class ReflectionDataCalc(ReflectionData):
             self.is_difference_map = is_difference_map
 
     def _guess_if_difference_map(self, name):
-        first_part = name.split(',')[0]
-        identifier = first_part.split(' ')[-1]
-        if identifier in ('F','FWT', 'FC', 'FCALC'):
-            return False
-        if '2' in identifier:
-            return False
-        return True
+        from .io.reflection_classify import classify_map_coefficient, extract_column_labels
+        labels = extract_column_labels(name)
+        amp = labels[0] if labels else name
+        _, is_difference, _ = classify_map_coefficient(amp)
+        # Unknown map coefficients: keep the old conservative default (treat as a
+        # difference map, i.e. show both positive and negative contours).
+        if is_difference is None:
+            return True
+        return is_difference
 
 
 def data_labels_match(data_col, sigma_or_phase_col):
@@ -514,21 +528,28 @@ def _filter_out_missing_free_flags(hklinfo, free, expt, calc):
 
 def _auto_choose_reflections(names, datasets):
     '''
-    Attempt to automatically choose the best experimental reflection dataset
-    from a loaded file to use for generating maps. The logic at present is very
-    simple: if a non-anomalous intensity dataset is present, use that. Otherwise,
-    if a non-anomalous amplitude dataset is present, use that. Otherwise, move
-    on to anomalous intensities, followed by anomalous amplitudes.
+    Automatically choose the best experimental reflection dataset from a loaded
+    file to use for generating maps. Datasets are ranked first by data type
+    (non-anomalous amplitudes, then non-anomalous intensities, then the anomalous
+    variants) and, within a type, by how canonical the column name looks (so e.g.
+    'FP'/'F-obs' beats an oddly-named column of the same type). See
+    io.reflection_classify.experimental_sort_key.
     '''
     from chimerax.clipper import (HKL_data_F_sigF, HKL_data_I_sigI,
         HKL_data_F_sigF_ano, HKL_data_I_sigI_ano)
-    for dtype in (HKL_data_F_sigF, HKL_data_I_sigI, HKL_data_F_sigF_ano,
-            HKL_data_I_sigI_ano
-        ):
-        for name, dataset in zip(names, datasets):
-            if type(dataset) == dtype:
-                return ([name], [dataset])
-    raise RuntimeError('No suitable experimental data found!')
+    from .io.reflection_classify import experimental_sort_key
+    priority = {
+        HKL_data_F_sigF: 0, HKL_data_I_sigI: 1,
+        HKL_data_F_sigF_ano: 2, HKL_data_I_sigI_ano: 3,
+    }
+    candidates = [(name, dataset) for name, dataset in zip(names, datasets)
+        if type(dataset) in priority]
+    if not candidates:
+        raise RuntimeError('No suitable experimental data found!')
+    candidates.sort(
+        key=lambda nd: experimental_sort_key(nd[0], priority[type(nd[1])]))
+    best_name, best_dataset = candidates[0]
+    return ([best_name], [best_dataset])
 
 
 def _regenerate_free_set_if_necessary(session, flag_array, data_array, free_frac=0.05, max_free = 2000):
@@ -577,7 +598,11 @@ def load_mtz_data(session, filename, free_flag_label = None,
             else:
                 all_exp_data_arrays[dname_ext] = data_array
     flag_names, flag_arrays = (list(all_flag_arrays.keys()), list(all_flag_arrays.values()))
-    possible_free_flags = {name:array for name, array in zip(flag_names, flag_arrays) if 'free' in name.lower()}    
+    # Rank the flag columns that look like free-R sets (canonical names first).
+    # Only name-matched columns are considered auto-selectable; other integer
+    # columns (batch/status/etc.) are deliberately left alone.
+    from .io.reflection_classify import rank_free_flags
+    ranked_free = rank_free_flags(flag_names)
     free_flag_name = None
     if free_flag_label is not None:
         try:
@@ -589,25 +614,24 @@ def load_mtz_data(session, filename, free_flag_label = None,
                 'file. Possible names are:\n{}')
             raise UserError(err_str.format(free_flag_label, ',\n'.join(flag_names)))
     free_flags = None
-    if free_flag_name is None and len(possible_free_flags):
-        for free_flag_name, free_flags in possible_free_flags.items():
-            break
-        if len(possible_free_flags) > 1:
+    if free_flag_name is None and ranked_free:
+        free_flag_name = ranked_free[0]
+        if len(ranked_free) > 1:
             if auto_choose_rfree:
                 separator = "\n\t"
-                session.logger.warning('Multiple flag arrays containing the name "free" found:\n\t '
-                    f'{separator.join(name for name in possible_free_flags.keys())}\n'
-                    f'Using the first in the list. If this is incorrect, close these maps '
-                    'and provide an MTZ file with a single array of free flags.'
+                session.logger.warning('Multiple candidate free-R flag arrays found:\n\t '
+                    f'{separator.join(ranked_free)}\n'
+                    f'Using "{free_flag_name}". If this is incorrect, close these maps '
+                    'and reopen choosing the correct one (freeFlags option or the '
+                    'MTZ browser), or provide an MTZ file with a single array of free flags.'
                 )
-            else:
-                if session.ui.is_gui:
-                    free_flag_name = _r_free_chooser(session, flag_names)
-        if free_flag_name is None:
-            free_flags = None
-        else:
-            index = flag_names.index(free_flag_name)
-            free_flags = flag_arrays[index]
+            elif session.ui.is_gui:
+                choice = _r_free_chooser(session, flag_names)
+                if choice is not None:
+                    free_flag_name = choice
+    if free_flag_name is not None:
+        index = flag_names.index(free_flag_name)
+        free_flags = flag_arrays[index]
     exp_data_names, exp_data = (list(all_exp_data_arrays.keys()), list(all_exp_data_arrays.values()))
     calc_data_names, calc_data = (list(all_calc_data_arrays.keys()), list(all_calc_data_arrays.values()))
     return (
@@ -640,16 +664,19 @@ def _merge_hkl_base(crystal_dict):
     hklbase = crystal_dict.get('HKL_base', None)
     if hklbase is None:
         return crystal_dict
-    # A CCP4-style MTZ file will contain only the free set here
-    if len(hklbase) == 1:
-        for key, dat in hklbase.items():
-            inner_dict[key] = dat
-        cryst_datasets = crystal_dict[list(crystal_dict.keys())[1]]
+    # A CCP4-style MTZ file will contain only the free set here. Both the
+    # HKL_base crystal and the single "real" crystal are 3-level dicts
+    # (dataset -> column-group -> array); flatten each down to
+    # {column-group: array} so they merge into one pseudo-dataset.
+    other_keys = [k for k in crystal_dict if k != 'HKL_base']
+    if len(hklbase) == 1 and len(other_keys) == 1:
+        cryst_datasets = crystal_dict[other_keys[0]]
         if len(cryst_datasets) != 1:
             return crystal_dict
-        for dkey, dataset in cryst_datasets.items():
-            for key, data in dataset.items():
-                inner_dict[key] = data
+        for datasets in (hklbase, cryst_datasets):
+            for dkey, dataset in datasets.items():
+                for key, data in dataset.items():
+                    inner_dict[key] = data
         return new_dict
     return crystal_dict
 
@@ -785,3 +812,107 @@ def _r_free_chooser(session, possible_names):
     if ok_pressed and choice:
         return choice
     return None
+
+
+def load_free_flags_from_file(session, filename, label=None):
+    '''
+    Load just the (best) free-R flag column from a separate reflection file.
+    Returns (hklinfo, (name, HKL_data_Flag)); the array is None if the file has
+    no recognisable free set. Map coefficients are skipped for speed.
+    '''
+    import os
+    ext = os.path.splitext(filename)[1].lower()
+    if ext == '.mtz':
+        hklinfo, free, expt, calc = load_mtz_data(session, filename,
+            free_flag_label=label, auto_choose_rfree=True, load_map_coeffs=False)
+    elif ext in ('.cif', '.ent'):
+        from .io.cif_sf_read import load_cif_sf
+        hklinfo, free, expt, calc = load_cif_sf(filename, load_map_coeffs=False)
+    else:
+        from chimerax.core.errors import UserError
+        raise UserError('Free-flags file must be in .mtz or .cif format!')
+    return hklinfo, free
+
+
+def _match_flag_array(source_array, target_hklinfo):
+    '''
+    Build a HKL_data_Flag over `target_hklinfo` from a flag array defined over a
+    different reflection list, matching values by Miller index. Reflections
+    present in the target but absent from the source are filled with the source's
+    majority (working-set) value, so an external free set can never accidentally
+    mark a reflection free where the source said nothing.
+    '''
+    import numpy
+    from chimerax.clipper import HKL_data_Flag
+    s_hkls, s_vals = source_array.data
+    s_hkls = numpy.asarray(s_hkls)
+    s_vals = numpy.asarray(s_vals).reshape(-1)
+    # Majority (working) value to use for reflections missing from the source.
+    if len(s_vals):
+        vals, counts = numpy.unique(s_vals, return_counts=True)
+        fill_value = float(vals[numpy.argmax(counts)])
+    else:
+        fill_value = 0.0
+    lookup = {}
+    for hkl, v in zip(s_hkls, s_vals):
+        lookup[(int(hkl[0]), int(hkl[1]), int(hkl[2]))] = float(v)
+    target = HKL_data_Flag(target_hklinfo)
+    t_hkls = numpy.asarray(target.data[0])
+    out = numpy.empty((len(t_hkls), 1), numpy.double)
+    for i, hkl in enumerate(t_hkls):
+        out[i, 0] = lookup.get((int(hkl[0]), int(hkl[1]), int(hkl[2])), fill_value)
+    target.set_data(t_hkls, out)
+    return target
+
+
+def list_free_flag_candidates(session, filename):
+    '''
+    Return (hklinfo, [(name, HKL_data_Flag), ...]) for every integer flag column
+    in a file, so the MTZ browser can offer them as free-set choices. The arrays
+    are defined over the file's own hklinfo; match them onto a container with
+    _match_flag_array before use.
+    '''
+    import os
+    from chimerax.clipper import HKL_data_Flag
+    ext = os.path.splitext(filename)[1].lower()
+    candidates = []
+    if ext == '.mtz':
+        from .io import mtz_read
+        hklinfo, crystal_dict = mtz_read.load_mtz_data(session, filename,
+            load_map_coeffs=False)
+        if len(crystal_dict) == 2:
+            crystal_dict = _merge_hkl_base(crystal_dict)
+        for crystal, datasets in crystal_dict.items():
+            for dataset_name, dataset in datasets.items():
+                for data_name, array in dataset.items():
+                    if isinstance(array, HKL_data_Flag):
+                        candidates.append(
+                            ('({}) {}'.format(dataset_name, data_name), array))
+            break
+    elif ext in ('.cif', '.ent'):
+        from .io.cif_sf_read import load_cif_sf
+        hklinfo, free, expt, calc = load_cif_sf(filename, load_map_coeffs=False)
+        if free[1] is not None:
+            candidates.append((free[0], free[1]))
+    else:
+        from chimerax.core.errors import UserError
+        raise UserError('Reflection file must be in .mtz or .cif format!')
+    return hklinfo, candidates
+
+
+def adopt_free_flags_from_file(session, container, filename, label=None):
+    '''
+    Load the free-R flags from a separate reflection file and apply them to an
+    existing ReflectionDataContainer, matching by Miller index onto the
+    container's reflection list.
+    '''
+    hklinfo_b, free = load_free_flags_from_file(session, filename, label=label)
+    if free[1] is None:
+        session.logger.warning(
+            'No free-R flags could be found in "{}". The container\'s existing '
+            'free set (if any) is unchanged.'.format(filename))
+        return
+    matched = _match_flag_array(free[1], container.hklinfo)
+    container.set_free_flags(free[0] or 'Free flags (external)', matched)
+    session.logger.info(
+        'Adopted free-R flags "{}" from separate file "{}".'.format(free[0], filename))

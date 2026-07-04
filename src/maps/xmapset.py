@@ -103,7 +103,8 @@ class XmapSet(MapSetBase):
         exclude_missing_reflections=False,
         show_r_factors=True,
         auto_add_to_session=True,
-        small_molecule_data=None):
+        small_molecule_data=None,
+        map_columns=None):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -191,7 +192,8 @@ class XmapSet(MapSetBase):
             self.add([crystal_data])
             self.init_maps(use_static_maps, use_live_maps,
             fsigf_name, bsharp_vals, exclude_free_reflections,
-            fill_with_fcalc, exclude_missing_reflections)
+            fill_with_fcalc, exclude_missing_reflections,
+            map_columns=map_columns)
         if auto_add_to_session:
             manager.add([self])
 
@@ -247,7 +249,8 @@ class XmapSet(MapSetBase):
 
     def init_maps(self, use_static_maps=True, use_live_maps=True,
             fsigf_name=None, bsharp_vals=None, exclude_free_reflections=False,
-            fill_with_fcalc=False, exclude_missing_reflections=False):
+            fill_with_fcalc=False, exclude_missing_reflections=False,
+            map_columns=None):
         if self._maps_initialized:
             raise RuntimeError('Maps have already been initialised!')
         from .. import (
@@ -354,9 +357,16 @@ class XmapSet(MapSetBase):
             self.live_update=True
         if use_static_maps:
             cdata = crystal_data.calculated_data
+            selected = _select_calc_datasets(list(cdata), map_columns)
             for dataset in cdata:
+                if dataset not in selected:
+                    continue
                 xmap = self.add_static_xmap(dataset)
-                if xmap.is_probably_fcalc_map():
+                # When no explicit selection was given, preserve the historical
+                # behaviour: open every map but hide probable Fcalc maps. When the
+                # caller (command keyword or MTZ browser) named the maps to open,
+                # honour that exactly and display them all.
+                if map_columns is None and xmap.is_probably_fcalc_map():
                     xmap.display = False
         self._maps_initialized=True
 
@@ -1026,16 +1036,13 @@ class XmapHandler_Static(XmapHandlerBase):
 
     def is_probably_fcalc_map(self):
         '''
-        Attempt to guess if a map loaded from a file is Fcalc (that is, simply
-        calculated from the atomic coordinates and properties). All we can really go
-        on here is some simple heuristics.
+        Guess whether a map loaded from a file is an Fcalc map (calculated
+        directly from the model, rather than a 2mFo-DFc / mFo-DFc likelihood map).
+        Recognition of the calculated-map column names is centralised in
+        io.reflection_classify.
         '''
-        name = self.name.upper()
-        if name.startswith('FC'):
-            return True
-        if 'CALC' in name:
-            return True
-        return False
+        from ..io.reflection_classify import map_coeff_info
+        return map_coeff_info(self.name).is_fcalc
 
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
@@ -1268,6 +1275,35 @@ def viewing_recommended_bsharp(resolution, crossover=2.5, low_res_base=45,
     else:
         return low_res_base*sqrt(resolution-crossover) - 2.5
 
+
+
+def _select_calc_datasets(datasets, map_columns):
+    '''
+    Decide which calculated (F/phi) datasets to open as static maps.
+
+    If `map_columns` is None, all datasets are selected (the historical default;
+    the caller then hides probable Fcalc maps). Otherwise `map_columns` is a list
+    of user-supplied strings, and a dataset is selected when any of them matches
+    (case-insensitively, EXACTLY — not as a substring) the dataset's full name,
+    one of its column labels, or its map type. Exact matching is essential
+    because e.g. "FOFCWT" is a substring of "2FOFCWT": substring matching on
+    crystallographic labels would make the difference-map token also select the
+    2mFo-DFc map. So "FOFCWT" selects only the mFo-DFc map, "2FOFCWT" only the
+    2mFo-DFc map, and "mFo-DFc" selects every difference map by type. The MTZ
+    browser passes full dataset names, which match on the first target.
+    '''
+    if map_columns is None:
+        return list(datasets)
+    from ..io.reflection_classify import extract_column_labels, map_coeff_info
+    tokens = set(t.strip().lower() for t in map_columns if t.strip())
+    selected = []
+    for dataset in datasets:
+        targets = set(l.lower() for l in extract_column_labels(dataset.name))
+        targets.add(dataset.name.lower())
+        targets.add(map_coeff_info(dataset.name).map_type.lower())
+        if tokens & targets:
+            selected.append(dataset)
+    return selected
 
 
 def _calculate_grid_padding(radius, grid, cell):
