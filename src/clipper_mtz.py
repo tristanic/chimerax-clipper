@@ -135,6 +135,19 @@ class ReflectionDataContainer(Model):
                 self.spacegroup, self.cell, self.resolution, self.shannon_rate)
         return self._grid_sampling
 
+    def set_shannon_rate(self, rate):
+        '''
+        Change the oversampling (Shannon) rate and invalidate the cached
+        Grid_sampling so the next access to grid_sampling rebuilds it. Does not
+        itself re-grid any existing maps - that is orchestrated by
+        MapMgr.set_oversampling_rate().
+        '''
+        rate = float(rate)
+        if rate <= 0:
+            raise ValueError('Oversampling (Shannon) rate must be positive!')
+        self.shannon_rate = rate
+        self._grid_sampling = None
+
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
         data = {

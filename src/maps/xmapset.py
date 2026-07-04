@@ -344,7 +344,11 @@ class XmapSet(MapSetBase):
                         exclude_missing_reflections=exclude_missing_reflections,
                         style=style,
                         transparency=transparency,
-                        contour=contour
+                        contour=contour,
+                        # These heuristic sharpened/smoothed maps are the ones a
+                        # bare "clipper bsharp <value>" should retune; the raw
+                        # 2mFo-DFc reference map (added above) stays put.
+                        bsharp_designated=True
                         )
         if self.live_xmap_mgr is not None:
             self.live_update=True
@@ -583,13 +587,27 @@ class XmapSet(MapSetBase):
         transparency=0.0,
         contour=None,
         display=True,
-        auto_add_to_session=True):
+        auto_add_to_session=True,
+        bsharp_adjustable=None,
+        bsharp_designated=False):
         '''
         Add a "live" crystallographic map, calculated from atomic positions and
         experimental x-ray reflection data. The map will be automatically
         recalculated in the background whenever changes are made to the atomic
         model.
+
+        bsharp_adjustable:
+            Whether "clipper bsharp" may change this map's sharpening B-factor.
+            If None (default), resolves to True for normal maps and False for
+            difference maps. Pass False to lock a map (e.g. ISOLDE's hidden MDFF
+            fitting map, which must keep its construction B-factor).
+        bsharp_designated:
+            Whether this map is the default target of "clipper bsharp" applied at
+            model/whole-dataset scope. Set True for the heuristic sharpened/
+            smoothed viewing map; leave False for the raw reference map.
         '''
+        if bsharp_adjustable is None:
+            bsharp_adjustable = not is_difference_map
         rebuild_args = {
             'b_sharp':                      b_sharp,
             'is_difference_map':            is_difference_map,
@@ -607,6 +625,9 @@ class XmapSet(MapSetBase):
             fill_with_fcalc = fill_with_fcalc)
         new_handler = XmapHandler_Live(self, name,
             is_difference_map=is_difference_map)
+        # Difference maps are never adjustable regardless of the argument.
+        new_handler.bsharp_adjustable = bsharp_adjustable and not is_difference_map
+        new_handler.bsharp_designated = bsharp_designated and new_handler.bsharp_adjustable
         self.set_xmap_display_style(new_handler,
             is_difference_map=is_difference_map,
             color=color,
@@ -989,6 +1010,20 @@ class XmapHandler_Static(XmapHandlerBase):
             self._stats = (all.mean, all.std_dev, all.std_dev)
         return self._stats
 
+    def _regrid(self, grid=None):
+        '''
+        Re-create the real-space map at a new grid sampling (oversampling rate)
+        and re-FFT the stored (unchanged) amplitudes/phases into it. The display
+        box is refilled separately by the box-change trigger fired after re-grid.
+        '''
+        from .. import Xmap
+        if grid is None:
+            grid = self.grid
+        xmap = self._xmap = Xmap(self.spacegroup, self.cell, grid)
+        xmap.fft_from(self._f_phi_data)
+        self._stats = None
+        self._all_stats = None
+
     def is_probably_fcalc_map(self):
         '''
         Attempt to guess if a map loaded from a file is Fcalc (that is, simply
@@ -1063,6 +1098,16 @@ class XmapHandler_Live(XmapHandlerBase):
         name = '(LIVE) '+name
         super().__init__(mapset, name, is_difference_map=is_difference_map,
             session_restore=session_restore)
+        # Whether this map's sharpening B-factor may be changed at runtime.
+        # Difference maps are non-adjustable by construction (sharpening a signed
+        # residual map has no useful interpretation). add_live_xmap() may override
+        # (e.g. ISOLDE marks its hidden MDFF fitting map as non-adjustable).
+        self._bsharp_adjustable = not is_difference_map
+        # Whether this map is the default target of "clipper bsharp" when the
+        # command is applied at model/whole-dataset scope (rather than to one
+        # explicitly-named map). The heuristic sharpened/smoothed viewing map is
+        # designated; the raw 2mFo-DFc reference map is not.
+        self._bsharp_designated = False
         self._mgr_handlers.append(
             (mapset,
             mapset.triggers.add_handler('maps recalculated', self._map_recalc_cb
@@ -1074,6 +1119,24 @@ class XmapHandler_Live(XmapHandlerBase):
         return self.mapset.live_xmap_mgr
 
     @property
+    def bsharp_adjustable(self):
+        'Whether this map allows runtime sharpening B-factor changes.'
+        return getattr(self, '_bsharp_adjustable', not self.is_difference_map)
+
+    @bsharp_adjustable.setter
+    def bsharp_adjustable(self, value):
+        self._bsharp_adjustable = bool(value)
+
+    @property
+    def bsharp_designated(self):
+        'Whether this map is the default target of broad-scope "clipper bsharp".'
+        return getattr(self, '_bsharp_designated', False)
+
+    @bsharp_designated.setter
+    def bsharp_designated(self, value):
+        self._bsharp_designated = bool(value)
+
+    @property
     def xmap(self):
         if self.xmap_mgr is None:
             return None
@@ -1083,6 +1146,41 @@ class XmapHandler_Live(XmapHandlerBase):
     def stats(self):
         all = self.xmap_mgr.get_map_stats(self._map_name)
         return (all.mean, all.std_dev, all.std_dev)
+
+    @property
+    def b_sharp(self):
+        '''
+        The sharpening (positive) / smoothing (negative) B-factor applied to this
+        live map's coefficients before the FFT. Setting a new value recomputes
+        just this map from its cached base coefficients (no Fcalc regeneration)
+        and refreshes the display immediately, keeping contours fixed in sigma
+        units.
+        '''
+        return getattr(self, '_rebuild_args', {}).get('b_sharp', 0)
+
+    @b_sharp.setter
+    def b_sharp(self, value):
+        xm = self.xmap_mgr
+        if xm is None:
+            raise RuntimeError('This map is not backed by a live crystallographic '
+                'map manager; its sharpening B-factor cannot be changed.')
+        if not hasattr(xm, 'set_map_b_sharp'):
+            raise RuntimeError('Dynamic sharpening B-factor adjustment is not '
+                'supported for this map type (e.g. small-molecule live maps).')
+        if not self.bsharp_adjustable:
+            raise RuntimeError('Map "{}" is not adjustable: its sharpening '
+                'B-factor is locked (difference map, or a map explicitly marked '
+                'non-adjustable such as an MDFF fitting map).'.format(self._map_name))
+        value = float(value)
+        xm.set_map_b_sharp(self._map_name, value)
+        # Keep _rebuild_args in sync so the value survives session save/restore
+        # (see XmapSet._end_restore_session_cb, which replays add_xmap(**_rebuild_args)).
+        if not hasattr(self, '_rebuild_args'):
+            self._rebuild_args = {}
+        self._rebuild_args['b_sharp'] = value
+        # Refill the display box from the freshly-recomputed map and rescale
+        # contours to the new sigma.
+        self._map_recalc_cb(self._map_name)
 
     def _map_recalc_cb(self, name, *_):
         if self.deleted:
@@ -1117,6 +1215,8 @@ class XmapHandler_Live(XmapHandlerBase):
             'mapset': self._mapset,
             'map name': self._map_name,
             'kwargs': self._rebuild_args,
+            'bsharp_adjustable': self.bsharp_adjustable,
+            'bsharp_designated': self.bsharp_designated,
         }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
@@ -1128,6 +1228,10 @@ class XmapHandler_Live(XmapHandlerBase):
         xmh = XmapHandler_Live(mapset, data['map name'],
             data['kwargs']['is_difference_map'], session_restore=True)
         xmh._rebuild_args = data['kwargs']
+        # Older sessions predate these flags; fall back to the difference-map rule.
+        xmh.bsharp_adjustable = data.get('bsharp_adjustable',
+            not data['kwargs']['is_difference_map'])
+        xmh.bsharp_designated = data.get('bsharp_designated', False)
         #xmh = mapset.add_live_xmap('', **data['kwargs'], auto_add_to_session=False)
         from chimerax.core.models import Model
         from chimerax.map.session import set_map_state

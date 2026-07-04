@@ -80,6 +80,11 @@ class MapMgr(Model):
         cm = self._mgr = crystal_manager
         super().__init__('Map Manager', cm.session)
         self._default_oversampling_rate=default_oversampling_rate
+        # Reason -> holder-count of temporary locks blocking oversampling-rate
+        # changes. Held e.g. while ISOLDE runs a simulation against a live map:
+        # the GPU keeps a fixed-shape density box that is refilled in place, so
+        # re-gridding mid-simulation would corrupt it. See set_oversampling_rate.
+        self._oversampling_locks = {}
 
         self.contour_mgr = ContourResultMgr(self.session)
         self._zone_mgr = None
@@ -328,6 +333,118 @@ class MapMgr(Model):
             xtal_data.cell.equals(self.cell, 1.0)
             and xtal_data.spacegroup.spacegroup_number == self.spacegroup.spacegroup_number
         )
+
+    @property
+    def oversampling_change_blocked(self):
+        'True while one or more holders are blocking oversampling-rate changes.'
+        return bool(self._oversampling_locks)
+
+    @property
+    def oversampling_lock_reasons(self):
+        'The set of reasons currently blocking oversampling-rate changes.'
+        return set(self._oversampling_locks)
+
+    def block_oversampling_changes(self, reason='a running task'):
+        '''
+        Temporarily prevent set_oversampling_rate() from changing the grid. Call
+        this (e.g. from ISOLDE at the start of an interactive simulation, whose GPU
+        density box has a fixed shape that re-gridding would corrupt) and pair it
+        with allow_oversampling_changes(reason) when done. Nesting is supported:
+        the block is released only when every matching allow_ call has been made.
+        For guaranteed release, prefer the oversampling_changes_blocked() context
+        manager.
+        '''
+        self._oversampling_locks[reason] = self._oversampling_locks.get(reason, 0) + 1
+
+    def allow_oversampling_changes(self, reason='a running task'):
+        'Release a block previously taken with block_oversampling_changes(reason).'
+        n = self._oversampling_locks.get(reason, 0)
+        if n <= 1:
+            self._oversampling_locks.pop(reason, None)
+        else:
+            self._oversampling_locks[reason] = n - 1
+
+    def oversampling_changes_blocked(self, reason='a running task'):
+        '''
+        Context manager form of block/allow_oversampling_changes(), releasing the
+        block even if the enclosed code raises:
+            with map_mgr.oversampling_changes_blocked('ISOLDE simulation'):
+                ... run simulation ...
+        '''
+        from contextlib import contextmanager
+        @contextmanager
+        def _cm():
+            self.block_oversampling_changes(reason)
+            try:
+                yield
+            finally:
+                self.allow_oversampling_changes(reason)
+        return _cm()
+
+    def set_oversampling_rate(self, rate):
+        '''
+        Change the oversampling (Shannon) rate for all crystallographic maps
+        managed here, at runtime. This rebuilds the map grid, re-grids every live
+        and static map (re-FFT from cached coefficients - no Fcalc regeneration,
+        the reflection data is untouched), rebuilds the symmetry Unit_Cell to match
+        the new grid, and refreshes the display. A higher rate gives a finer
+        real-space grid (smoother contours) at the cost of memory and FFT time.
+
+        Refuses if a temporary block is in force (see block_oversampling_changes),
+        e.g. while an interactive simulation is running against a live map.
+        '''
+        from chimerax.core.errors import UserError
+        if self.oversampling_change_blocked:
+            reasons = ', '.join(sorted(self._oversampling_locks)) or 'a running task'
+            raise UserError('The oversampling rate cannot be changed right now '
+                'because it is temporarily locked ({}). This typically happens '
+                'while an interactive simulation is running against a live map '
+                '(changing the grid would corrupt the fixed-size density box held '
+                'on the GPU). Try again once it finishes.'.format(reasons))
+        rate = float(rate)
+        if rate <= 0:
+            raise UserError('Oversampling (Shannon) rate must be positive!')
+        new_grid = None
+        n_regridded = 0
+        for xs in self.xmapsets:
+            cd = xs.crystal_data
+            if cd is None:
+                # e.g. a small-molecule or volume-only xmapset: no reflection grid
+                continue
+            cd.set_shannon_rate(rate)
+            new_grid = cd.grid_sampling
+            xm = xs.live_xmap_mgr
+            if xm is not None and hasattr(xm, 'set_grid_sampling'):
+                xm.set_grid_sampling(new_grid)
+            for h in xs.static_xmaps:
+                h._regrid(new_grid)
+            n_regridded += 1
+        if new_grid is None:
+            from chimerax.core.errors import UserError
+            raise UserError('No crystallographic reflection data found to re-grid.')
+        # Push the same grid into the symmetry manager and rebuild the Unit_Cell,
+        # whose integer symmetry operators are tied to the grid sampling.
+        cm = self.crystal_mgr
+        cm.add_symmetry_info(cm.cell, cm.spacegroup, new_grid, cm.resolution,
+            override=True)
+        # New datasets opened later on this manager should use the new rate too.
+        self._default_oversampling_rate = rate
+        self._refresh_after_grid_change()
+        self.session.logger.info(
+            '(CLIPPER) Set oversampling rate to {:.2f} for {} crystallographic '
+            'map set(s); new grid {}.'.format(rate, n_regridded, tuple(new_grid.dim)))
+
+    def _refresh_after_grid_change(self):
+        '''
+        Force display geometry (box dimensions, which depend on grid spacing) to be
+        recomputed after a grid change, and re-mask surfaces. The 'spotlight
+        changed' trigger is the same one the spotlight-start path uses to build
+        boxes from scratch.
+        '''
+        if self.spotlight_mode:
+            self.triggers.activate_trigger('spotlight changed',
+                (self.spotlight_center, self.spotlight_radius))
+        self.rezone_needed()
 
 
     def _spotlight_mode_changed_cb(self, *_):

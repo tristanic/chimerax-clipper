@@ -587,6 +587,35 @@ Xtal_mgr_base::recalculate_map(Xmap_details& xmd, size_t num_threads)
 } // recalculate_map
 
 void
+Xtal_mgr_base::set_map_b_sharp(const std::string& name, const ftype& bsharp, size_t num_threads)
+{
+    auto it = maps_.find(name);
+    if (it == maps_.end())
+    {
+        std::stringstream msg;
+        msg << "Could not find map with name " << name << "!";
+        throw std::out_of_range(msg.str());
+    }
+    it->second.set_b_sharp(bsharp);
+    // Only this map's coefficients change; recalculate_map() re-derives them from
+    // the cached base coefficients and does a single FFT (no Fcalc regeneration).
+    recalculate_map(it->second, num_threads);
+} // set_map_b_sharp
+
+void
+Xtal_mgr_base::set_grid_sampling(const Grid_sampling& grid_sampling, size_t num_threads)
+{
+    grid_sampling_ = grid_sampling;
+    // Re-create every real-space map at the new grid and re-FFT the (unchanged)
+    // coefficients into it. The HKL/reflection layer is untouched.
+    for (auto& it: maps_)
+    {
+        it.second.reset_grid(grid_sampling);
+        recalculate_map(it.second, num_threads);
+    }
+} // set_grid_sampling
+
+void
 Xtal_mgr_base::recalculate_all(const Atom_list& atoms)
 {
     generate_fcalc(atoms);
@@ -928,6 +957,36 @@ Xtal_thread_mgr::delete_xmap(const std::string& name)
     finalize_threads_if_necessary();
     mgr_->delete_xmap(name);
     xmap_thread_results_.erase(name);
+}
+
+void
+Xtal_thread_mgr::set_map_b_sharp(const std::string& name, const ftype& bsharp)
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    // Update the live map (mgr_) AND recompute it now so the change is visible
+    // immediately without waiting for the next model change.
+    mgr_->set_map_b_sharp(name, bsharp, num_threads_);
+    // Also update the thread-work copy: full recalculations (recalculate_inner_)
+    // operate on xmap_thread_results_ and read b_sharp from there. If we left it
+    // stale, the next atom-move recalculation would revert the sharpening.
+    auto it = xmap_thread_results_.find(name);
+    if (it != xmap_thread_results_.end())
+        it->second.set_b_sharp(bsharp);
+}
+
+void
+Xtal_thread_mgr::set_grid_sampling(const Grid_sampling& grid_sampling)
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    mgr_->set_grid_sampling(grid_sampling, num_threads_);
+    // Rebuild the thread-work copies at the new grid (they carry their own Xmap
+    // objects, which recalculate_inner_ FFTs into and apply_new_maps swaps back).
+    // If left at the old grid, the next full recalculation would revert the grid.
+    xmap_thread_results_.clear();
+    for (const auto& name: mgr_->map_names())
+        xmap_thread_results_.emplace(name, mgr_->maps_[name]);
 }
 
 void

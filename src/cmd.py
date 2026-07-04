@@ -273,6 +273,107 @@ def set_camera_auto(session, flag):
     from . import symmetry
     symmetry.auto_reset_camera = flag
 
+def _choose_bsharp_targets(named_maps, broad_live_maps):
+    '''
+    Pure target-selection for "clipper bsharp" (no session/display dependency, so
+    it is unit-testable). Returns (targets, locked): `targets` is the list of maps
+    to change; `locked` is set to the single explicitly-named map when it exists
+    but is non-adjustable (so the caller can raise a clear error rather than
+    silently doing nothing).
+    '''
+    if len(named_maps) == 1 and not broad_live_maps:
+        h = named_maps[0]
+        if not h.bsharp_adjustable:
+            return [], h
+        return [h], None
+    # Broad or multi-map scope: only the designated viewing map(s). Explicitly
+    # named maps are folded in but still filtered to designated + adjustable.
+    pool = list(named_maps) + list(broad_live_maps)
+    return [h for h in pool if h.bsharp_adjustable and h.bsharp_designated], None
+
+def set_map_bsharp(session, b_sharp, maps=None):
+    '''
+    Set the sharpening (positive) / smoothing (negative) B-factor applied to live
+    crystallographic maps. Affected maps are recomputed immediately from their
+    cached coefficients (no atom movement, no Fcalc regeneration).
+
+    Targeting:
+      * one explicitly-named adjustable map  -> that map is changed;
+      * no map given, or a whole model/dataset, or several maps -> only the
+        "designated" viewing map(s) are changed (the heuristic sharpened map,
+        not the raw reference or difference maps);
+      * difference maps and maps explicitly locked (e.g. ISOLDE's MDFF map) are
+        never changed.
+    '''
+    from .maps import XmapSet
+    from .maps.xmapset import XmapHandler_Live
+
+    # Split the argument into individually-named maps vs broad scopes (whole
+    # XmapSets / structure models), so we can distinguish "change this one map"
+    # from "retune the designated map of this dataset".
+    named_maps = []
+    broad_sets = []
+    if maps is None:
+        broad_sets = list(session.models.list(type=XmapSet))
+    else:
+        for m in maps:
+            if isinstance(m, XmapHandler_Live):
+                named_maps.append(m)
+            elif isinstance(m, XmapSet):
+                broad_sets.append(m)
+            else:
+                # A structure/top-level model: find its associated XmapSet(s).
+                broad_sets.extend(mm for mm in m.all_models()
+                    if isinstance(mm, XmapSet))
+
+    broad_live_maps = []
+    for xs in broad_sets:
+        broad_live_maps.extend(xs.live_xmaps)
+
+    targets, locked = _choose_bsharp_targets(named_maps, broad_live_maps)
+    if locked is not None:
+        raise UserError('Map "{}" cannot be sharpened/smoothed (it is a '
+            'difference map or a locked map such as an MDFF map).'.format(locked.name))
+
+    if not targets:
+        raise UserError('No adjustable live crystallographic maps found to apply '
+            'the sharpening B-factor to. Specify a single live map to change it '
+            'directly, or open a dataset with "clipper open" first.')
+    for h in targets:
+        h.b_sharp = b_sharp
+    session.logger.info('Set sharpening B-factor to {:.1f} for {} live map(s): {}'.format(
+        b_sharp, len(targets), ', '.join(h._map_name for h in targets)))
+
+def set_oversampling(session, oversampling, models=None):
+    '''
+    Set the real-space map oversampling (Shannon) rate at runtime for one or more
+    crystallographic map managers. Re-grids all live and static maps and rebuilds
+    the symmetry Unit_Cell to match; the reflection data is unchanged.
+    '''
+    from .maps import XmapSet
+    from .maps.map_mgr import MapMgr
+    from .symmetry import get_map_mgr
+    mmgrs = []
+    def add(mm):
+        if mm is not None and mm not in mmgrs:
+            mmgrs.append(mm)
+    if models is None:
+        for mm in session.models.list(type=MapMgr):
+            add(mm)
+    else:
+        for m in models:
+            if isinstance(m, MapMgr):
+                add(m)
+            elif isinstance(m, XmapSet):
+                add(m.master_map_mgr)
+            else:
+                add(get_map_mgr(m, create=False))
+    if not mmgrs:
+        raise UserError('No crystallographic map manager found. Open a dataset '
+            'with "clipper open" first, or specify a model that has one.')
+    for mm in mmgrs:
+        mm.set_oversampling_rate(oversampling)
+
 def open_small_molecule(session, path, hkl=None):
     '''
     Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
@@ -313,6 +414,7 @@ def register_clipper_cmd(logger):
         register, CmdDesc,
         BoolArg, FloatArg, IntArg, StringArg,
         OpenFileNameArg, SaveFileNameArg,
+        ModelsArg,
         create_alias
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
@@ -455,6 +557,27 @@ def register_clipper_cmd(logger):
         synopsis='Tell Clipper whether to automatically reset the camera to orthographic view when switching to spotlight mode'
     )
     register('clipper set autoCameraOrtho', set_camera_auto_desc, set_camera_auto, logger=logger)
+
+    bsharp_desc = CmdDesc(
+        required=[('b_sharp', FloatArg)],
+        optional=[('maps', ModelsArg)],
+        synopsis='Set the sharpening (positive) / smoothing (negative) B-factor '
+            'applied to live crystallographic maps. If no maps are given, applies '
+            'to all live maps in the session. Maps are recomputed immediately '
+            'without moving atoms.'
+    )
+    register('clipper bsharp', bsharp_desc, set_map_bsharp, logger=logger)
+
+    set_oversampling_desc = CmdDesc(
+        required=[('oversampling', FloatArg)],
+        optional=[('models', ModelsArg)],
+        synopsis='Set the real-space map oversampling (Shannon) rate for live and '
+            'static crystallographic maps at runtime. Higher values give a finer '
+            'grid (smoother contours) at the cost of memory and FFT time; typical '
+            'values are 1.5-3.0. Applies to all crystallographic map managers if '
+            'none are specified.'
+    )
+    register('clipper set oversampling', set_oversampling_desc, set_oversampling, logger=logger)
 
 
 def register_cview_cmd(logger):

@@ -80,6 +80,11 @@ void declare_xtal_mgr(py::module& m)
             py::arg("num_threads")=1)
         .def("recalculate_map", (void (Class::*)(const std::string&, size_t)) &Class::recalculate_map,
             py::arg("name"), py::arg("num_threads")=1)
+        .def("set_map_b_sharp", &Class::set_map_b_sharp,
+            py::arg("name"), py::arg("b_sharp"), py::arg("num_threads")=1)
+        .def("set_grid_sampling", &Class::set_grid_sampling,
+            py::arg("grid_sampling"), py::arg("num_threads")=1)
+        .def_property_readonly("grid_sampling", &Class::grid_sampling)
         // Get a reference to the managed xmap of a given name
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
@@ -144,6 +149,10 @@ void declare_xtal_thread_mgr(py::module& m)
             py::arg("exclude_free_reflections")=true,
             py::arg("fill_with_fcalc")=true)
         .def("delete_xmap", &Class::delete_xmap)
+        .def("set_map_b_sharp", &Class::set_map_b_sharp,
+            py::arg("name"), py::arg("b_sharp"))
+        .def("set_grid_sampling", &Class::set_grid_sampling,
+            py::arg("grid_sampling"))
         .def("_xmap_details", &Class::map_details)
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)

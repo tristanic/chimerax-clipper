@@ -80,6 +80,14 @@ public:
     inline HKL_data<F_phi<ftype32>>& coeffs() { return *coeffs_; }
     inline const HKL_data<F_phi<ftype32>>& base_coeffs() const { return *base_coeffs_; }
     inline const ftype& b_sharp() const { return b_sharp_; }
+    inline void set_b_sharp(const ftype& b) { b_sharp_ = b; }
+    // Re-create the real-space map at a new grid sampling (oversampling rate).
+    // The coefficients are unchanged; the caller must recalculate_map() afterwards
+    // to FFT them into the new grid.
+    inline void reset_grid(const Grid_sampling& grid) {
+        xmap_ = std::unique_ptr<Xmap<ftype32>>(
+            new Xmap<ftype32>(hkl_info_.spacegroup(), hkl_info_.cell(), grid));
+    }
     inline bool is_difference_map() const { return is_difference_map_; }
     inline bool exclude_missing() const { return exclude_missing_; }
     inline bool exclude_free_reflections() const { return exclude_freer_; }
@@ -290,6 +298,19 @@ public:
 
     // Recalculate a map in-place
     void recalculate_map(Xmap_details& xmd, size_t num_threads=1);
+
+    // Update the sharpening/smoothing B-factor for one stored map and recalculate
+    // just that map. Only the map coefficients are re-derived from the cached base
+    // coefficients (no Fcalc regeneration), so this is a single FFT. Throws
+    // std::out_of_range if no map exists under the given name.
+    void set_map_b_sharp(const std::string& name, const ftype& bsharp, size_t num_threads=1);
+
+    // Change the grid sampling (oversampling rate) for ALL stored maps. Re-creates
+    // each real-space map at the new grid and re-FFTs from the cached coefficients
+    // (no Fcalc regeneration). The reflection data / HKL layer is unaffected.
+    void set_grid_sampling(const Grid_sampling& grid_sampling, size_t num_threads=1);
+
+    inline const Grid_sampling& grid_sampling() const { return grid_sampling_; }
 
     // Generate fresh Fcalc, and regenerate all existing maps
     void recalculate_all(const Atom_list& atoms);
@@ -526,6 +547,16 @@ public:
         bool exclude_free_reflections=true, bool fill_with_fcalc=true);
 
     void delete_xmap(const std::string& name);
+
+    // Thread-safe update of one map's sharpening/smoothing B-factor. Finalises any
+    // in-flight recalculation first (so we never mutate an Xmap_details while a
+    // worker FFT is reading it), then recomputes just that map synchronously.
+    void set_map_b_sharp(const std::string& name, const ftype& bsharp);
+
+    // Thread-safe change of the grid sampling (oversampling rate) for all maps.
+    // Finalises any running recalculation, re-grids every map in the base manager,
+    // and rebuilds the thread-work copies at the new grid.
+    void set_grid_sampling(const Grid_sampling& grid_sampling);
 
     // Delete all "large memory" items (atoms, maps and structure factors).
     // Only really needed because Python's garbage collection doesn't seem to
