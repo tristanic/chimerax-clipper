@@ -622,6 +622,21 @@ class Unit_Cell(clipper_python.Unit_Cell):
         atom_list = atom_list_from_sel(atoms)
         super().__init__(atom_list, cell, spacegroup, grid_sampling, padding)
 
+   def update_reference(self, atoms):
+        '''
+        Recompute the reference-model bounding box and symmetry-search caches from
+        the current coordinates of `atoms` (a ChimeraX Atoms selection), reusing
+        the padding supplied at construction. Cheap (dominated by the number of
+        symmetry operators); call after the model is moved far enough that the
+        cached reference no longer represents it (e.g. after shifting a fragment to
+        a different ASU).
+        '''
+        # Pass raw coordinates rather than building a Clipper Atom_list: only the
+        # bounding box and centroid are needed, so constructing N Atom objects
+        # (element strings, occupancies, ADPs) would be wasted work - significant
+        # at ribosome scale.
+        super().update_reference_from_coords(atoms.coords)
+
 
 class SymmetryManager(Model):
     '''
@@ -1357,6 +1372,12 @@ class AtomicSymmetryModel(Model):
                                         'atoms changed', self._model_changed_cb)
         self._model_swap_handler = self.manager.triggers.add_handler(
                                         'model replaced', self._model_swap_cb)
+        # When a fragment is shifted to a different ASU ("Move symmetry fragment
+        # here"), the Unit_Cell's cached reference model no longer represents the
+        # atoms. Mark it stale; the refresh is done lazily on the next box search.
+        self._reference_dirty = False
+        self._sym_shift_handler = self.manager.triggers.add_handler(
+                                        'sym shifted atoms', self._sym_shifted_cb)
         self.live_scrolling = live
         self._save_session_handler = session.triggers.add_handler('begin save session',
             self._start_save_session_cb)
@@ -1507,7 +1528,8 @@ class AtomicSymmetryModel(Model):
         bh = self._box_changed_handler
         mh = self._model_changes_handler
         sh = self._model_swap_handler
-        for h in (bh, mh, sh):
+        ssh = self._sym_shift_handler
+        for h in (bh, mh, sh, ssh):
             if h is not None:
                 self.manager.triggers.remove_handler(h)
         if self.structure is not None:
@@ -1609,8 +1631,23 @@ class AtomicSymmetryModel(Model):
         self._update_box()
         self.update_graphics()
 
+    def _sym_shifted_cb(self, trigger_name, data):
+        # A bonded group was moved to a different ASU. Flag the Unit_Cell reference
+        # for refresh (done lazily in _update_box) and re-run the search now so the
+        # symmetry display is correct immediately.
+        self._reference_dirty = True
+        if self.visible and self.live_scrolling:
+            self._update_box()
+            self.update_graphics()
+
     def _update_box(self):
         from .crystal import find_box_params
+        # Lazily refresh the Unit_Cell reference if the model changed in a way that
+        # invalidates it (set via _sym_shifted_cb). Only fires when actually dirty,
+        # so ordinary per-frame box updates during a simulation stay free.
+        if getattr(self, '_reference_dirty', False):
+            self.unit_cell.update_reference(self.structure.atoms)
+            self._reference_dirty = False
         center = self._center
         radius = self._spotlight_radius
         box_corner_grid, box_corner_xyz, grid_dim = find_box_params(center, self.cell, self.grid, radius)

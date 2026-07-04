@@ -60,6 +60,21 @@ void declare_unit_cell(py::module& m)
         .def_property_readonly("origin", &Unit_Cell::min)
         .def_property_readonly("top_corner", &Unit_Cell::max)
         .def("update_reference_model_bounds", &Unit_Cell::update_reference_model_bounds)
+        .def("update_reference", &Unit_Cell::update_reference,
+            "Recompute the reference bounding box, packing symops and per-symop "
+            "transformed bounding boxes from the current atomic coordinates "
+            "(reusing the construction padding). Call after the model moves.")
+        .def("update_reference_from_coords",
+            [](Unit_Cell& self, py::array_t<double, py::array::c_style | py::array::forcecast> coords)
+            {
+                auto buf = coords.request();
+                if (buf.ndim != 2 || buf.shape[1] != 3)
+                    throw std::runtime_error("coords must be an N x 3 array");
+                self.update_reference_from_coords((double*)buf.ptr, (size_t)buf.shape[0]);
+            },
+            py::arg("coords"),
+            "Like update_reference(), but from an (N,3) numpy array of orthographic "
+            "coordinates - avoids building a Clipper Atom_list just to get a bounding box.")
         .def("all_symops_in_box",
             (RTop_fracs (Unit_Cell::*)(const Coord_orth& origin_xyz,
                const Vec3<int>& box_size_uvw,
