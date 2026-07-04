@@ -258,9 +258,11 @@ class VolumeMask(Volume):
         if clear:
             self.clear()
         origin, step = self.data_origin_and_step()
+        from ..util import available_cores
         _map_mask.generate_mask(self._data_fill_target, origin, step,
             self._data_fill_target.shape, self.data.ijk_to_xyz_transform.matrix,
-            self.data.xyz_to_ijk_transform.matrix, coords, len(coords), radius)
+            self.data.xyz_to_ijk_transform.matrix, coords, len(coords), radius,
+            available_cores())
         self.data.values_changed()
         self._update_needed = False
 

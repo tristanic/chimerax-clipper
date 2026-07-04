@@ -617,20 +617,38 @@ class MapMgr(Model):
         return DEREGISTER
 
 class ContourResultMgr:
+    # Per-frame wall-clock budget (seconds) for applying completed contour results
+    # to the GUI/GPU. Replaces the old "exactly one surface per frame" throttle,
+    # whose refresh latency scaled with the number of maps (N maps x M surfaces
+    # took N*M frames to fully update). We still bound the per-frame cost so a
+    # burst of completed surfaces can't stall the frame, but we drain as many as
+    # fit in the budget (always at least one, to guarantee forward progress).
+    frame_budget = 0.008
+
     def __init__(self, session):
         self.session = session
         self._pending = []
         self._handler = self.session.triggers.add_handler('new frame', self._new_frame_cb)
 
-    
+
     def enqueue(self, surface, rendering_options):
         self._pending.append((surface, rendering_options))
-    
+
     def _new_frame_cb(self, *_):
-        if len(self._pending):
+        if not self._pending:
+            return
+        from time import perf_counter
+        start = perf_counter()
+        # Results are only enqueued once their contour thread is ready (see the
+        # delayed_reaction in FastVolumeSurface.update_surface), so applying one
+        # never blocks on get_result(). Drain within the frame budget; always
+        # apply at least one so progress is guaranteed.
+        while self._pending:
             s, ro = self._pending.pop(0)
             if not s.deleted:
                 s._use_fast_thread_result(ro)
+            if perf_counter() - start >= self.frame_budget:
+                break
     
     def delete(self):
         try:

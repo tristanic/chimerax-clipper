@@ -22,6 +22,9 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <iostream>
+#include <thread>
+#include <vector>
+#include <algorithm>
 
 namespace py=pybind11;
 using ssize_t = py::ssize_t;
@@ -62,18 +65,17 @@ T squared_distance(T* ref_coord, T* box_coord, T* ijk_to_xyz)
 }
 
 
-void generate_mask(
-    uint8_t* map, double* origin, double* step, size_t* dim,
-    double* ijk_to_xyz, double* xyz_to_ijk, double* coords, size_t n, double radius)
+// Stamp the spheres for atoms [i0, i1) into the shared map. All writes set the
+// same value (1), so this is safe to run concurrently over disjoint atom ranges
+// even where their voxel boxes overlap (a single-byte store of 1 is idempotent;
+// no locks needed). r_grid and sq_rad are precomputed and read-only here.
+static void stamp_atom_range(
+    uint8_t* map, double* step, size_t* dim, double* ijk_to_xyz, double* xyz_to_ijk,
+    double* coords, size_t i0, size_t i1, double* r_grid, double sq_rad)
 {
     size_t box_min[3], box_max[3];
     double transformed[3], bc[3];
-    double r_xyz[3], r_grid[3];
-    for (size_t i=0; i<3; ++i)
-        r_xyz[i] = radius + origin[i];
-    affine_transform(r_xyz, xyz_to_ijk, r_grid);
-    double sq_rad = pow(radius/step[0],2); //radius*radius;
-    for (size_t i=0; i<n; ++i)
+    for (size_t i=i0; i<i1; ++i)
     {
         affine_transform(coords+3*i, xyz_to_ijk, transformed);
         index_range(transformed, r_grid, step, dim, box_min, box_max);
@@ -91,13 +93,45 @@ void generate_mask(
     }
 }
 
+void generate_mask(
+    uint8_t* map, double* origin, double* step, size_t* dim,
+    double* ijk_to_xyz, double* xyz_to_ijk, double* coords, size_t n, double radius,
+    size_t num_threads)
+{
+    double r_xyz[3], r_grid[3];
+    for (size_t i=0; i<3; ++i)
+        r_xyz[i] = radius + origin[i];
+    affine_transform(r_xyz, xyz_to_ijk, r_grid);
+    double sq_rad = pow(radius/step[0],2); //radius*radius;
+
+    // Small jobs aren't worth the thread overhead.
+    if (num_threads <= 1 || n < 1024)
+    {
+        stamp_atom_range(map, step, dim, ijk_to_xyz, xyz_to_ijk, coords, 0, n, r_grid, sq_rad);
+        return;
+    }
+    size_t nthreads = std::min(num_threads, (size_t)n);
+    std::vector<std::thread> threads;
+    threads.reserve(nthreads);
+    size_t per = (n + nthreads - 1) / nthreads;
+    for (size_t t=0; t<nthreads; ++t)
+    {
+        size_t i0 = t*per;
+        size_t i1 = std::min(i0+per, n);
+        if (i0 >= i1) break;
+        threads.emplace_back(stamp_atom_range, map, step, dim, ijk_to_xyz, xyz_to_ijk,
+            coords, i0, i1, r_grid, sq_rad);
+    }
+    for (auto& th: threads) th.join();
+}
+
 PYBIND11_MODULE(_map_mask, m){
     m.doc() = "Mask a map down to surround a set of coordinates.";
     m.def("generate_mask",
         [](py::array_t<uint8_t,0> map, py::array_t<double> origin,
             py::array_t<double> step, py::array_t<size_t> dim,
             py::array_t<double> ijk_to_xyz, py::array_t<double> xyz_to_ijk,
-            py::array_t<double> coords, size_t n, double radius)
+            py::array_t<double> coords, size_t n, double radius, size_t num_threads)
         {
             auto mptr = static_cast<uint8_t*>(map.request().ptr);
             auto optr = static_cast<double*>(origin.request().ptr);
@@ -106,6 +140,10 @@ PYBIND11_MODULE(_map_mask, m){
             auto itptr = static_cast<double*>(ijk_to_xyz.request().ptr);
             auto xtptr = static_cast<double*>(xyz_to_ijk.request().ptr);
             auto cptr = static_cast<double*>(coords.request().ptr);
-            generate_mask(mptr, optr, sptr, dptr, itptr, xtptr, cptr, n, radius);
-        });
+            py::gil_scoped_release release;
+            generate_mask(mptr, optr, sptr, dptr, itptr, xtptr, cptr, n, radius, num_threads);
+        },
+        py::arg("map"), py::arg("origin"), py::arg("step"), py::arg("dim"),
+        py::arg("ijk_to_xyz"), py::arg("xyz_to_ijk"), py::arg("coords"),
+        py::arg("n"), py::arg("radius"), py::arg("num_threads")=1);
 }
