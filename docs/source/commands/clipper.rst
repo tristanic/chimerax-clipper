@@ -13,7 +13,9 @@ you model to maps (see :ref:`spotlight` and :ref:`isolate`). Small-molecule
 crystals (e.g. from the Crystallography Open Database) can be opened with live
 symmetry and maps using :ref:`smallmol` and :ref:`cod`. Where applicable,
 a model initialised for ChimeraX-Clipper will provide a real-time display of
-crystallographic symmetry-related molecules.
+crystallographic symmetry-related molecules. The appearance of live maps can be
+tuned on the fly: adjust their sharpening/smoothing B-factor with :ref:`bsharp`,
+or change the real-space oversampling (grid fineness) with :ref:`set oversampling`.
 
 .. _`open`:
 
@@ -223,3 +225,61 @@ the final view is as follows:
    Cartoon display will not be affected.
 6. If *focus* is true, the view will be reset to centre on and encompass the
    covered region.
+
+.. _`bsharp`:
+
+clipper bsharp
+--------------
+
+Syntax: clipper bsharp *b-factor* [*maps*]
+
+Apply a sharpening (positive *b-factor*) or smoothing (negative *b-factor*)
+B-factor, in Å\ :sup:`2`, to live crystallographic maps. The affected maps are
+recomputed immediately from their cached structure-factor coefficients - no
+atoms are moved and no F\ :sub:`calc` recalculation is performed, so the change
+is near-instantaneous. Contour levels are held fixed in units of sigma, so the
+surface sharpens or smooths in place rather than jumping.
+
+If *maps* is omitted, the change is applied to the "designated" viewing map of
+every crystallographic dataset in the session - i.e. the heuristically
+sharpened 2mFo-DFc map that :ref:`open` displays as a surface, not the raw
+reference map or the difference map. The same designated-only behaviour applies
+when *maps* names a whole model or dataset, or more than one map. To retune one
+specific map, name that single map explicitly.
+
+Difference maps, and maps that have been explicitly locked (for example the map
+ISOLDE fits against during an interactive simulation), are never changed;
+naming such a map explicitly reports an error rather than silently doing
+nothing.
+
+*(This command applies only to macromolecular live maps. Small-molecule maps
+created with* :ref:`smallmol` *use a different scaling scheme and do not support
+a runtime sharpening B-factor.)*
+
+.. _`set oversampling`:
+
+clipper set oversampling
+------------------------
+
+Syntax: clipper set oversampling *rate* [*models*]
+
+Change the real-space oversampling (Shannon) *rate* of crystallographic maps at
+runtime - the same parameter set at load time by the **overSampling** option of
+:ref:`open`. The map grid is rebuilt and every live and static map is
+re-transformed onto it (a re-FFT from the already-cached coefficients: the
+experimental reflection data, R-free set and calculated structure factors are
+all untouched), and the crystallographic symmetry search is rebuilt to match the
+new grid.
+
+Higher rates give a finer real-space grid and smoother-looking contours, at the
+cost of memory and FFT time; typical values are 1.5-3.0 (the default at load is
+2.0). If *models* is omitted, the new rate is applied to every crystallographic
+map manager in the session; otherwise only to the managers belonging to the
+specified models.
+
+.. note::
+
+   While an interactive ISOLDE simulation is running against a live map, the
+   oversampling rate is temporarily locked and this command reports an error:
+   the simulation holds a fixed-size density box on the GPU that re-gridding
+   would corrupt. Try again once the simulation has finished.
