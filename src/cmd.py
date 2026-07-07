@@ -417,6 +417,105 @@ def fetch_cod_crystal(session, cod_id, ignore_cache=False):
     return show_cod_crystal(session, cif, hkl_path=hkl)
 
 
+def _combine_sym_copies(session, structure, places, name=None):
+    '''
+    Given a crystal structure and a list of symmetry operators (ChimeraX Place
+    objects in the structure's own coordinate frame, identity/ASU first), build a
+    real, whole-model copy of the structure under each operator and merge them all
+    into a single new AtomicStructure via ChimeraX's `combine` mechanism.
+
+    We never touch atomic coordinates: `combine` bakes each source structure's
+    scene_position into the merged result, so it is enough to make a plain copy
+    per operator and set that copy's position to the operator. The merged model is
+    then placed at the original's scene_position so it lands exactly where the
+    crystallographic copies belong.
+    '''
+    copies = []
+    for place in places:
+        c = structure.copy()
+        # Not yet in the session, so scene_position == position; `combine` reads
+        # scene_position to bake in the transform.
+        c.position = place
+        copies.append(c)
+    from chimerax.atomic.cmd import combine_cmd
+    if name is None:
+        name = '{} symmetry copies'.format(structure.name)
+    combined = combine_cmd(session, copies, close=False, name=name,
+        add_to_session=False)
+    for c in copies:
+        c.delete()
+    combined.position = structure.scene_position
+    session.models.add([combined])
+    return combined
+
+
+def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
+        name=None, focus=False):
+    '''
+    Create real, whole-model copies of crystallographic symmetry mates and merge
+    them (together with the original ASU) into a single new model.
+
+    Two selection criteria:
+      * contacting given -> every symmetry copy with an atom within `distance` of
+        the `contacting` selection is realised (per structure the selection
+        touches);
+      * contacting omitted -> every symmetry copy currently drawn in Clipper's
+        spotlight (i.e. whose ribbon is displayed) is realised, for each of
+        `models` (or every Clipper-managed structure if `models` is omitted).
+    '''
+    from .symmetry import get_symmetry_handler, get_all_symmetry_handlers
+    cutoff_mode = contacting is not None and len(contacting) > 0
+    if cutoff_mode:
+        structures = list(contacting.unique_structures)
+        if models is not None:
+            structures = [s for s in structures if s in models]
+    elif models is not None:
+        structures = list(models)
+    else:
+        structures = [sh.structure for sh in get_all_symmetry_handlers(session)]
+
+    if not structures:
+        raise UserError('No crystal structures found to make symmetry copies for. '
+            'Specify one or more Clipper-managed models, or a "contacting" atom '
+            'selection.')
+
+    results = []
+    for s in structures:
+        sh = get_symmetry_handler(s)
+        if sh is None:
+            session.logger.warning('Model {} is not managed by Clipper; '
+                'skipping.'.format(s.id_string))
+            continue
+        asm = sh.atomic_symmetry_model
+        if asm is None:
+            continue
+        if cutoff_mode:
+            sel = contacting.intersect(s.atoms)
+            if not len(sel):
+                continue
+            places = asm.sym_transforms_near(sel, distance)
+            descr = 'within {:.3g} A of the selection'.format(distance)
+        else:
+            places = asm.currently_displayed_sym_transforms()
+            descr = 'currently displayed'
+        # places always leads with the identity/ASU operator, so >1 means there is
+        # at least one genuine symmetry copy to realise.
+        if len(places) <= 1:
+            session.logger.warning('No symmetry copies {} for model {}.'.format(
+                descr, s.id_string))
+            continue
+        combined = _combine_sym_copies(session, s, places, name=name)
+        session.logger.info('Created model {} combining the ASU of {} with {} '
+            'symmetry {} {}.'.format(combined.id_string, s.id_string,
+                len(places)-1, 'copy' if len(places)==2 else 'copies', descr))
+        results.append(combined)
+
+    if focus and results:
+        from chimerax.core.commands import run
+        run(session, 'view {}'.format(' '.join('#'+m.id_string for m in results)))
+    return results
+
+
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
@@ -557,6 +656,22 @@ def register_clipper_cmd(logger):
         )
     )
     register('clipper symmetry', sym_desc, draw_symmetry, logger=logger)
+
+    symcopies_desc = CmdDesc(
+        optional=[('models', StructuresArg)],
+        keyword=[
+            ('contacting', AtomsArg),
+            ('distance', FloatArg),
+            ('name', StringArg),
+            ('focus', BoolArg),
+        ],
+        synopsis=('Make real, whole-model copies of crystallographic symmetry '
+            'mates and combine them with the original ASU into a single new '
+            'model. With "contacting", realises every symmetry copy approaching '
+            'within "distance" of the given atom selection; otherwise realises '
+            'every symmetry copy currently displayed in the spotlight.')
+    )
+    register('clipper symcopies', symcopies_desc, symmetry_copies_real, logger=logger)
 
     set_contour_sensitivity_desc = CmdDesc(
         required=[('sensitivity', FloatArg),],

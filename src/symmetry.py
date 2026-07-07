@@ -1524,6 +1524,48 @@ class AtomicSymmetryModel(Model):
             sym_indices = sym_indices[0]
         return (found_atoms, symmats, sym_indices, symops)
 
+    def _places_from_matrices(self, matrices, indices, include_identity):
+        '''
+        Turn a set of orthogonal-space 3x4 symmetry matrices and a collection of
+        indices into them into a list of ChimeraX Place objects. The identity
+        (ASU) operator lives at index 0 (see Unit_Cell.all_symops_in_box) and is
+        placed first when requested; all other operators follow in ascending
+        index order so the result is deterministic.
+        '''
+        wanted = set(int(i) for i in indices)
+        if include_identity:
+            wanted.add(0)
+        else:
+            wanted.discard(0)
+        ordered = ([0] if (include_identity and 0 in wanted) else []) \
+            + sorted(i for i in wanted if i != 0)
+        from chimerax.geometry import Place
+        return [Place(matrix=matrices[i]) for i in ordered]
+
+    def currently_displayed_sym_transforms(self, include_identity=True):
+        '''
+        Return the symmetry operators (as a list of ChimeraX Place objects, in the
+        master model's own coordinate frame) for every symmetry copy currently
+        drawn in the spotlight - i.e. every copy whose ribbon is being displayed.
+        The identity/ASU transform is included first unless include_identity is
+        False. Returns an empty list if nothing is currently displayed.
+        '''
+        tfs = getattr(self, '_current_tfs', None)
+        ribbon_syms = getattr(self, '_current_ribbon_syms', None)
+        if tfs is None or ribbon_syms is None or not len(tfs):
+            return []
+        return self._places_from_matrices(tfs, ribbon_syms, include_identity)
+
+    def sym_transforms_near(self, atoms, cutoff, include_identity=True):
+        '''
+        Return the symmetry operators (as a list of ChimeraX Place objects, in the
+        master model's own coordinate frame) for every symmetry copy with at least
+        one atom approaching within cutoff (Angstroms) of the given atoms. The
+        identity/ASU transform is included first unless include_identity is False.
+        '''
+        found_atoms, symmats, sym_indices, symops = self.sym_select_within(atoms, cutoff)
+        return self._places_from_matrices(symmats, sym_indices, include_identity)
+
     def delete(self):
         bh = self._box_changed_handler
         mh = self._model_changes_handler

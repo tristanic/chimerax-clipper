@@ -9,7 +9,9 @@ crystallographic data: real-space volumetric maps of any kind may be associated
 with your model to provide a unified visualisation scheme
 (see :ref:`associate`). Using Clipper you can open (:ref:`open`) and save
 (:ref:`save`) structure factors in MTZ format, and explore the detailed fit of
-you model to maps (see :ref:`spotlight` and :ref:`isolate`). Small-molecule
+you model to maps (see :ref:`spotlight` and :ref:`isolate`). Symmetry-related
+molecules can be turned into real, editable copies with :ref:`symcopies`.
+Small-molecule
 crystals (e.g. from the Crystallography Open Database) can be opened with live
 symmetry and maps using :ref:`smallmol` and :ref:`cod`. Where applicable,
 a model initialised for ChimeraX-Clipper will provide a real-time display of
@@ -225,6 +227,39 @@ the final view is as follows:
    Cartoon display will not be affected.
 6. If *focus* is true, the view will be reset to centre on and encompass the
    covered region.
+
+.. _`symcopies`:
+
+clipper symcopies
+-----------------
+
+Syntax: clipper symcopies [*structures*]
+[**contacting** *atoms*] [**distance** *number* (5.0)]
+[**name** *string*] [**focus** *true/false* (false)]
+
+Make real, whole-model copies of crystallographic symmetry mates and merge them
+- together with the original ASU - into a single new atomic model, using
+ChimeraX's ``combine`` mechanism. Unlike the live symmetry display (which
+shows only the atoms near the spotlight), every copy produced here is a complete
+model, and the result is an ordinary structure you can edit, save or otherwise
+manipulate independently of the crystal.
+
+Which symmetry copies are realised depends on whether **contacting** is given:
+
+* **contacting** *omitted* - every symmetry copy currently drawn in the spotlight
+  (i.e. whose ribbon is displayed) is realised. This applies to each of
+  *structures*, or - if *structures* is also omitted - to every model currently
+  managed by ChimeraX-Clipper.
+* **contacting** *given* - every symmetry copy with at least one atom approaching
+  within *distance* Å of the *contacting* atom selection is realised, for each
+  crystal structure the selection touches. (If *structures* is also given, only
+  those structures are considered.)
+
+The new model is placed exactly where the crystallographic copies sit relative
+to the original, so - unlike the general-purpose core symmetry tools - the view
+is left undisturbed. Pass **focus true** to reset the view to encompass the
+result. Use **name** to set the new model's name (the default is
+"*<structure>* symmetry copies").
 
 .. _`bsharp`:
 
