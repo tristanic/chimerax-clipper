@@ -372,7 +372,8 @@ class MapMgr(Model):
         this (e.g. from ISOLDE at the start of an interactive simulation, whose GPU
         density box has a fixed shape that re-gridding would corrupt) and pair it
         with allow_oversampling_changes(reason) when done. Nesting is supported:
-        the block is released only when every matching allow_ call has been made.
+        the block is released only when every matching allow_oversampling_changes
+        call has been made.
         For guaranteed release, prefer the oversampling_changes_blocked() context
         manager.
         '''
@@ -389,7 +390,8 @@ class MapMgr(Model):
     def oversampling_changes_blocked(self, reason='a running task'):
         '''
         Context manager form of block/allow_oversampling_changes(), releasing the
-        block even if the enclosed code raises:
+        block even if the enclosed code raises::
+
             with map_mgr.oversampling_changes_blocked('ISOLDE simulation'):
                 ... run simulation ...
         '''
