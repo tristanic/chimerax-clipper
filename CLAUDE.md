@@ -56,6 +56,12 @@ ChimeraX paths assumed by `make_win.bat`:
 - Daily:   `C:\Program Files\ChimeraX-Daily\bin\ChimeraX-console.exe`
 - Release: `C:\Program Files\ChimeraX\bin\ChimeraX-console.exe`
 
+**ChimeraX source checkout:** `C:\Users\tcroll\gits\ChimeraX\src` — invaluable for
+tracing how ChimeraX itself invokes plugin code. E.g. the live-map surface pipeline
+crosses into `bundles/map/src/volume.py` (`Volume.set_geometry`) and
+`bundles/graphics/src/drawing.py`, whose `set_geometry` fires the `art()` remask
+callback that Clipper's `mask_handler.py` hooks.
+
 ### Linux / macOS
 
 ```sh
