@@ -255,6 +255,11 @@ class XmapHandlerBase(MapHandlerBase):
         self._session_restore = session_restore
         self._mapset = mapset
         self._name = name
+        # State for deferring in-place box refills while a contour worker is still
+        # reading the buffer (see _refill_when_idle). Must exist before the first
+        # 'map box moved'/'maps recalculated' callback can fire.
+        self._pending_refills = {}
+        self._pending_refill_handler = None
         bp = mapset.box_params
 
         darray = self._generate_and_fill_data_array(bp.origin_xyz, bp.origin_grid, bp.dim)
@@ -358,12 +363,65 @@ class XmapHandlerBase(MapHandlerBase):
         self.data.values_changed()
 
     def _box_moved_cb(self, *_):
+        self._refill_when_idle('box_moved', self._do_box_move_refill)
+
+    def _do_box_move_refill(self):
         bp = self.box_params
         self.data.set_origin(bp.origin_xyz)
         self._fill_volume_data(self._data_fill_target, bp.origin_grid)
         for s in self.surfaces:
             s._use_thread=True
         self.data.values_changed()
+
+    def _readers_active(self):
+        'True while any surface has a contour worker still reading _data_fill_target in place.'
+        return any(getattr(s, '_surf_calc_thread', None) is not None for s in self.surfaces)
+
+    def _refill_when_idle(self, key, fn):
+        '''
+        Refill the shared display box in place only when it is safe to do so.
+
+        The threaded contour worker reads self._data_fill_target directly (no
+        snapshot copy - see contour_threaded.cpp), so overwriting that buffer while
+        a worker is running tears the marching-cubes state and yields out-of-range
+        triangle indices. Run fn() immediately when no worker is reading the buffer
+        (the common case, zero added copies); otherwise defer it, retrying each
+        frame until every surface's contour thread has finished. fn must read live
+        state (box_params, xmap, sigma) when it runs so a deferred call converges to
+        the latest data; requests are coalesced by key so repeats collapse to one
+        deferred call.
+        '''
+        if not self._readers_active():
+            fn()
+            return
+        self._pending_refills[key] = fn
+        if self._pending_refill_handler is not None:
+            return
+        from chimerax.core.triggerset import DEREGISTER
+        def _cb(*_):
+            if self.deleted:
+                self._pending_refills.clear()
+                self._pending_refill_handler = None
+                return DEREGISTER
+            if self._readers_active():
+                return
+            pending = self._pending_refills
+            self._pending_refills = {}
+            self._pending_refill_handler = None
+            for f in pending.values():
+                f()
+            return DEREGISTER
+        self._pending_refill_handler = self.session.triggers.add_handler('new frame', _cb)
+
+    def delete(self):
+        h = self._pending_refill_handler
+        if h is not None:
+            try:
+                self.session.triggers.remove_handler(h)
+            except Exception:
+                pass
+            self._pending_refill_handler = None
+        super().delete()
 
     def _generate_data_array(self, origin, grid_origin, dim):
         data = self._data_fill_target = numpy.empty(dim, numpy.float32)

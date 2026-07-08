@@ -1192,6 +1192,11 @@ class XmapHandler_Live(XmapHandlerBase):
     def _map_recalc_cb(self, name, *_):
         if self.deleted:
             return
+        # Defer the in-place box refill if a contour worker is still reading the
+        # buffer (avoids tearing the surface into garbage triangle indices).
+        self._refill_when_idle('recalc', self._do_recalc_refill)
+
+    def _do_recalc_refill(self):
         for s in self.surfaces:
             s._use_thread=True
         self._fill_volume_data(self._data_fill_target, self.box_params.origin_grid)
