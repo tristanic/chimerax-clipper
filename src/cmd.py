@@ -417,53 +417,31 @@ def fetch_cod_crystal(session, cod_id, ignore_cache=False):
     return show_cod_crystal(session, cif, hkl_path=hkl)
 
 
-def _combine_sym_copies(session, structure, places, name=None):
-    '''
-    Given a crystal structure and a list of symmetry operators (ChimeraX Place
-    objects in the structure's own coordinate frame, identity/ASU first), build a
-    real, whole-model copy of the structure under each operator and merge them all
-    into a single new AtomicStructure via ChimeraX's `combine` mechanism.
-
-    We never touch atomic coordinates: `combine` bakes each source structure's
-    scene_position into the merged result, so it is enough to make a plain copy
-    per operator and set that copy's position to the operator. The merged model is
-    then placed at the original's scene_position so it lands exactly where the
-    crystallographic copies belong.
-    '''
-    copies = []
-    for place in places:
-        c = structure.copy()
-        # Not yet in the session, so scene_position == position; `combine` reads
-        # scene_position to bake in the transform.
-        c.position = place
-        copies.append(c)
-    from chimerax.atomic.cmd import combine_cmd
-    if name is None:
-        name = '{} symmetry copies'.format(structure.name)
-    combined = combine_cmd(session, copies, close=False, name=name,
-        add_to_session=False)
-    for c in copies:
-        c.delete()
-    combined.position = structure.scene_position
-    session.models.add([combined])
-    return combined
-
-
 def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
-        name=None, focus=False):
+        name=None, focus=False, refl_file=None, prune_special_positions=True,
+        log_chain_remapping=False):
     '''
     Create real, whole-model copies of crystallographic symmetry mates and merge
-    them (together with the original ASU) into a single new model.
+    them (together with the original ASU) into a single new model. Works both in
+    the GUI and headless (--nogui): the crystallographic core is obtained without
+    building the GUI symmetry framework (see clipper.crystal_symmetry_for).
 
-    Two selection criteria:
+    Selection criteria:
       * contacting given -> every symmetry copy with an atom within `distance` of
         the `contacting` selection is realised (per structure the selection
         touches);
-      * contacting omitted -> every symmetry copy currently drawn in Clipper's
-        spotlight (i.e. whose ribbon is displayed) is realised, for each of
-        `models` (or every Clipper-managed structure if `models` is omitted).
+      * contacting omitted, GUI spotlight active -> every symmetry copy currently
+        drawn in Clipper's spotlight (i.e. whose ribbon is displayed) is realised;
+      * contacting omitted, no spotlight (e.g. headless) -> every symmetry copy
+        within `distance` of the whole model is realised.
+
+    `refl_file` (a .mtz/.cif structure-factor file) supplies the cell and
+    spacegroup for models whose own metadata lacks them. When
+    `prune_special_positions` is True (default), redundant special-position copies
+    of small self-contained molecules (ions/water) are removed.
     '''
     from .symmetry import get_symmetry_handler, get_all_symmetry_handlers
+    from .sym_realize import crystal_symmetry_for, realize_symmetry_copies
     cutoff_mode = contacting is not None and len(contacting) > 0
     if cutoff_mode:
         structures = list(contacting.unique_structures)
@@ -476,41 +454,134 @@ def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
 
     if not structures:
         raise UserError('No crystal structures found to make symmetry copies for. '
-            'Specify one or more Clipper-managed models, or a "contacting" atom '
-            'selection.')
+            'Specify one or more models, or a "contacting" atom selection.')
 
     results = []
     for s in structures:
-        sh = get_symmetry_handler(s)
-        if sh is None:
-            session.logger.warning('Model {} is not managed by Clipper; '
+        sym = crystal_symmetry_for(s, refl_file=refl_file)
+        if not sym.has_symmetry:
+            session.logger.warning('Model {} has no crystallographic symmetry; '
                 'skipping.'.format(s.id_string))
-            continue
-        asm = sh.atomic_symmetry_model
-        if asm is None:
             continue
         if cutoff_mode:
             sel = contacting.intersect(s.atoms)
             if not len(sel):
                 continue
-            places = asm.sym_transforms_near(sel, distance)
+            places = sym.sym_transforms_near(sel, distance)
             descr = 'within {:.3g} A of the selection'.format(distance)
         else:
-            places = asm.currently_displayed_sym_transforms()
-            descr = 'currently displayed'
+            # In the GUI, prefer the spotlight (what the user can see) when it is
+            # showing symmetry copies; otherwise - and always when headless - fall
+            # back to the whole-model neighbours. Only touch the (GUI-only)
+            # AtomicSymmetryModel when a GUI is present.
+            places = []
+            if session.ui.is_gui:
+                sh = get_symmetry_handler(s)
+                asm = sh.atomic_symmetry_model if sh is not None else None
+                if asm is not None:
+                    places = asm.currently_displayed_sym_transforms()
+            if len(places) > 1:
+                descr = 'currently displayed'
+            else:
+                places = sym.sym_transforms_near(s.atoms, distance)
+                descr = 'within {:.3g} A of the model'.format(distance)
         # places always leads with the identity/ASU operator, so >1 means there is
         # at least one genuine symmetry copy to realise.
         if len(places) <= 1:
             session.logger.warning('No symmetry copies {} for model {}.'.format(
                 descr, s.id_string))
             continue
-        combined = _combine_sym_copies(session, s, places, name=name)
-        session.logger.info('Created model {} combining the ASU of {} with {} '
-            'symmetry {} {}.'.format(combined.id_string, s.id_string,
-                len(places)-1, 'copy' if len(places)==2 else 'copies', descr))
+        combined = realize_symmetry_copies(session, s, places, name=name,
+            prune_special_positions=prune_special_positions,
+            log_chain_remapping=log_chain_remapping)
+        if combined is None:
+            session.logger.warning('All symmetry copies {} for model {} were '
+                'redundant special-position duplicates; nothing added.'.format(
+                    descr, s.id_string))
+            continue
+        session.logger.info('Created model {} combining the ASU of {} with its '
+            'symmetry copies {}.'.format(combined.id_string, s.id_string, descr))
         results.append(combined)
 
-    if focus and results:
+    if focus and results and session.ui.is_gui:
+        from chimerax.core.commands import run
+        run(session, 'view {}'.format(' '.join('#'+m.id_string for m in results)))
+    return results
+
+
+def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
+        focus=False, refl_file=None, prune_special_positions=True,
+        log_chain_remapping=False):
+    '''
+    Generate one or more whole crystallographic unit cells as a single new,
+    real atomic model. Each unit cell is the model's ASU replicated by every
+    space-group symmetry operator; a block of cells adds the lattice translations.
+
+    The size of the block is set by exactly one of:
+      * cells (n, m, o) -> an n x m x o block of unit cells along the a, b and c
+        cell axes;
+      * box  (x, y, z)  -> the smallest block of whole unit cells that fully
+        fills an x by y by z Angstrom region (each count rounded up), so the
+        result comes out slightly larger than the requested box.
+    If neither is given, a single unit cell is generated.
+
+    Runs headless as well as in the GUI. `refl_file`, `name`,
+    `prune_special_positions` and `focus` behave as for `clipper symcopies`.
+    '''
+    from math import ceil
+    from .symmetry import get_all_symmetry_handlers
+    from .sym_realize import crystal_symmetry_for, realize_symmetry_copies, unit_cell_places
+
+    if cells is not None and box is not None:
+        raise UserError('Specify only one of "cells" or "box", not both.')
+    if cells is not None and any(c < 1 for c in cells):
+        raise UserError('"cells" must be three positive integers, e.g. cells 2,2,2')
+    if box is not None and any(x <= 0 for x in box):
+        raise UserError('"box" must be three positive distances (A), e.g. box 100,100,100')
+
+    if models is not None:
+        structures = list(models)
+    else:
+        structures = [sh.structure for sh in get_all_symmetry_handlers(session)]
+    if not structures:
+        raise UserError('No structures to generate unit cells for. Specify one or '
+            'more models (and a "reflFile" if they carry no crystallographic '
+            'metadata).')
+
+    results = []
+    for s in structures:
+        sym = crystal_symmetry_for(s, refl_file=refl_file)
+        if not sym.has_symmetry:
+            session.logger.warning('Model {} has no crystallographic symmetry; '
+                'skipping.'.format(s.id_string))
+            continue
+        if box is not None:
+            na, nb, nc = (max(1, int(ceil(x/d))) for x, d in zip(box, sym.cell.dim))
+        elif cells is not None:
+            na, nb, nc = (int(c) for c in cells)
+        else:
+            na = nb = nc = 1
+        places = unit_cell_places(sym.cell, sym.spacegroup, na, nb, nc)
+        if len(places) <= 1:
+            session.logger.warning('A single {} unit cell is just the input model; '
+                'nothing to generate for {}.'.format(sym.spacegroup.symbol_hm,
+                    s.id_string))
+            continue
+        cell_name = name
+        if cell_name is None:
+            cell_name = '{} unit cells ({}x{}x{})'.format(s.name, na, nb, nc)
+        combined = realize_symmetry_copies(session, s, places, name=cell_name,
+            prune_special_positions=prune_special_positions,
+            log_chain_remapping=log_chain_remapping)
+        if combined is None:
+            session.logger.warning('No atoms survived generating unit cells for '
+                '{}.'.format(s.id_string))
+            continue
+        session.logger.info('Created model {} containing a {}x{}x{} block of unit '
+            'cells for {}.'.format(combined.id_string, na, nb, nc, s.id_string))
+        results.append(combined)
+
+    if focus and results and session.ui.is_gui:
         from chimerax.core.commands import run
         run(session, 'view {}'.format(' '.join('#'+m.id_string for m in results)))
     return results
@@ -520,6 +591,7 @@ def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
         BoolArg, FloatArg, IntArg, StringArg,
+        Int3Arg, Float3Arg,
         OpenFileNameArg, SaveFileNameArg,
         ModelsArg,
         create_alias
@@ -664,14 +736,44 @@ def register_clipper_cmd(logger):
             ('distance', FloatArg),
             ('name', StringArg),
             ('focus', BoolArg),
+            ('refl_file', OpenFileNameArg),
+            ('prune_special_positions', BoolArg),
+            ('log_chain_remapping', BoolArg),
         ],
         synopsis=('Make real, whole-model copies of crystallographic symmetry '
             'mates and combine them with the original ASU into a single new '
             'model. With "contacting", realises every symmetry copy approaching '
             'within "distance" of the given atom selection; otherwise realises '
-            'every symmetry copy currently displayed in the spotlight.')
+            'the copies currently displayed in the spotlight (GUI), or - with no '
+            'spotlight, e.g. headless - every copy within "distance" of the whole '
+            'model. "reflFile" (a .mtz/.cif structure-factor file) supplies the '
+            'cell and spacegroup for models lacking crystallographic metadata. '
+            'By default, redundant special-position copies of small molecules '
+            '(ions/water) are pruned; set pruneSpecialPositions false to keep them.')
     )
     register('clipper symcopies', symcopies_desc, symmetry_copies_real, logger=logger)
+
+    unitcells_desc = CmdDesc(
+        optional=[('models', StructuresArg)],
+        keyword=[
+            ('cells', Int3Arg),
+            ('box', Float3Arg),
+            ('name', StringArg),
+            ('focus', BoolArg),
+            ('refl_file', OpenFileNameArg),
+            ('prune_special_positions', BoolArg),
+            ('log_chain_remapping', BoolArg),
+        ],
+        synopsis=('Generate whole crystallographic unit cells as a single new '
+            'model. With "cells n,m,o", make an n x m x o block of unit cells; '
+            'with "box x,y,z", make the smallest block of whole cells that fills '
+            'an x by y by z Angstrom region; with neither, one unit cell. '
+            '"reflFile" (a .mtz/.cif structure-factor file) supplies the cell and '
+            'spacegroup for models lacking crystallographic metadata. By default, '
+            'redundant special-position copies of small molecules (ions/water) '
+            'are pruned; set pruneSpecialPositions false to keep them.')
+    )
+    register('clipper unitcells', unitcells_desc, generate_unit_cells, logger=logger)
 
     set_contour_sensitivity_desc = CmdDesc(
         required=[('sensitivity', FloatArg),],

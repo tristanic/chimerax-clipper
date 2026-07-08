@@ -1473,56 +1473,11 @@ class AtomicSymmetryModel(Model):
             whole_residues (default true):
                 Whether to expand the selections to whole_residues.
         '''
-        if coords is None:
-            coords = atoms.coords
-        coords = coords.astype(numpy.float32)
-        master_atoms = self.structure.atoms
-        master_coords = master_atoms.coords.astype(numpy.float32)
-        from .clipper_util import get_minmax_grid
-        grid_minmax = get_minmax_grid(coords, self.cell, self.grid)
-        from .crystal import calculate_grid_padding
-        pad = calculate_grid_padding(cutoff, self.grid, self.cell)
-        grid_minmax += numpy.array((-pad, pad))
-        min_xyz = clipper_python.Coord_grid(grid_minmax[0]).coord_frac(self.grid).coord_orth(self.cell).xyz
-        dim = grid_minmax[1]-grid_minmax[0]
-        symops = self.unit_cell.all_symops_in_box(min_xyz, dim, True, self._sym_search_frequency)
-        symmats = symops.all_matrices_orth(self.cell, '3x4')
-        from chimerax.geometry import Place
-        target = [(coords, Place().matrix.astype(numpy.float32))]
-        search_list = []
-        for i, s in enumerate(symmats):
-            search_list.append((master_coords, s.astype(numpy.float32)))
-        from chimerax.geometry import find_close_points_sets
-        # We want to respond gracefully if the cutoff is zero, but
-        # find_close_points_sets returns nothing if the cutoff is
-        # *actually* zero. So just set it to a very small non-zero value.
-        if cutoff == 0:
-            cutoff = 1e-6
-        i1, i2 = find_close_points_sets(search_list, target, cutoff)
-        found_atoms = []
-        sym_indices = []
-        sym_count = 0
-        for i, (c, s) in enumerate(zip(i1, symmats)):
-            if len(c):
-                sel = master_atoms[c]
-                if whole_residues:
-                    sel = sel.unique_residues.atoms
-                found_atoms.append(sel)
-                indices = numpy.empty(len(sel), numpy.uint8)
-                indices[:] = i
-                sym_indices.append(indices)
-        if len(found_atoms) > 1:
-            from chimerax.atomic import concatenate
-            found_atoms = concatenate(found_atoms)
-            sym_indices = numpy.concatenate(sym_indices)
-        elif len(found_atoms) == 0:
-            from chimerax.atomic import Atoms
-            found_atoms = Atoms()
-            sym_indices = numpy.array([], numpy.uint8) #sym_indices[0]
-        else:
-            found_atoms = found_atoms[0]
-            sym_indices = sym_indices[0]
-        return (found_atoms, symmats, sym_indices, symops)
+        from .sym_realize import sym_select_within as _sym_select_within
+        return _sym_select_within(self.structure, self.cell, self.grid,
+            self.unit_cell, atoms, cutoff, coords=coords,
+            whole_residues=whole_residues,
+            sym_search_frequency=self._sym_search_frequency)
 
     def _places_from_matrices(self, matrices, indices, include_identity):
         '''
@@ -1532,15 +1487,8 @@ class AtomicSymmetryModel(Model):
         placed first when requested; all other operators follow in ascending
         index order so the result is deterministic.
         '''
-        wanted = set(int(i) for i in indices)
-        if include_identity:
-            wanted.add(0)
-        else:
-            wanted.discard(0)
-        ordered = ([0] if (include_identity and 0 in wanted) else []) \
-            + sorted(i for i in wanted if i != 0)
-        from chimerax.geometry import Place
-        return [Place(matrix=matrices[i]) for i in ordered]
+        from .sym_realize import places_from_matrices
+        return places_from_matrices(matrices, indices, include_identity)
 
     def currently_displayed_sym_transforms(self, include_identity=True):
         '''

@@ -236,30 +236,90 @@ clipper symcopies
 Syntax: clipper symcopies [*structures*]
 [**contacting** *atoms*] [**distance** *number* (5.0)]
 [**name** *string*] [**focus** *true/false* (false)]
+[**reflFile** *filename*] [**pruneSpecialPositions** *true/false* (true)]
 
 Make real, whole-model copies of crystallographic symmetry mates and merge them
 - together with the original ASU - into a single new atomic model, using
 ChimeraX's ``combine`` mechanism. Unlike the live symmetry display (which
 shows only the atoms near the spotlight), every copy produced here is a complete
 model, and the result is an ordinary structure you can edit, save or otherwise
-manipulate independently of the crystal.
+manipulate independently of the crystal. This command runs both in the GUI and
+headless (``--nogui``): it does not require the live symmetry display, so it can
+be scripted for batch symmetry expansion.
 
 Which symmetry copies are realised depends on whether **contacting** is given:
 
-* **contacting** *omitted* - every symmetry copy currently drawn in the spotlight
-  (i.e. whose ribbon is displayed) is realised. This applies to each of
-  *structures*, or - if *structures* is also omitted - to every model currently
-  managed by ChimeraX-Clipper.
 * **contacting** *given* - every symmetry copy with at least one atom approaching
   within *distance* Å of the *contacting* atom selection is realised, for each
   crystal structure the selection touches. (If *structures* is also given, only
   those structures are considered.)
+* **contacting** *omitted* - if a live spotlight is displaying symmetry copies
+  (GUI only), exactly those currently-drawn copies are realised. With no spotlight
+  - for example headless - every symmetry copy within *distance* Å of the whole
+  model is realised instead. This applies to each of *structures*, or - if
+  *structures* is also omitted - to every Clipper-managed model in the session.
+
+**reflFile** takes a structure-factor file (``.mtz`` or ``.cif``) and uses its
+cell and spacegroup for models whose own metadata (PDB ``CRYST1`` / mmCIF header)
+does not carry them; no maps are generated. Models with no usable crystallographic
+symmetry are skipped with a warning.
+
+By default (**pruneSpecialPositions true**) a symmetry copy of a small,
+self-contained molecule (ion, water, small solvent) that maps back onto a molecule
+already present - i.e. one sitting on a special position - is dropped as a
+redundant duplicate. Larger fragments and anything belonging to a polymer chain are
+always kept, since coincidence there is genuine crystallographic interface contact.
+Set **pruneSpecialPositions false** to realise every copy verbatim.
+
+Because every copy shares the original's chain IDs, merging them reassigns those
+IDs, which ChimeraX normally reports one line per chain per copy. That is
+suppressed by default; pass **logChainRemapping true** to see the reassignments
+(useful when the exact chain-ID mapping matters). For large expansions - e.g.
+packing a box with a small-molecule crystal - leaving it suppressed avoids
+thousands of log lines.
 
 The new model is placed exactly where the crystallographic copies sit relative
 to the original, so - unlike the general-purpose core symmetry tools - the view
 is left undisturbed. Pass **focus true** to reset the view to encompass the
-result. Use **name** to set the new model's name (the default is
+result (GUI only). Use **name** to set the new model's name (the default is
 "*<structure>* symmetry copies").
+
+.. _`unitcells`:
+
+clipper unitcells
+-----------------
+
+Syntax: clipper unitcells [*structures*]
+[**cells** *n,m,o*] [**box** *x,y,z*]
+[**name** *string*] [**focus** *true/false* (false)]
+[**reflFile** *filename*] [**pruneSpecialPositions** *true/false* (true)]
+[**logChainRemapping** *true/false* (false)]
+
+Generate one or more complete crystallographic unit cells as a single new,
+real atomic model. Each unit cell is the model's ASU replicated by every
+space-group symmetry operator; a block of cells adds the corresponding lattice
+translations. Like :ref:`symcopies`, this runs both in the GUI and headless
+(``--nogui``).
+
+The size of the block is set by exactly one of:
+
+* **cells** *n,m,o* - an *n* × *m* × *o* block of whole unit cells along the
+  **a**, **b** and **c** cell axes (e.g. ``cells 2,2,2`` for eight cells).
+* **box** *x,y,z* - the smallest block of whole unit cells that completely fills
+  an *x* × *y* × *z* Å region. Each axis count is rounded up
+  (*n* = ⌈*x*/*a*⌉, etc.), so the result comes out slightly larger than the
+  requested box. (For non-orthogonal cells the box is filled approximately, per
+  cell axis.)
+* *neither* - a single unit cell.
+
+**reflFile**, **name**, **focus**, **pruneSpecialPositions** and
+**logChainRemapping** behave exactly as for :ref:`symcopies`; in particular,
+redundant special-position copies of small self-contained molecules (ions/water)
+are pruned by default, and the per-chain "remapping" messages are suppressed
+unless **logChainRemapping true** is given - worth remembering when packing a
+box with many copies of a small-molecule crystal. Models with
+no usable crystallographic symmetry are skipped with a warning (a single unit
+cell of a ``P 1`` structure is just the input model, so nothing is generated).
 
 .. _`bsharp`:
 
