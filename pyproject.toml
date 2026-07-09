@@ -278,6 +278,7 @@ sources = [
   "src_cpp/clipper_ext/edcalc_ext.cpp",
   "src_cpp/clipper_ext/sfcalc_obs_vdw.cpp",
   "src_cpp/clipper_ext/adp_occ_refiner.cpp",
+  "src_cpp/clipper_ext/xray_gradient.cpp",
 ]
 include-dirs = [
   "src_cpp/deps",
@@ -529,6 +530,7 @@ sources = [
   "src_cpp/bindings/wrap_hkl_info.cpp",
   "src_cpp/bindings/wrap_containers.cpp",
   "src_cpp/bindings/ext/wrap_adp_occ_refiner.cpp",
+  "src_cpp/bindings/ext/wrap_xray_gradient.cpp",
   "src_cpp/bindings/clipper_pybind11.cpp",
 ]
 include-dirs = [

@@ -625,7 +625,12 @@ namespace clipper
   {
   public:
     //! null constructor
-    Atom() {}
+    /*! u_aniso_orth_ is explicitly nulled: Mat33sym's default constructor leaves
+        its coefficients uninitialised, so without this a freshly-constructed Atom
+        reports a non-null (garbage) u_aniso_orth(), and any consumer that keys off
+        u_aniso_orth().is_null() (e.g. EDcalc_aniso's iso/aniso fallback) would treat
+        the atom as anisotropic with a garbage ADP tensor. */
+    Atom() : u_aniso_orth_( Mat33sym<>::null() ) {}
     //! Constructor: from atom-like object
     template<class T> Atom( const T& atom ) : element_(atom.element()), coord_orth_(atom.coord_orth()), u_aniso_orth_(atom.u_aniso_orth()) , occupancy_(atom.occupancy()), u_iso_(atom.u_iso()){}
     //! get atom element name: e.g. "C", "N", "Zn2+"
