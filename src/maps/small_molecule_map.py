@@ -23,30 +23,29 @@ class SmallMoleculeXmapMgr:
     # small molecules; higher rates are slower with no meaningful accuracy gain).
     FFT_RATE = 1.5
 
-    def __init__(self, hklinfo, cell, spacegroup, grid_sampling, scaffold,
-                 fobs, structure=None, scaffold_to_model=None):
+    def __init__(self, hklinfo, cell, spacegroup, grid_sampling, fobs, structure,
+                 radiation='xray'):
         '''
         Args:
             hklinfo, cell, spacegroup, grid_sampling: the crystal definition.
-            scaffold: per-atom structure-factor inputs (see
-                io.small_molecule.sfcalc_scaffold) - elements, Clipper-frame
-                coords, occupancies, U_iso, U_aniso, labels.
+            radiation: 'xray' or 'electron' - selects the scattering-factor table
+                for Fcalc (electron for micro-ED / 3D-ED). Fixed at construction and
+                read only in the worker thread, so it is race-free.
             fobs: an HKL_data_F_sigF of observed amplitudes (Fo = sqrt of
                 intensity), over hklinfo. Used directly by the anisotropic+spline
                 scaling (scale_fcalc_to_fobs).
-            structure: optional live AtomicStructure (Clipper-frame coords) whose
-                current coordinates are used on each recalc. If None, the
-                scaffold's static coordinates are used (headless / static use).
-            scaffold_to_model: optional int array mapping each scaffold atom to a
-                model-atom index (or -1), for live coordinate override by label.
+            structure: the live AtomicStructure. Its per-atom coordinates, occupancy,
+                B-factor, anisotropic U and (via the clipper_scattering_species custom
+                attribute) scattering species are read fresh on each recompute, so the
+                map reflects every model edit. The model is expected to carry Clipper-
+                frame coords and orthogonal ADPs (see io.small_molecule.hydrate_...).
         '''
         self.hklinfo = hklinfo
         self.cell = cell
         self.spacegroup = spacegroup
         self.grid_sampling = grid_sampling
-        self._scaffold = scaffold
         self._structure = structure
-        self._scaffold_to_model = scaffold_to_model
+        self._radiation = radiation
         self._fobs = fobs            # HKL_data_F_sigF, for aniso+spline scaling
         self._fo = numpy.asarray(fobs.data[1][:, 0], numpy.double)  # aligned to hklinfo
         self._meas = numpy.isfinite(self._fo)
@@ -55,6 +54,9 @@ class SmallMoleculeXmapMgr:
         self._ready = False
         self._rwork = 0.0
         self._n_reflections = int(self._meas.sum())
+        # Reused only for its O(1) site-multiplicity lookup (special-position occupancy).
+        from ..clipper_python import Xmap_double
+        self._mult_xmap = Xmap_double(spacegroup, cell, grid_sampling)
 
     # ---- interface used by XmapSet / XmapHandler_Live (duck-types Xtal_thread_mgr) ----
 
@@ -128,14 +130,40 @@ class SmallMoleculeXmapMgr:
     # ---- internals ----
 
     def _current_atom_list(self):
-        from ..io.small_molecule import atom_list_from_scaffold
-        coords = self._scaffold['coords']
-        if self._structure is not None and self._scaffold_to_model is not None:
-            live = self._structure.atoms.coords
-            coords = coords.copy()
-            sel = self._scaffold_to_model >= 0
-            coords[sel] = live[self._scaffold_to_model[sel]]
-        return atom_list_from_scaffold(self._scaffold, coords)
+        '''Build the Clipper Atom_list fresh from the LIVE model each recompute, so the
+        map reflects every edit (coordinates, occupancy, B-factor, ADP). Called on the
+        main thread (all reads are plain numpy); the immutable result goes to the worker.'''
+        from ..clipper_python import Atom_list, Coord_orth
+        atoms = self._structure.atoms
+        # Exclude symmetry-completed atoms (see io.fragments): Clipper's SFcalc generates
+        # them from their ASU source by crystallographic symmetry, so including them would
+        # double-count.
+        keep = numpy.array([not getattr(a, 'clipper_sf_exclude', False) for a in atoms], bool)
+        if not keep.all():
+            atoms = atoms.filter(keep)
+        n = len(atoms)
+        xyz = numpy.array(atoms.coords, numpy.double)
+        # Ionic-aware scattering species (falls back to the neutral element for atoms
+        # without the attribute, e.g. user-added atoms).
+        elements = [getattr(a, 'clipper_scattering_species', None) or a.element.name
+                    for a in atoms]
+        # Occupancy with live special-position correction (Clipper's SFcalc applies every
+        # symop, so an atom on a special position is otherwise multiply counted).
+        occ = numpy.array(atoms.occupancies, numpy.double)
+        cell, grid, xm = self.cell, self.grid_sampling, self._mult_xmap
+        for i in range(n):
+            cf = Coord_orth(xyz[i, 0], xyz[i, 1], xyz[i, 2]).coord_frac(cell)
+            m = xm.multiplicity(cf.coord_grid(grid))
+            if m > 1:
+                occ[i] /= m
+        # Isotropic U from B (U = B / 8 pi^2); anisotropic U where present (NaN elsewhere,
+        # the per-atom iso/aniso convention Atom_list expects).
+        u_iso = numpy.array(atoms.bfactors, numpy.double) / (8.0 * numpy.pi ** 2)
+        u_aniso = numpy.full((n, 6), numpy.nan, numpy.double)
+        has_aniso = atoms.has_aniso_u
+        if has_aniso.any():
+            u_aniso[has_aniso] = atoms.filter(has_aniso).aniso_u6
+        return Atom_list(elements, xyz, occ, u_iso, u_aniso)
 
     def recalculate_now(self):
         '''Synchronous recalculation (used for the initial map and headless tests).'''
@@ -164,12 +192,14 @@ class SmallMoleculeXmapMgr:
         # XmapHandler fills a float32 numpy array via Xmap.export_section_numpy,
         # which is typed to the Xmap's scalar - a double Xmap would make pybind
         # fill a discarded float64 copy, leaving the displayed map all zeros.
-        from ..clipper_python import SFcalc_aniso_fft_float, Xmap_float
+        from ..clipper_python import SFcalc_aniso_fft_float, Xmap_float, AtomShapeFn
         from ..clipper_python.data32 import HKL_data_F_phi_float
         from ..clipper_python.ext import scale_fcalc_to_fobs
 
+        radiation = (AtomShapeFn.ELECTRON if str(self._radiation).lower() == 'electron'
+                     else AtomShapeFn.XRAY)
         fcalc = HKL_data_F_phi_float(self.hklinfo)
-        sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0)
+        sfcalc = SFcalc_aniso_fft_float(2.5, self.FFT_RATE, 0.0, radiation=radiation)
         sfcalc(fcalc, atoms)
 
         # Scale Fcalc onto Fobs with an anisotropic Gaussian polished by an isotropic

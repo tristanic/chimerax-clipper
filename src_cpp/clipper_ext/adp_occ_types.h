@@ -147,6 +147,12 @@ struct RefineConfig {
     int    lbfgs_past      = 3;        //!< Past iterations for delta-f stopping criterion
     double lbfgs_delta     = 0.0;      //!< Delta-f threshold (0 = disabled)
     int    n_threads       = 1;        //!< Thread count for EDcalc and FFT steps
+    //! Use electron scattering factors (micro-ED / 3D-ED and cryo-EM potential
+    //! maps) instead of X-ray for the density and Agarwal gradients. Default
+    //! false (X-ray) keeps existing refinement byte-identical. Stored as a bool
+    //! rather than AtomShapeFn::RADIATION to keep this header free of the clipper
+    //! core include; converted at each AtomShapeFn/EDcalc construction site.
+    bool   use_electron_scattering = false;
 
     //! Equal-occupancy groups (must be set before occ_groups).
     //! Each group contributes one free parameter. Representatives (first

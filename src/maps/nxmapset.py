@@ -32,6 +32,11 @@ class NXmapSet(MapSetBase):
         super().__init__(manager, name)
         manager.add([self])
 
+    @property
+    def radiation_type(self):
+        # Real-space (e.g. cryo-EM) maps carry no scattering-factor regime here.
+        return None
+
     def add_nxmap_handler_from_file(self, filename, is_difference_map=False,
         color=None, style=None, contour=None):
         from chimerax.map_data import open_file

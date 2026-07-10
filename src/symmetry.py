@@ -373,8 +373,15 @@ def symmetry_from_model_metadata_mmcif(model):
     if not res:
             res = 3.0
 
+    # Extract the real cell + space group only for crystallographic experiments.
+    # Electron *crystallography* (micro-ED / SerialED / 3D-ED) and neutron
+    # diffraction are genuine crystals with a real unit cell, so include them
+    # alongside X-ray; single-particle cryo-EM (em_3d_reconstruction) and other
+    # non-crystalline methods still fall back to a P1 bounding box.
+    CRYSTALLOGRAPHIC_METHODS = (
+        'X-RAY DIFFRACTION', 'ELECTRON CRYSTALLOGRAPHY', 'NEUTRON DIFFRACTION')
     exptl_data = metadata.get('exptl data', None)
-    if exptl_data is None or 'X-RAY DIFFRACTION' not in exptl_data:
+    if exptl_data is None or not any(m in exptl_data for m in CRYSTALLOGRAPHIC_METHODS):
         return simple_p1_box(model, resolution=res)
 
     try:
@@ -668,6 +675,12 @@ class SymmetryManager(Model):
         super().__init__(name, session)
         self._last_box_center = session.view.center_of_rotation
         self._session_restore = False
+        # Durable "just restored from a session" flag. Unlike _session_restore
+        # (True only during the synchronous add_model in _end_restore_session_cb),
+        # this stays True until after the deferred 'frame drawn' default-styling
+        # callbacks have run, so restored per-atom colours / draw modes / display
+        # bits / radii / cartoon are NOT overwritten with Clipper defaults.
+        self._restored_skip_default_styling = False
         self._debug = debug
         self._stepper = None
         self._last_covered_selection = None
@@ -771,6 +784,11 @@ class SymmetryManager(Model):
             )
         if not self._session_restore:
             self.set_default_atom_display(mode=self._hydrogen_mode)
+        # NB: no metadata write-back here. On plain association Clipper *reads* the
+        # model's symmetry (from its metadata), so there is nothing to rewrite, and
+        # doing so would clobber fields like _exptl.method. Write-back happens only
+        # where Clipper *changes* the symmetry: add_symmetry_info (new/different
+        # dataset) and discard_model_symmetry (revert to P1).
 
     def _structure_change_cb(self, trigger_name, changes):
         if 'aniso_u changed' in changes[1].atom_reasons():
@@ -800,12 +818,92 @@ class SymmetryManager(Model):
         self.resolution = resolution
         self._unit_cell = Unit_Cell(self.structure.atoms, cell, spacegroup, grid_sampling)
         self.has_symmetry = True
+        self._write_symmetry_to_model_metadata()
+
+    @staticmethod
+    def _metadata_field(md, category, tag):
+        '''Value of one field in an mmCIF metadata category, or None. ChimeraX
+        stores a category as md[category] = [category, tag1, ...] and
+        md[category+' data'] = [val1, ...] aligned to the tags.'''
+        headers = md.get(category)
+        values = md.get(category + ' data')
+        if not headers or not values:
+            return None
+        try:
+            idx = [h.lower() for h in headers[1:]].index(tag.lower())
+        except ValueError:
+            return None
+        return values[idx] if idx < len(values) else None
+
+    def _write_symmetry_to_model_metadata(self):
+        '''Rewrite the model's *native* symmetry metadata to Clipper's current
+        authoritative symmetry, so the model stays self-consistent and any later
+        re-derivation (or re-save to PDB/mmCIF) is correct. This matters when a
+        model's original metadata symmetry is irrelevant to its current use -- an
+        old crystal model reused in a cryo-EM (non-crystallographic) context, or
+        reused with a new crystal dataset of different cell/space group.
+
+        Only the model's *native* representation is written (PDB CRYST1, or mmCIF
+        cell/symmetry): ChimeraX's writers cross-convert between the two via
+        metadata (mmcif_write builds cell/symmetry from CRYST1; the PDB writer
+        builds CRYST1 from cell/symmetry), so writing both risks confusing their
+        "came-from-X" heuristics. No-op during session restore.'''
+        if getattr(self, '_session_restore', False):
+            return
+        model = self.structure
+        if model is None:
+            return
+        set_entry = getattr(model, 'set_metadata_entry', None)
+        if set_entry is None:
+            return
+        if self.has_symmetry:
+            a, b, c = self.cell.dim
+            al, be, ga = self.cell.angles_deg
+            hm = self.spacegroup.symbol_hm
+        else:
+            # Conventional "no crystallographic symmetry": unit cubic P1 box.
+            a = b = c = 1.0
+            al = be = ga = 90.0
+            hm = 'P 1'
+        md = model.metadata
+        if 'cell' in md and 'CRYST1' not in md:
+            # mmCIF-origin.
+            if not self.has_symmetry:
+                # Non-crystallographic: drop cell/symmetry so re-derivation falls
+                # through to simple_p1_box (cleaner than fighting the _exptl gate).
+                set_entry('cell', None)
+                set_entry('symmetry', None)
+            else:
+                fmt = lambda v: '{:.4f}'.format(v)
+                set_entry('cell', ['cell', 'length_a', 'length_b', 'length_c',
+                                   'angle_alpha', 'angle_beta', 'angle_gamma'])
+                set_entry('cell data', [fmt(a), fmt(b), fmt(c), fmt(al), fmt(be), fmt(ga)])
+                set_entry('symmetry', ['symmetry', 'space_group_name_H-M'])
+                set_entry('symmetry data', [hm])
+                # symmetry_from_model_metadata_mmcif only reads the cell if
+                # _exptl.method names a crystallographic experiment. Preserve an
+                # existing crystallographic method (e.g. ELECTRON CRYSTALLOGRAPHY);
+                # only set one when promoting a previously non-crystallographic model.
+                CRYST = ('X-RAY DIFFRACTION', 'ELECTRON CRYSTALLOGRAPHY', 'NEUTRON DIFFRACTION')
+                cur = self._metadata_field(md, 'exptl', 'method')
+                if cur is None or cur.upper() not in CRYST:
+                    rt = str(getattr(self.map_mgr, 'radiation_type', None)).lower()
+                    method = 'ELECTRON CRYSTALLOGRAPHY' if rt == 'electron' else 'X-RAY DIFFRACTION'
+                    set_entry('exptl', ['exptl', 'method'])
+                    set_entry('exptl data', [method])
+        else:
+            # PDB-origin (or no prior symmetry metadata): one raw fixed-width
+            # CRYST1 record, using ChimeraX's exact pdb_chars.cpp format -- which
+            # is also exactly what symmetry_from_model_metadata_pdb parses by column.
+            line = 'CRYST1%9.3f%9.3f%9.3f%7.2f%7.2f%7.2f %-11s%4d' % (
+                a, b, c, al, be, ga, hm, 1)
+            set_entry('CRYST1', [line])
 
     def added_to_session(self, session):
         # Temporary hack due to issue #18427 in ChimeraX 1.10. TODO: remove for 1.11
         self.structure._cpp_notify_position(self.structure.scene_position)
         super().added_to_session(session)
-        if self.structure is not None:
+        if self.structure is not None and not self._restored_skip_default_styling:
             self.set_default_atom_display(mode=self._hydrogen_mode)
         from .mousemodes import initialize_clipper_mouse_modes
         initialize_clipper_mouse_modes(session)
@@ -1036,8 +1134,10 @@ class SymmetryManager(Model):
         if len(self.map_mgr.xmapsets):
             raise RuntimeError('Cannot discard model symmetry while a crystal '
                 'dataset is loaded!')
-        self.cell, self.spacegroup, self.grid, self._has_symmetry = simple_p1_box(self.structure)
+        self.cell, self.spacegroup, self.grid, self.resolution, self._has_symmetry = \
+            simple_p1_box(self.structure)
         self._unit_cell = Unit_Cell(self.structure.atoms, self.cell, self.spacegroup, self.grid)
+        self._write_symmetry_to_model_metadata()
 
 
     def set_default_atom_display(self, mode='polar'):
@@ -1301,6 +1401,9 @@ class SymmetryManager(Model):
     @staticmethod
     def restore_snapshot(session, data):
         sh = SymmetryManager(session)
+        # Preserve the restored model's saved display: block default styling until
+        # the deferred 'frame drawn' callbacks have run (cleared in _end_restore_session_cb).
+        sh._restored_skip_default_styling = True
         Model.set_state_from_snapshot(sh, session, data['model state'])
         session.triggers.add_handler('end restore session', sh._end_restore_session_cb)
         sh._session_restore_data = data
@@ -1315,6 +1418,11 @@ class SymmetryManager(Model):
             self.add_model(self.structure, session_restore_data=data)
         delattr(self, '_session_restore_data')
         self._session_restore=False
+        # NB: _restored_skip_default_styling is NOT cleared here on a frame count
+        # (that released it before the deferred styling callback fired). It is
+        # cleared inside AtomicSymmetryModel._set_default_cartoon_cb, which is the
+        # last deferred one-time styling event — so the flag lives exactly as long
+        # as needed regardless of how many frames the callback takes to fire.
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
@@ -1381,7 +1489,10 @@ class AtomicSymmetryModel(Model):
         self.live_scrolling = live
         self._save_session_handler = session.triggers.add_handler('begin save session',
             self._start_save_session_cb)
-        self._assign_atom_radii(self.structure.atoms)
+        # On session restore, keep the restored atom radii; only assign default
+        # per-element radii for a genuine fresh association.
+        if not getattr(self.manager, '_restored_skip_default_styling', False):
+            self._assign_atom_radii(self.structure.atoms)
 
     def added_to_session(self, session):
         super().added_to_session(session)
@@ -1394,6 +1505,14 @@ class AtomicSymmetryModel(Model):
         from chimerax.core.triggerset import DEREGISTER
         if not hasattr(self, 'session'):
             # Most likely the model has been closed prior to drawing. Just deregister
+            return DEREGISTER
+        if getattr(self.manager, '_restored_skip_default_styling', False):
+            # Session restore carries the saved cartoon/colour/display state;
+            # don't overwrite it. This is the last deferred one-time styling event
+            # of a restore, so releasing the flag here (rather than on a fragile
+            # frame count) is exactly when the restore-styling window closes -- and
+            # lets later genuine restyles (swap_model, user-added atoms) proceed.
+            self.manager._restored_skip_default_styling = False
             return DEREGISTER
         from .util import set_to_default_cartoon
         set_to_default_cartoon(self.session, model = self.structure)
@@ -1796,7 +1915,11 @@ class AtomicSymmetryModel(Model):
         update_needed = False
         ribbon_update_needed = False
         created_atoms = changes.created_atoms()
-        if len(created_atoms):
+        # Skip default radii/style while a session restore is settling: any
+        # atoms reported here then are the restored structure's own atoms, whose
+        # saved radii/colours/draw-modes must be preserved. Genuine user-added
+        # atoms (after the restore flag clears) are styled normally.
+        if len(created_atoms) and not getattr(self.manager, '_restored_skip_default_styling', False):
             self._assign_atom_radii(created_atoms)
             self._set_new_atom_style(created_atoms)
         if len(created_atoms) or changes.num_deleted_atoms()>0:

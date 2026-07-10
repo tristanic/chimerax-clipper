@@ -48,6 +48,7 @@
 
 
 #include "function_object_bases.h"
+#include "../core/atomsf.h"   // for AtomShapeFn::RADIATION (X-ray vs electron)
 #include "../imex.h"
 
 namespace clipper {
@@ -70,10 +71,13 @@ namespace clipper {
   template<class T> class SFcalc_aniso_sum : public SFcalc_base<T> {
   public:
     //! constructor
-    SFcalc_aniso_sum() {}
+    /*! \param radiation X-ray or electron scattering-factor table. */
+    SFcalc_aniso_sum( AtomShapeFn::RADIATION radiation = AtomShapeFn::XRAY ) : radiation_(radiation) {}
     //! constructor: shorthand for constructor+operator
-    SFcalc_aniso_sum( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms ) { (*this)( fphidata, atoms ); }
+    SFcalc_aniso_sum( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms, AtomShapeFn::RADIATION radiation = AtomShapeFn::XRAY ) : radiation_(radiation) { (*this)( fphidata, atoms ); }
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms ) const;
+  private:
+    AtomShapeFn::RADIATION radiation_;
   };
 
 
@@ -100,12 +104,13 @@ namespace clipper {
     //! constructor
     /*! \param rate Shannon rate (oversampling) of the FFT grid.
         \param uadd Additional U for smoothing atoms. */
-    SFcalc_aniso_fft( const ftype radius = 2.5, const ftype rate = 1.5, const ftype uadd = 0.0 ) : radius_(radius), rate_(rate), uadd_(uadd) {}
+    SFcalc_aniso_fft( const ftype radius = 2.5, const ftype rate = 1.5, const ftype uadd = 0.0, AtomShapeFn::RADIATION radiation = AtomShapeFn::XRAY ) : radius_(radius), rate_(rate), uadd_(uadd), radiation_(radiation) {}
     //! constructor: shorthand for constructor+operator
-    SFcalc_aniso_fft( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms, const ftype radius = 2.5, const ftype rate = 1.5, const ftype uadd = 0.0 ) : radius_(radius), rate_(rate), uadd_(uadd) { (*this)( fphidata, atoms ); }
+    SFcalc_aniso_fft( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms, const ftype radius = 2.5, const ftype rate = 1.5, const ftype uadd = 0.0, AtomShapeFn::RADIATION radiation = AtomShapeFn::XRAY ) : radius_(radius), rate_(rate), uadd_(uadd), radiation_(radiation) { (*this)( fphidata, atoms ); }
     bool operator() ( HKL_data<datatypes::F_phi<T> >& fphidata, const Atom_list& atoms ) const;
   private:
     const ftype radius_, rate_, uadd_;
+    const AtomShapeFn::RADIATION radiation_;
   };
 
 

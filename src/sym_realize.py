@@ -27,7 +27,6 @@ Unit_Cell), all of which can be built from model metadata or a structure-factor
 file without a running GUI.
 '''
 
-import contextlib
 import numpy
 from . import clipper_python
 
@@ -229,65 +228,262 @@ def crystal_symmetry_for(structure, refl_file=None):
         has_symmetry)
 
 
-def _redundant_small_molecules(structure_copy, matched_atoms, max_prune_atoms):
+class SymmetryExpansion:
     '''
-    Among the connected molecules of a realised symmetry copy, find those that
-    are safe to discard as special-position duplicates: small, self-contained
-    (non-polymer) molecules - ions, waters, small solvent - every atom of which
-    coincides with an atom already present (`matched_atoms`). Larger fragments
-    or anything belonging to a polymer chain are kept even when they touch,
-    because coincidence there is genuine crystallographic interface contact, not
-    a duplicated special-position entity. Returns an Atoms of atoms to delete,
-    or None.
+    Book-keeping for an invertible symmetry expansion, attached to the combined
+    model as `model.clipper_sym_expansion`. It records exactly which symmetry
+    operator produced which output chains, so a caller can collapse the expanded
+    model back onto the original ASU by applying each operator's inverse to its
+    chains (see `collapse_to_asu`). This is what lets an MD engine relax a full
+    P1 box and then fold the result back to a single ASU (at occupancy 1/n_asu)
+    for a structure-factor calculation.
     '''
-    from chimerax.atomic import Residue, concatenate
+    def __init__(self, operators, chains_by_operator, deduplicated, source_name):
+        # operators[i] is the Place (structure-frame) applied to make copy i, with
+        # the identity/ASU operator at index 0. chains_by_operator[i] is the list
+        # of chain IDs that copy i contributed to the combined model.
+        self.operators = list(operators)
+        self.chains_by_operator = [list(c) for c in chains_by_operator]
+        # deduplicated: records of special-position fragments dropped at expansion
+        # time, each a dict {operator, chain_id, residue, multiplicity}.
+        self.deduplicated = list(deduplicated)
+        self.source_name = source_name
+
+    @property
+    def n_asu(self):
+        '''Number of ASU copies (symmetry operators) in the expansion.'''
+        return len(self.operators)
+
+    @property
+    def inverse_operators(self):
+        '''Place objects that undo each operator (map a copy back onto the ASU).'''
+        return [op.inverse() for op in self.operators]
+
+    @property
+    def operator_by_chain(self):
+        '''{chain_id: operator index} - the inverse of chains_by_operator.'''
+        d = {}
+        for i, chains in enumerate(self.chains_by_operator):
+            for cid in chains:
+                d[cid] = i
+        return d
+
+
+def _next_free_chain_id(used):
+    '''Lowest chain ID (A, B, ... AA, ...) not already in the `used` set.'''
+    from chimerax.atomic import next_chain_id
+    cid = 'A'
+    while cid in used:
+        cid = next_chain_id(cid)
+    return cid
+
+
+def _assign_unique_chain_ids(copies):
+    '''
+    Give every copy globally-unique chain IDs (in place) so ChimeraX's `combine`
+    never has to remap them - which both makes the {operator: chain_ids}
+    provenance exact and avoids the per-chain "Remapping..." log flood. Copy 0
+    (the identity/ASU) keeps its original non-blank IDs; every other chain is
+    reassigned to the next free ID. Returns chains_by_copy: a list, per copy, of
+    the chain IDs it now owns.
+
+    Polymeric residues take their chain ID from their Chain (ChimeraX refuses a
+    direct residue-level write), so those are renamed via the Chain object; free
+    residues (waters, ions, ligands) are set through residue chain_ids.
+    '''
+    used = set()
+    chains_by_copy = []
+    for i, c in enumerate(copies):
+        residues = c.residues
+        orig_ids = sorted(set(residues.chain_ids))
+        # Avoid this copy's own current IDs too, so a fresh ID can't collide with a
+        # chain in this copy that hasn't been renamed yet (e.g. A -> B while B exists).
+        avoid = set(used) | set(orig_ids)
+        mapping = {}
+        for cid in orig_ids:
+            if i == 0 and cid and not cid.isspace() and cid not in used:
+                new = cid
+            else:
+                new = _next_free_chain_id(avoid)
+                avoid.add(new)
+            mapping[cid] = new
+            used.add(new)
+        for chain in c.chains:
+            new = mapping[chain.chain_id]
+            if new != chain.chain_id:
+                chain.chain_id = new
+        free_mask = numpy.array([r.chain is None for r in residues], bool)
+        if free_mask.any():
+            free = residues[free_mask]
+            free.chain_ids = [mapping[cid] for cid in free.chain_ids]
+        chains_by_copy.append(sorted(set(mapping.values())))
+    return chains_by_copy
+
+
+# ChimeraX's `combine` drops per-atom custom attributes (unlike `copy`), so the
+# physical ones worth keeping are re-applied to the merged model. Only
+# `clipper_scattering_species` (the ionic scattering type, e.g. "O2-") is carried:
+# it is a genuine per-atom property a later structure-factor calculation needs.
+#
+# `clipper_sf_exclude` is deliberately NOT preserved. It exists only so Clipper's
+# single-ASU SFcalc skips symmetry-completed atoms it would otherwise regenerate;
+# once we expand and de-duplicate, those atoms are explicit, distinct and correctly
+# counted, so the flag is obsolete - and keeping it would wrongly drop real atoms
+# from a SF calc on the expanded/collapsed model.
+_CLIPPER_ATOM_ATTRS = ('clipper_scattering_species',)
+
+
+def _propagate_clipper_attrs(copies, combined):
+    '''
+    Re-stamp the clipper per-atom custom attributes onto `combined` after a
+    `combine`. Because every copy was given unique chain IDs, `combine` merges no
+    chains, so combined.atoms is exactly the copies' atoms concatenated in order -
+    letting us copy the attribute values positionally. Only attributes actually
+    present on the source atoms are touched (proteins carry none, so skip).
+    '''
+    catoms = combined.atoms
+    if len(catoms) != sum(c.num_atoms for c in copies):
+        return  # concatenation assumption broken; do not risk mis-assigning
+    for attr in _CLIPPER_ATOM_ATTRS:
+        values = []
+        present = False
+        for c in copies:
+            for a in c.atoms:
+                v = getattr(a, attr, None)
+                present = present or v is not None
+                values.append(v)
+        if not present:
+            continue
+        for a, v in zip(catoms, values):
+            if v is not None:
+                setattr(a, attr, v)
+
+
+# ---------------------------------------------------------------------------
+# TODO(ChimeraX aniso_u6 copy bug): AtomicStructure.copy() AND combine() both
+# silently drop aniso_u6 (verified 2026-07-09; bfactor/occupancy survive, custom
+# attrs survive copy() but not combine()). Reported upstream to the ChimeraX team.
+# Because the ADPs never reach the copied/combined atoms, we re-stamp them from the
+# SOURCE structure (rotated by each operator; see _propagate_aniso and the
+# collapse_to_asu re-stamp). If/when copy() and combine() preserve aniso_u6, this
+# whole source-based re-stamp can be replaced by a straight per-copy rotate
+# (rotate the copy's own aniso_u6 in place, no surv_masks / source lookup needed).
+# ---------------------------------------------------------------------------
+def _rotate_aniso_array(u6, place):
+    '''
+    Rotate an (N,6) array of orthogonal `aniso_u6` ADPs by the operator `place`,
+    i.e. U' = R U R^T, so ellipsoids stay consistent with coordinates the same
+    operator moves. Uses Clipper's `U_aniso_orth.transform` (the ADP transform
+    worked out for the "move symmetry fragment" tool). `place` here is always a
+    `Place(matrix=...)` built from a Clipper orthogonal matrix, so `place.matrix`
+    feeds straight into `RTop_orth`.
+    '''
+    from .clipper_python import U_aniso_orth, RTop_orth
+    m = numpy.asarray(place.matrix, float)
+    rtop = RTop_orth(numpy.ascontiguousarray(m[:, :3]),
+                     numpy.ascontiguousarray(m[:, 3]))
+    u6 = numpy.asarray(u6, float)
+    out = numpy.empty_like(u6)
+    for i in range(len(u6)):
+        out[i] = U_aniso_orth(numpy.ascontiguousarray(u6[i])).transform(rtop).as_numpy()
+    return out
+
+
+def _propagate_aniso(structure, kept_places, surv_masks, combined):
+    '''
+    Re-stamp anisotropic ADPs onto the merged model, rotating each copy's by its
+    operator (U' = R U R^T). Both `copy()` and `combine` drop `aniso_u6`, so the
+    values are taken from the SOURCE structure (not the copies) and each copy's
+    contribution is its surviving source atoms (`surv_masks[i]`, a bool mask over
+    source atoms). Relies on the unique-chain-ID invariant that makes
+    `combined.atoms` exactly the copies' surviving atoms concatenated in order.
+    Per-atom presence is honoured (only atoms carrying an anisotropic U are written).
+    '''
+    src = structure.atoms
+    src_has = numpy.asarray(src.has_aniso_u)
+    if not src_has.any():
+        return
+    src_u6 = numpy.full((len(src), 6), numpy.nan)
+    src_u6[src_has] = src.filter(src.has_aniso_u).aniso_u6
+
+    has_parts, u6_parts = [], []
+    for place, mask in zip(kept_places, surv_masks):
+        block_has = src_has[mask]
+        block_u6 = src_u6[mask].copy()
+        present = numpy.asarray(block_has)
+        if present.any():
+            block_u6[present] = _rotate_aniso_array(block_u6[present], place)
+        has_parts.append(block_has)
+        u6_parts.append(block_u6)
+    has_all = numpy.concatenate(has_parts)
+    u6_all = numpy.concatenate(u6_parts)
+
+    catoms = combined.atoms
+    if len(catoms) != len(has_all):
+        return
+    catoms[has_all].aniso_u6 = u6_all[has_all].astype(numpy.float32)
+
+
+def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index):
+    '''
+    Among the connected molecules of a realised symmetry copy, find those that are
+    special-position duplicates: every atom coincides with an atom already realised
+    (`matched_atoms`), and the fragment sits on a special position (some atom has
+    site multiplicity > 1). Coincidence of a whole fragment can only happen when a
+    symmetry operator maps it onto an existing image - i.e. a special position - so
+    unlike the old geometric heuristic this needs no molecule-size cap and no
+    polymer exception (a metal on a crystallographic axis in a protein is handled
+    too). `multiplicities` is the per-atom site multiplicity of the source ASU
+    (aligned to structure_copy.atoms, which preserves source order).
+
+    Returns (atoms_to_delete_or_None, dedup_records, straddle_warn):
+      - dedup_records: one dict per dropped fragment residue.
+      - straddle_warn: True if a partially-coincident fragment touching a special
+        position was seen (the "molecule split across a special position but not
+        symmetry-completed" case - imperfectly handled; caller should warn).
+    '''
+    from chimerax.atomic import concatenate
+    all_atoms = structure_copy.atoms
     to_delete = []
+    records = []
+    straddle_warn = False
     for mol in structure_copy.molecules:
-        if len(mol) > max_prune_atoms:
+        n_match = len(mol.intersect(matched_atoms))
+        if n_match == 0:
             continue
-        if not (mol.unique_residues.polymer_types == Residue.PT_NONE).all():
-            continue
-        # Fully coincident with pre-existing atoms?
-        if len(mol.intersect(matched_atoms)) == len(mol):
+        idx = all_atoms.indices(mol)
+        mol_mult = multiplicities[idx]
+        special = mol_mult > 1
+        if n_match == len(mol):
+            if not special.any():
+                # Fully coincident but no atom on a special position: an exact
+                # overlap we cannot explain crystallographically - keep it rather
+                # than silently deleting real atoms.
+                continue
             to_delete.append(mol)
+            mult = int(mol_mult.max())
+            for r in mol.unique_residues:
+                records.append({'operator': op_index, 'chain_id': r.chain_id,
+                    'residue': '{} {}'.format(r.name, r.number),
+                    'multiplicity': mult})
+        elif special.any():
+            # Some (not all) atoms coincide, and the fragment touches a special
+            # position: the on-special atom is duplicated but its off-special
+            # neighbours are not - the classic un-completed straddling molecule.
+            straddle_warn = True
     if not to_delete:
-        return None
-    if len(to_delete) == 1:
-        return to_delete[0]
-    return concatenate(to_delete)
-
-
-@contextlib.contextmanager
-def _suppress_chain_remap_log(session):
-    '''
-    Temporarily swallow the per-chain "Remapping chain ID ..." info messages that
-    chimerax.atomic.cmd.combine_cmd emits. Every symmetry copy shares the ASU's
-    chain IDs, so combining even a modest block of cells floods the log with one
-    line per chain per copy. We install a highest-priority log that consumes only
-    those messages (returning True + excludes_other_logs stops them reaching the
-    real logs) and passes everything else through untouched.
-    '''
-    from chimerax.core.logger import HtmlLog
-    class _Filter(HtmlLog):
-        excludes_other_logs = True
-        def log(self, level, msg, image_info, is_html):
-            return level == self.LEVEL_INFO and 'Remapping chain ID' in msg
-    f = _Filter()
-    session.logger.add_log(f)
-    try:
-        yield
-    finally:
-        session.logger.remove_log(f)
+        return None, records, straddle_warn
+    merged = to_delete[0] if len(to_delete) == 1 else concatenate(to_delete)
+    return merged, records, straddle_warn
 
 
 def realize_symmetry_copies(session, structure, places, name=None,
-        prune_special_positions=True, tolerance=0.5, max_prune_atoms=5,
-        log_chain_remapping=False):
+        prune_special_positions=True, tolerance=0.5, multiplicities=None):
     '''
     Build real, whole-model copies of `structure` under each of `places` (a list
     of ChimeraX Place objects in the structure's own coordinate frame, with the
-    identity/ASU operator first) and merge them into a single new
-    AtomicStructure via ChimeraX's `combine` mechanism.
+    identity/ASU operator first) and merge them into a single new AtomicStructure
+    via ChimeraX's `combine` mechanism.
 
     Coordinates are never touched directly: `combine` bakes each source
     structure's scene_position into the merged result, so it is enough to make a
@@ -295,74 +491,163 @@ def realize_symmetry_copies(session, structure, places, name=None,
     merged model is then placed at the original's scene_position so it lands
     exactly where the crystallographic copies belong.
 
-    When `prune_special_positions` is True (default), atoms on special positions
-    that map back onto an already-realised position are removed from the copies,
-    but only for small self-contained molecules (ions/water, up to
-    `max_prune_atoms` atoms); larger fragments and polymer chains are kept (see
-    `_redundant_small_molecules`). Coincidence is tested within `tolerance`
-    Angstroms, cumulatively (each surviving copy is compared against the ASU and
-    all copies accepted before it).
+    Each copy is given globally-unique chain IDs before combining, so `combine`
+    never remaps them. The combined model carries a `clipper_sym_expansion`
+    (`SymmetryExpansion`) recording which operator produced which chains, making
+    the expansion invertible (see `collapse_to_asu`).
 
-    Returns the combined model, or None if no genuine symmetry copy survives
-    (e.g. every copy was a redundant special-position duplicate).
+    When `prune_special_positions` is True (default) and per-atom `multiplicities`
+    are supplied (site multiplicity of the source ASU, e.g. from
+    `clipper_util.site_multiplicities`, aligned to `structure.atoms`), fragment
+    copies that fully coincide with an already-realised image at a special
+    position are dropped - exactly the redundant `m-1` of every `m`-fold site, so
+    a later collapse to the ASU reconstitutes the correct 1/m occupancy.
+    Coincidence is tested within `tolerance` Angstroms, cumulatively.
 
-    `combine` remaps the (shared) chain IDs of every copy and logs one line per
-    chain per copy; because that floods the log for large expansions it is
-    suppressed by default. Set `log_chain_remapping` True to keep those messages
-    (e.g. when the exact chain-ID assignment matters).
+    Returns the combined model (with `.clipper_sym_expansion` set), or None if no
+    genuine symmetry copy survives.
     '''
     if not places:
         return None
     from chimerax.geometry import find_close_points
 
+    if prune_special_positions and multiplicities is None:
+        session.logger.warning('No site-multiplicity information supplied; '
+            'special-position de-duplication skipped for {}.'.format(structure.name))
+        prune_special_positions = False
+    if multiplicities is not None:
+        multiplicities = numpy.asarray(multiplicities)
+
     copies = []
+    kept_places = []
     ref_coords = None
-    n_pruned = 0
+    dedup_records = []
+    straddle_warn = False
+    # Per kept copy, a boolean mask over the SOURCE atoms marking which survived
+    # dedup - needed to re-stamp aniso_u6 from the source (copy()/combine drop it).
+    surv_masks = []
+    n_src = structure.num_atoms
     for i, place in enumerate(places):
         c = structure.copy()
         # Not yet in the session, so scene_position == position; `combine` reads
         # scene_position to bake in the transform.
         c.position = place
-        if i == 0:
-            # Identity/ASU: kept whole, seeds the coincidence reference set.
-            ref_coords = place.transform_points(c.atoms.coords).astype(numpy.float32)
-            copies.append(c)
-            continue
+        surv = numpy.ones(n_src, bool)
         if prune_special_positions:
             world = place.transform_points(c.atoms.coords).astype(numpy.float32)
-            i1, i2 = find_close_points(world, ref_coords, tolerance)
-            if len(i1):
-                to_delete = _redundant_small_molecules(c, c.atoms[i1],
-                    max_prune_atoms)
-                if to_delete is not None and len(to_delete):
-                    n_pruned += len(to_delete.unique_residues)
-                    to_delete.delete()
-            if not c.num_atoms:
-                c.delete()
-                continue
-            ref_coords = numpy.concatenate([ref_coords,
-                place.transform_points(c.atoms.coords).astype(numpy.float32)])
+            if i == 0:
+                # Identity/ASU: kept whole, seeds the coincidence reference set.
+                ref_coords = world
+            else:
+                i1, i2 = find_close_points(world, ref_coords, tolerance)
+                if len(i1):
+                    to_delete, recs, sw = _redundant_fragments(
+                        c, c.atoms[i1], multiplicities, i)
+                    straddle_warn = straddle_warn or sw
+                    dedup_records.extend(recs)
+                    if to_delete is not None and len(to_delete):
+                        # c.atoms is still 1:1 with the source here (pre-deletion).
+                        surv[c.atoms.indices(to_delete)] = False
+                        to_delete.delete()
+                if not c.num_atoms:
+                    c.delete()
+                    continue
+                ref_coords = numpy.concatenate([ref_coords,
+                    place.transform_points(c.atoms.coords).astype(numpy.float32)])
         copies.append(c)
+        kept_places.append(place)
+        surv_masks.append(surv)
 
     if len(copies) <= 1:
         for c in copies:
             c.delete()
         return None
 
+    chains_by_copy = _assign_unique_chain_ids(copies)
+
     from chimerax.atomic.cmd import combine_cmd
     if name is None:
         name = '{} symmetry copies'.format(structure.name)
-    suppressor = (contextlib.nullcontext() if log_chain_remapping
-        else _suppress_chain_remap_log(session))
-    with suppressor:
-        combined = combine_cmd(session, copies, close=False, name=name,
-            add_to_session=False)
+    combined = combine_cmd(session, copies, close=False, name=name,
+        add_to_session=False)
+    _propagate_clipper_attrs(copies, combined)
+    _propagate_aniso(structure, kept_places, surv_masks, combined)
     for c in copies:
         c.delete()
     combined.position = structure.scene_position
     session.models.add([combined])
-    if n_pruned:
-        session.logger.info('Pruned {} redundant special-position {} '
-            '(ions/water) from the {} symmetry expansion.'.format(n_pruned,
-                'molecule' if n_pruned == 1 else 'molecules', structure.name))
+
+    combined.clipper_sym_expansion = SymmetryExpansion(
+        kept_places, chains_by_copy, dedup_records, structure.name)
+
+    if dedup_records:
+        session.logger.info('De-duplicated {} special-position residue '
+            'cop{} while expanding {}.'.format(len(dedup_records),
+                'y' if len(dedup_records) == 1 else 'ies', structure.name))
+    if straddle_warn:
+        session.logger.warning('{} appears to contain molecules split across a '
+            'special position that are not symmetry-complete; expansion may leave '
+            'partial duplicates. Run "clipper fragments complete" first for exact '
+            'special-position handling.'.format(structure.name))
     return combined
+
+
+def collapse_to_asu(session, model, name=None, set_occupancies=True):
+    '''
+    Invert a symmetry expansion: fold every copy in `model` back onto the original
+    ASU by applying the inverse of the operator that produced it, overlaying all
+    `n_asu` images in the ASU frame. `model` must carry a `clipper_sym_expansion`
+    (i.e. be the output of `realize_symmetry_copies` / `clipper symcopies` /
+    `clipper unitcells`).
+
+    Coordinates are taken as they currently stand, so a box whose atoms have moved
+    (e.g. after an MD relaxation) collapses to the corresponding ensemble of ASU
+    conformers. With `set_occupancies` True (default) every atom's occupancy is set
+    to 1/n_asu, so a general-position atom's `n_asu` overlaid images sum to full
+    occupancy and a special-position atom (present only `n_asu/m` times after
+    de-duplication) sums to 1/m - exactly the occupancy Clipper's SFcalc expects.
+    Anisotropic ADPs are rotated by the same inverse operator (re-stamped from the
+    box, since `copy` drops `aniso_u6`); `clipper_scattering_species` rides along
+    (preserved by `copy`).
+
+    Returns the new collapsed model. This is a reference implementation; a
+    differentiable pipeline can reproduce the same transform from
+    `model.clipper_sym_expansion.operators`.
+    '''
+    from chimerax.core.errors import UserError
+    exp = getattr(model, 'clipper_sym_expansion', None)
+    if exp is None:
+        raise UserError('Model #{} has no symmetry-expansion provenance to invert '
+            '(clipper_sym_expansion). It must come from clipper symcopies / '
+            'unitcells.'.format(model.id_string))
+
+    # Capture the box ADPs up front: model.copy() drops aniso_u6 (see the
+    # "ChimeraX aniso_u6 copy bug" note above _rotate_aniso_array), so they are
+    # re-stamped (rotated by the inverse operator) onto the collapsed atoms below.
+    box_atoms = model.atoms
+    box_has = numpy.asarray(box_atoms.has_aniso_u)
+    box_u6 = None
+    if box_has.any():
+        box_u6 = numpy.full((len(box_atoms), 6), numpy.nan)
+        box_u6[box_has] = box_atoms.filter(box_atoms.has_aniso_u).aniso_u6
+
+    collapsed = model.copy(name=name or '{} collapsed to ASU'.format(model.name))
+    c_atoms = collapsed.atoms                       # 1:1 with box_atoms (order kept)
+    obc = exp.operator_by_chain
+    op_of_atom = numpy.array([obc.get(cid, 0) for cid in c_atoms.residues.chain_ids])
+    for i, inv in enumerate(exp.inverse_operators):
+        sel = op_of_atom == i
+        if not sel.any():
+            continue
+        ai = c_atoms[sel]
+        ai.coords = inv.transform_points(ai.coords)
+        if box_u6 is not None:
+            bh = box_has[sel]
+            if bh.any():
+                ai.filter(bh).aniso_u6 = _rotate_aniso_array(
+                    box_u6[sel][bh], inv).astype(numpy.float32)
+    if set_occupancies and collapsed.num_atoms:
+        collapsed.atoms.occupancies = 1.0 / exp.n_asu
+    collapsed.position = model.scene_position
+    session.models.add([collapsed])
+    return collapsed

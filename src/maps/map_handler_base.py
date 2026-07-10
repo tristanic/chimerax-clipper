@@ -85,6 +85,16 @@ class MapHandlerBase(Volume):
     def is_difference_map(self):
         return self._is_difference_map
 
+    @property
+    def radiation_type(self):
+        '''
+        'xray' / 'electron' for live crystallographic maps whose scattering-factor
+        table is known; None otherwise (static maps and real-space/cryo-EM maps).
+        Overridden on XmapHandler_Live; the None default covers XmapHandler_Static
+        and NXmapHandler.
+        '''
+        return None
+
     def _box_changed_cb(self, name, params):
         pass
 

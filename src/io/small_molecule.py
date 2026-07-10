@@ -58,7 +58,8 @@ def open_small_molecule_cif(session, path, file_name=None):
     return models[0]
 
 
-def extract_cod_structure(session, path, file_name=None, keep_model=False):
+def extract_cod_structure(session, path, file_name=None, keep_model=False,
+                          radiation='auto'):
     '''
     Open a small-molecule CIF and return the Mode-1 payload as a dict.
 
@@ -66,21 +67,25 @@ def extract_cod_structure(session, path, file_name=None, keep_model=False):
         path: path to a (core) CIF file.
         keep_model: if False (default), the opened model is closed before
             returning (headless batch use). Set True to leave it in the session.
+        radiation: 'xray', 'electron', or 'auto' (default; read from the CIF's
+            _diffrn_radiation_probe) - selects the scattering factors for the
+            recomputed R-factor. Recorded in the payload as 'radiation'.
     '''
     model = open_small_molecule_cif(session, path, file_name=file_name)
     try:
-        payload = _build_payload(session, model, path)
+        payload = _build_payload(session, model, path, radiation=radiation)
     finally:
         if not keep_model:
             session.models.close([model])
     return payload
 
 
-def _build_payload(session, model, path):
+def _build_payload(session, model, path, radiation='auto'):
     from chimerax.mmcif import get_cif_tables
     refine_t, diffrn_t, reflns_t, cell_t = get_cif_tables(
         path, ['refine', 'diffrn', 'reflns', 'cell'])
 
+    radiation = _resolve_radiation(radiation, path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
 
     atoms = model.atoms
@@ -106,13 +111,15 @@ def _build_payload(session, model, path):
         'n_restraints': _int_field(refine_t, 'ls_number_restraints'),
         'hydrogen_treatment': _first_cif_field(refine_t, 'ls_hydrogen_treatment'),
         'hydrogens': _hydrogen_positions(model, coords),
+        # Radiation used for the recomputed R-factor: 'xray' or 'electron' (micro-ED).
+        'radiation': radiation,
         # Structure-factor-derived fields: populated only when reflections are
         # available (see _structure_factor_metrics). None otherwise.
         'recomputed_r_factor': None,
         'has_structure_factors': False,
     }
 
-    sf = _structure_factor_metrics(session, model, path, cell, spacegroup, grid)
+    sf = _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radiation)
     if sf is not None:
         payload.update(sf)
     return payload
@@ -291,7 +298,39 @@ def _find_reflection_table(path):
     return None
 
 
-def _structure_factor_metrics(session, model, path, cell, spacegroup, grid):
+def _radiation_enum(radiation):
+    '''Map a radiation spec ('xray'/'electron') to the Clipper AtomShapeFn.RADIATION
+    enum used by the SFcalc engines. Anything unrecognised is treated as X-ray.'''
+    from ..clipper_python import AtomShapeFn
+    if str(radiation).lower() in ('electron', 'ed', 'microed', '3ded', 'e'):
+        return AtomShapeFn.ELECTRON
+    return AtomShapeFn.XRAY
+
+
+def _radiation_from_cif(path, default='xray'):
+    '''Detect the experiment radiation from the CIF: 'electron' when
+    _diffrn_radiation_probe (or _type) names electrons, else the default. Used to
+    auto-select electron scattering factors for micro-ED / 3D-ED data.'''
+    from chimerax.mmcif import get_cif_tables
+    # get_cif_tables returns [] (not [empty_table]) when the file contains NONE of the
+    # requested categories - which happens for entries with no _diffrn_radiation_* data.
+    tables = get_cif_tables(path, ['diffrn_radiation'])
+    dr = tables[0] if tables else None
+    for field in ('probe', 'type'):
+        v = _first_cif_field(dr, field)
+        if v and 'electron' in v.lower():
+            return 'electron'
+    return default
+
+
+def _resolve_radiation(radiation, path):
+    '''Resolve 'auto' to the CIF-detected radiation; pass an explicit choice through.'''
+    if radiation is None or str(radiation).lower() == 'auto':
+        return _radiation_from_cif(path)
+    return str(radiation).lower()
+
+
+def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radiation='xray'):
     '''
     If experimental structure factors are available (sibling .hkl reflection CIF,
     or an embedded _refln_ loop), compute a bulk-solvent-free R-factor of the
@@ -332,7 +371,7 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid):
     fobs = HKL_data_I_sigI(hkl_info)
     fobs.set_data(hkls, numpy.stack([fsq, sig], axis=1))
 
-    atoms = _sfcalc_atom_list(path, cell, spacegroup, grid)
+    atoms = _sfcalc_atom_list(path, cell, spacegroup, grid, radiation)
     if atoms is None:
         return {'has_structure_factors': True, 'recomputed_r_factor': None,
                 'n_reflections_used': 0}
@@ -343,7 +382,7 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid):
     # the shorthand "compute in constructor" form does not fill fcalc through the
     # bindings.
     fcalc = HKL_data_F_phi_double(hkl_info)
-    sfcalc = SFcalc_aniso_sum_double()
+    sfcalc = SFcalc_aniso_sum_double(radiation=_radiation_enum(radiation))
     sfcalc(fcalc, atoms)
 
     fo, fc, fo_sig = [], [], []
@@ -400,7 +439,7 @@ def _element_from_type_symbol(symbol):
     return leading[:1].upper() if leading else 'C'
 
 
-def _sfcalc_atom_list(path, cell, spacegroup, grid):
+def _sfcalc_atom_list(path, cell, spacegroup, grid, radiation='xray'):
     '''
     Build a Clipper Atom_list for structure-factor calculation directly from the
     CIF, entirely in CLIPPER's orthogonal frame. Built from the CIF (not the
@@ -419,13 +458,13 @@ def _sfcalc_atom_list(path, cell, spacegroup, grid):
         reciprocal axes and must be scaled by a*_i a*_j before being interpreted as
         a Clipper U_aniso_frac, then transformed to the orthogonal frame.
     '''
-    scaffold = sfcalc_scaffold(path, cell, spacegroup, grid)
+    scaffold = sfcalc_scaffold(path, cell, spacegroup, grid, radiation)
     if scaffold is None:
         return None
     return atom_list_from_scaffold(scaffold)
 
 
-def sfcalc_scaffold(path, cell, spacegroup, grid):
+def sfcalc_scaffold(path, cell, spacegroup, grid, radiation='xray'):
     '''
     Per-atom structure-factor inputs read once from the CIF, in Clipper's
     orthogonal frame: elements, Clipper-frame coordinates, special-position-
@@ -472,9 +511,11 @@ def sfcalc_scaffold(path, cell, spacegroup, grid):
     for i, r in enumerate(arows):
         labels.append(r[0])
         # Honour an ionic scattering type declared in the CIF type_symbol
-        # (e.g. "O2-", "Ca2+"); fall back to the neutral element otherwise.
+        # (e.g. "O2-", "Ca2+"), validated against the table for this radiation
+        # (X-ray = Waasmaier-Kirfel ions; electron = Peng-1998 ions, which add the
+        # divergent Coulomb term in AtomShapeFn); neutral element otherwise.
         elements.append(clipper_species_from_type_symbol(
-            r[1], _element_from_type_symbol(r[1])))
+            r[1], _element_from_type_symbol(r[1]), radiation=radiation))
         cf = Coord_frac(float(_strip_su(r[2])), float(_strip_su(r[3])), float(_strip_su(r[4])))
         co = cf.coord_orth(cell)
         coords[i] = (co.x, co.y, co.z)
@@ -500,7 +541,88 @@ def atom_list_from_scaffold(scaffold, coords=None):
                      scaffold['u_iso'], scaffold['u_aniso'])
 
 
-def show_cod_crystal(session, path, hkl_path=None):
+def register_clipper_atom_attributes(session):
+    '''Register (once per session, idempotent) the per-atom attributes Clipper sets on
+    small-molecule models. Both round-trip through .cxs sessions via ChimeraX's custom-
+    attribute machinery; registering here means they exist before any session restore
+    sets them.'''
+    if getattr(session, '_clipper_atom_attrs_registered', False):
+        return
+    from chimerax.atomic import Atom
+    Atom.register_attr(session, 'clipper_scattering_species', 'ChimeraX-Clipper', attr_type=str)
+    Atom.register_attr(session, 'clipper_sf_exclude', 'ChimeraX-Clipper', attr_type=bool)
+    session._clipper_atom_attrs_registered = True
+
+
+def hydrate_small_molecule_model(session, model, path, cell, radiation='xray'):
+    '''
+    Give a freshly-opened corecif small-molecule model the crystallographic per-atom
+    data corecif does not carry, so the live map can build its structure-factor inputs
+    directly from the model (rather than from a frozen CIF scaffold):
+
+      * isotropic B - corecif never parses _atom_site_U_iso_or_equiv, so Atom.bfactor
+        is 0; set it (B = 8 pi^2 U), giving both the map input and a B the user can edit;
+      * anisotropic U - corecif stores the raw reciprocal-fractional U_ij; overwrite with
+        the orthogonal-frame tensor (a*-scaled, as sfcalc_scaffold computes it);
+      * ionic scattering species - corecif discards the charge from _atom_site_type_symbol;
+        store the Clipper species (honouring the CIF charge) on a custom attribute.
+
+    Values are matched to atoms by CIF label; atoms whose label is absent keep defaults.
+    '''
+    import numpy
+    from chimerax.mmcif import get_cif_tables
+    from ..clipper_python import U_aniso_frac
+    from ..scattering import clipper_species_from_type_symbol
+    register_clipper_atom_attributes(session)
+
+    at, an = get_cif_tables(path, ['atom_site', 'atom_site_aniso'])
+    if at is None or not at.has_field('label'):
+        return
+    info = {}
+    for r in at.fields(('label', 'type_symbol', 'U_iso_or_equiv'), allow_missing_fields=True):
+        info[r[0]] = (r[1] if len(r) > 1 else '', r[2] if len(r) > 2 else '')
+    aniso_raw = {}
+    if an is not None and an.has_field('U_11'):
+        for r in an.fields(('label', 'U_11', 'U_22', 'U_33', 'U_12', 'U_13', 'U_23'),
+                           allow_missing_fields=True):
+            try:
+                aniso_raw[r[0]] = [float(_strip_su(x)) for x in r[1:7]]
+            except (ValueError, IndexError):
+                pass
+
+    asx, bsx, csx = cell.a_star, cell.b_star, cell.c_star
+    sc6 = numpy.array([asx*asx, bsx*bsx, csx*csx, asx*bsx, asx*csx, bsx*csx])
+    b_from_u = 8.0 * numpy.pi ** 2
+
+    atoms = model.atoms
+    bfactors = numpy.array(atoms.bfactors, numpy.float32)
+    aniso_atoms = []
+    aniso_u6 = []
+    for i, a in enumerate(atoms):
+        ts, uiso = info.get(a.name, ('', ''))
+        a.clipper_scattering_species = clipper_species_from_type_symbol(
+            ts, a.element.name, radiation=radiation)
+        if a.name in aniso_raw:
+            uf = (numpy.array(aniso_raw[a.name]) * sc6).tolist()
+            u6 = U_aniso_frac(*uf).u_aniso_orth(cell).as_numpy()  # [u11,u22,u33,u12,u13,u23]
+            aniso_atoms.append(a)
+            aniso_u6.append(u6)
+            bfactors[i] = b_from_u * (u6[0] + u6[1] + u6[2]) / 3.0   # display B_eq
+        else:
+            u = None
+            if uiso not in ('', '?', '.'):
+                try:
+                    u = float(_strip_su(uiso))
+                except ValueError:
+                    u = None
+            bfactors[i] = b_from_u * (u if u is not None else 0.05)
+    atoms.bfactors = bfactors
+    if aniso_atoms:
+        from chimerax.atomic import Atoms
+        Atoms(aniso_atoms).aniso_u6 = numpy.array(aniso_u6, numpy.float32)
+
+
+def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='rename'):
     '''
     Open a small-molecule (COD) CIF as a live crystal structure: the model in its
     unit cell (in Clipper's coordinate frame, so the density aligns and the corecif
@@ -508,17 +630,36 @@ def show_cod_crystal(session, path, hkl_path=None):
     when reflections are available - a live 2Fo-Fc / Fo-Fc electron-density map
     computed by direct FFT with no bulk solvent, updating as the model changes.
     Returns the crystal SymmetryManager.
+
+    radiation: 'xray', 'electron' (micro-ED / 3D-ED), or 'auto' (default) to read
+    the experiment type from the CIF (_diffrn_radiation_probe), defaulting to X-ray.
+
+    fragments: 'off' (leave the ASU as one UNL residue), 'rename' (default; split into
+    named covalent-fragment residues) or 'complete' (also add symmetry-generated atoms
+    to finish molecules split across a special position). See io.fragments.
     '''
     import os
     from ..symmetry import get_map_mgr
+    radiation = _resolve_radiation(radiation, path)
     model = open_small_molecule_cif(session, path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
     model.atoms.coords = _clipper_frame_coords(model, path, cell)
+    # Put the crystallographic per-atom data corecif omits (isotropic B, orthogonal
+    # aniso U, ionic species) onto the model, so the live map reads it from the model.
+    hydrate_small_molecule_model(session, model, path, cell, radiation)
+    # Split into named fragments before the live map is set up (splitting reorders, and
+    # 'complete' extends, model.atoms - and the live map reads atoms in model order).
+    if fragments and fragments != 'off':
+        from .fragments import split_fragments
+        split_fragments(session, model, cell, spacegroup, grid, mode=fragments,
+                         path=path, log=session.logger)
     mmgr = get_map_mgr(model, create=True)
-    smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid)
+    smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radiation)
     if smd is not None:
         from ..maps.xmapset import XmapSet
         XmapSet(mmgr, small_molecule_data=smd)
+        session.logger.info('(CLIPPER) %s: live maps using %s scattering factors.'
+            % (os.path.basename(path), radiation))
     else:
         session.logger.info('(CLIPPER) No reflections found for %s; showing model '
             '+ symmetry only.' % os.path.basename(path))
@@ -528,10 +669,11 @@ def show_cod_crystal(session, path, hkl_path=None):
     return crystal_mgr
 
 
-def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
+def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radiation='xray'):
     '''Assemble the small_molecule_data dict consumed by XmapSet: crystal definition,
-    Fobs amplitudes aligned to a fresh HKL_info, the SF-calc scaffold, and a
-    scaffold->model atom-index map (by label) for live coordinate updates. Returns
+    Fobs amplitudes aligned to a fresh HKL_info, and the live model. The live map builds
+    its per-atom structure-factor inputs directly from the model each recompute (see
+    SmallMoleculeXmapMgr), so no frozen scaffold or atom-index map is needed. Returns
     None if no reflections are available.'''
     import numpy
     from .. import HKL_info, HKL_data_F_sigF
@@ -559,9 +701,6 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid):
     fo = numpy.sqrt(numpy.clip(fsq, 0, None))
     fobs.set_data(h, numpy.stack([fo, numpy.ones_like(fo)], axis=1))
 
-    scaffold = sfcalc_scaffold(path, cell, spacegroup, grid)
-    name_to_idx = {n: i for i, n in enumerate(model.atoms.names)}
-    s2m = numpy.array([name_to_idx.get(lbl, -1) for lbl in scaffold['labels']], int)
     return {'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
-            'resolution': res, 'scaffold': scaffold, 'fobs': fobs,
-            'structure': model, 'scaffold_to_model': s2m, 'path': path}
+            'resolution': res, 'fobs': fobs, 'structure': model, 'path': path,
+            'radiation': radiation}
