@@ -312,7 +312,10 @@ def _radiation_from_cif(path, default='xray'):
     _diffrn_radiation_probe (or _type) names electrons, else the default. Used to
     auto-select electron scattering factors for micro-ED / 3D-ED data.'''
     from chimerax.mmcif import get_cif_tables
-    dr = get_cif_tables(path, ['diffrn_radiation'])[0]
+    # get_cif_tables returns [] (not [empty_table]) when the file contains NONE of the
+    # requested categories - which happens for entries with no _diffrn_radiation_* data.
+    tables = get_cif_tables(path, ['diffrn_radiation'])
+    dr = tables[0] if tables else None
     for field in ('probe', 'type'):
         v = _first_cif_field(dr, field)
         if v and 'electron' in v.lower():
