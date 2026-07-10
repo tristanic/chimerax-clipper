@@ -252,3 +252,150 @@ class XrayTargetState:
         L, _ = self._ev.value_and_gradient(
             c, ui, ua, oc, ia, self._selected, True)
         return float(L)
+
+
+class SupercellXrayTargetState:
+    '''
+    Periodic-construct wrapper around :class:`XrayTargetState` for ML force-field
+    training (Tier 2).
+
+    A differentiable force-field construct must span at least one full unit cell
+    (a supercell where one cell is smaller than the minimum-image radius), so it
+    holds ``n_asu`` symmetry copies of the asymmetric unit which break exact
+    crystallographic symmetry as the structure relaxes. Clipper, by contrast, works
+    on ONE unique ASU and reconstructs the full P1 density from it internally — and
+    the structure factor of a symmetry-expanded ASU does not depend on which
+    representative you feed, so each ASU can be handed to the evaluator **as-is**,
+    with no coordinate transforms.
+
+    This class folds the construct into its ``n_asu`` ASUs, evaluates the single-ASU
+    target on each, and scatters the per-ASU gradients back onto the construct atoms.
+    The per-ASU results are **summed, not averaged** (``L = Σ_k T_k``): each ASU's own
+    deviation is a distinct, valid training signal, and averaging would discard it. A
+    general-position construct atom belongs to exactly one ASU and receives that ASU's
+    gradient; a special-position atom shared between several ASUs accumulates (scatter-
+    add) a contribution from each.
+
+    Args:
+        * asu_elements: element symbols of ONE asymmetric unit (length ``N_asu``); all
+          ASUs are compositionally identical (they are symmetry copies).
+        * groups: sequence of ``n_asu`` integer index arrays into the construct atom
+          set, each of length ``N_asu`` and aligned by ASU slot — ``groups[k][i]`` is
+          the construct index of ASU ``k``'s ``i``-th atom. A general atom appears in
+          exactly one group; a special-position atom shared between ``p`` ASUs appears
+          in ``p`` groups.
+        * multiplicity: optional ``(M,)`` per-construct-atom site multiplicity (1 for a
+          general position, ``m`` for an ``m``-fold special position). Occupancies fed
+          to Clipper are divided by it — the ASU convention the EDcalc special-position
+          correction expects (feed ``occ/m``; the C++ layer scales the density back up).
+          Default: all ones (all general positions).
+        * remaining keyword args (param_names, fobs, phi_fom, usage, kind, f_bulk,
+          target_map, target_origin, n_threads, threaded_density): forwarded verbatim
+          to the per-ASU :class:`XrayTargetState`.
+
+    A separate :class:`XrayTargetState` is built per ASU so each holds its own frozen
+    scale (independent samples); they share the same read-only reference data. The
+    gradient routing matches :class:`XrayTargetState` (columns in ``param_names``
+    order) at construct scale, so the :func:`chimerax.clipper.diff.targets.xray_loss`
+    torch adapter works unchanged with a construct-sized coordinate tensor.
+
+    NB: special-position **gradient** exactness (the interplay between the EDcalc
+    ``×multiplicity`` density correction and the uncorrected Agarwal gradient kernel)
+    is not yet numerically verified; general positions are the validated common case.
+    '''
+
+    def __init__(self, asu_elements, groups, *, multiplicity=None,
+                 param_names=('X', 'Y', 'Z'), fobs=None, phi_fom=None, usage=None,
+                 kind='amplitude', f_bulk=None, target_map=None, target_origin=None,
+                 n_threads=1, threaded_density=True):
+        self._groups = [numpy.ascontiguousarray(g, numpy.intp).reshape(-1)
+                        for g in groups]
+        if not self._groups:
+            raise ValueError('groups must contain at least one ASU')
+        self._n_asu = len(self._groups)
+        nslot = len(asu_elements)
+        for k, g in enumerate(self._groups):
+            if g.shape[0] != nslot:
+                raise ValueError(
+                    'groups[{}] has {} atoms but the ASU has {}'.format(
+                        k, g.shape[0], nslot))
+        # Construct atom count inferred from the grouping (every construct atom
+        # belongs to at least one ASU, since the construct IS the union of ASUs).
+        self._n_construct = 1 + int(max(int(g.max()) for g in self._groups))
+
+        # One evaluator per ASU: each keeps its own frozen scale for consistent
+        # value/gradient within a call and correct finite-difference freezing. They
+        # share the same read-only reference data objects (fobs/phi_fom/usage/…).
+        common = dict(param_names=param_names, fobs=fobs, phi_fom=phi_fom,
+                      usage=usage, kind=kind, f_bulk=f_bulk, target_map=target_map,
+                      target_origin=target_origin, n_threads=n_threads,
+                      threaded_density=threaded_density)
+        self._states = [XrayTargetState(asu_elements, **common)
+                        for _ in range(self._n_asu)]
+        self.param_names = self._states[0].param_names
+        self._occ_col = (self.param_names.index('Occ')
+                         if 'Occ' in self.param_names else None)
+        self._mult = (None if multiplicity is None
+                      else numpy.ascontiguousarray(multiplicity, numpy.double).reshape(-1))
+
+    @property
+    def n_atoms(self):
+        '''Number of atoms in the whole construct (the fold/unfold operates at
+        this scale; gradients are returned as ``(n_atoms, P)``).'''
+        return self._n_construct
+
+    @property
+    def n_asu(self):
+        return self._n_asu
+
+    @property
+    def asu_n_atoms(self):
+        return self._states[0].n_atoms
+
+    def value_and_gradient(self, coords, u_iso=None, u_aniso=None, occ=None,
+                           is_aniso=None, refresh_scale=False):
+        '''
+        Fold → evaluate per ASU → scatter-add unfold. Signature and column
+        convention match :class:`XrayTargetState`, but at construct scale: ``coords``
+        is ``(M, 3)`` over all ``M`` construct atoms and the returned gradient is
+        ``(M, P)`` with columns in :attr:`param_names` order. ``L = Σ_k T_k``.
+        '''
+        M = self._n_construct
+        coords = numpy.asarray(coords, numpy.double).reshape(M, 3)
+        u_iso_f = None if u_iso is None else numpy.asarray(u_iso, numpy.double).reshape(M)
+        u_aniso_f = None if u_aniso is None else numpy.asarray(u_aniso, numpy.double).reshape(M, 6)
+        is_aniso_f = None if is_aniso is None else numpy.asarray(is_aniso, numpy.uint8).reshape(M)
+        occ_f = (numpy.ones(M, numpy.double) if occ is None
+                 else numpy.asarray(occ, numpy.double).reshape(M))
+
+        P = len(self.param_names)
+        grad = numpy.zeros((M, P), numpy.double)
+        L_total = 0.0
+        for k, g in enumerate(self._groups):
+            occ_g = occ_f[g]
+            if self._mult is not None:
+                occ_g = occ_g / self._mult[g]
+            Lk, gk = self._states[k].value_and_gradient(
+                coords[g],
+                None if u_iso_f is None else u_iso_f[g],
+                None if u_aniso_f is None else u_aniso_f[g],
+                occ_g,
+                None if is_aniso_f is None else is_aniso_f[g],
+                refresh_scale=refresh_scale)
+            L_total += Lk
+            # occ was fed as occ/mult, so dL/docc_construct = (dL/docc_fed)/mult.
+            if self._occ_col is not None and self._mult is not None:
+                gk = numpy.array(gk, copy=True)
+                gk[:, self._occ_col] /= self._mult[g]
+            # Scatter-add: += (not =) so a special atom shared across ASUs
+            # accumulates its contribution from each group it appears in.
+            numpy.add.at(grad, g, gk)
+        return float(L_total), grad
+
+    def refresh_scaling(self, coords, u_iso=None, u_aniso=None, occ=None,
+                        is_aniso=None):
+        '''Re-fit every ASU's scale at the given construct parameters; returns
+        ``L = Σ_k T_k`` there.'''
+        L, _ = self.value_and_gradient(coords, u_iso, u_aniso, occ, is_aniso,
+                                       refresh_scale=True)
+        return L

@@ -590,9 +590,19 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
         ftype residual  = fc_scaled - m * fo;
         T += ftype(0.5) * residual * residual;
 
-        // d(h) = k·(m|Fo| − k|Fc|)·exp(iφ_calc):  consistent with ∂T/∂p = −Σ d·∂ρ/∂p
+        // d(h) = ε_c·k·(m|Fo| − k|Fc|)·exp(iφ_calc):  consistent with ∂T/∂p = −Σ d·∂ρ/∂p.
+        // The per-reflection multiplicity weight ε_c = hkl_class().epsilonc()
+        // (= 2·epsilon centric, epsilon acentric) compensates for fft_from spreading
+        // each ASU reflection over its orbit (symmetry mates + Friedel) via set_hkl:
+        // centric/axis reflections populate fewer distinct grid points, so their
+        // single-count coefficient must be boosted or the back-FFT gradient is the
+        // gradient of the WRONG target (T with centric reflections silently
+        // under-weighted). T itself stays the plain unweighted ASU sum above; only
+        // the driving coefficient carries ε_c, making this the exact gradient of T.
+        // ε_c = 1 for every reflection in P1 (unchanged there). See xray_gradient.cpp.
+        ftype eps_c = ih.hkl_class().epsilonc();
         std::complex<ftype32> coeff =
-            ftype32(k) * ftype32(m * fo - fc_scaled)
+            ftype32(eps_c * k) * ftype32(m * fo - fc_scaled)
             * std::polar(ftype32(1.0f), ftype32(phi_c));
         driving_hkl_.set_data(ih.hkl(), F_phi<ftype32>(coeff));
     }

@@ -64,9 +64,13 @@ enum class XrayTargetKind {
     raw_grad[j*P + c] += −Σ_x d(x) · ∂ρ_j(x)/∂p_c
 
   for every atom j and every selected parameter column c (0 ≤ c < P, P =
-  types.size()).  Coordinate gradients (X,Y,Z) flow through the same
-  AtomShapeFn::rho_grad call as the ADP/occupancy gradients, so requesting them
-  costs nothing extra.
+  types.size()).  Clipper works on the minimal ASU and reconstructs the full P1
+  density from these atoms internally, so the integral runs over each ASU atom's
+  own box exactly once — the symmetry expansion is Clipper's job (fft_from/fft_to),
+  not this kernel's, and any reciprocal per-reflection symmetry weighting belongs
+  in the driving coefficients that produced d(x).  Coordinate gradients (X,Y,Z)
+  flow through the same AtomShapeFn::rho_grad call as the ADP/occupancy gradients,
+  so requesting them costs nothing extra.
 
   Per atom, only the TYPEs that are meaningful for that atom are requested from
   rho_grad — an isotropic atom yields {X,Y,Z,Uiso,Occ} and an anisotropic atom

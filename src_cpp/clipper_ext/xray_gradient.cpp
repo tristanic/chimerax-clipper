@@ -60,6 +60,13 @@ void accumulate_agarwal_gradient(
     const int P       = (int)types.size();
     if (P == 0 || n_atoms == 0) return;
 
+    // Clipper works on the minimal ASU: it reconstructs the full P1 density from
+    // these atoms internally, so the gradient integrates the driving density over
+    // each ASU atom's own box exactly once — no explicit symmetry-mate summation
+    // (that would double-count what Clipper's fft_from/fft_to already expand). The
+    // reciprocal per-reflection symmetry weighting is applied in the driving
+    // coefficients (see target_and_driving_reciprocal), not here.
+    //
     // Split the requested columns into the subset valid for an isotropic atom
     // ({X,Y,Z,Uiso,Occ}: enum value < U11) and the subset valid for an
     // anisotropic atom ({X,Y,Z,Occ,U11..U23}: everything except Uiso).  For each
@@ -345,6 +352,22 @@ struct XrayGradientEvaluator::Impl {
         return !(usage[ih].missing() || usage[ih].flag() == 0);
     }
 
+    // Per-reflection symmetry-multiplicity weight applied to the driving
+    // coefficient (NOT the target). fft_from spreads each ASU reflection over its
+    // orbit (num_primops mates + Friedel) via set_hkl; centric reflections (whose
+    // Friedel mate coincides with a symmetry mate) and axis reflections (epsilon>1)
+    // populate fewer distinct grid points, so their single-count driving
+    // coefficient must be boosted to keep the FFT-assembled gradient equal to the
+    // exact gradient of the ASU-summed target. epsilonc() = 2*epsilon (centric),
+    // epsilon (acentric) is exactly that factor — it is 1 for every reflection in
+    // P1 (so P1 is unchanged) and reproduces P-1's empirically-verified factor 2.
+    // Finite-difference validated to <1% for both target kinds across
+    // P1/P-1/P2/P2_1/P2_12_12_1/C2/C2/c.
+    static double eps_weight(const HKL_info::HKL_reference_index& ih)
+    {
+        return ih.hkl_class().epsilonc();
+    }
+
     // Fit the per-reflection amplitude scale s(h) (Fc->Fo) with the codebase's
     // robust anisotropic-Gaussian x isotropic-spline scaling (scale_fcalc_to_fobs,
     // all reflections -> deterministic, so gradients are reproducible). fcalc_hkl
@@ -384,6 +407,9 @@ struct XrayGradientEvaluator::Impl {
             const double sf  = fobs[ih].sigf();
             if (sf <= 0.0) { driving_hkl.set_data(ih.hkl(), F_phi<ftype32>()); continue; }
             const double s = refl_scale_[ih.index()];
+            // Symmetry-multiplicity weight for the driving coefficient only; the
+            // target T remains the plain ASU sum (each unique reflection once).
+            const double ew = eps_weight(ih);
 
             double coeff_mag;
             if (kind == XrayTargetKind::AmplitudeLS) {
@@ -391,8 +417,8 @@ struct XrayGradientEvaluator::Impl {
                 const double w = 1.0 / (sf * sf);
                 const double resid = s * fc - m * fo;
                 T += 0.5 * w * resid * resid;
-                // G(h) = s(h)·w·(m|Fo| − s(h)|Fc|)·exp(iφc)
-                coeff_mag = s * w * (m * fo - s * fc);
+                // G(h) = ε_c·s(h)·w·(m|Fo| − s(h)|Fc|)·exp(iφc)
+                coeff_mag = ew * s * w * (m * fo - s * fc);
             } else {
                 const double Io   = fo * fo;
                 const double sigI = 2.0 * fo * sf;
@@ -402,8 +428,8 @@ struct XrayGradientEvaluator::Impl {
                 const double fc2 = fc * fc;
                 const double resid = s2 * fc2 - Io;
                 T += 0.5 * w * resid * resid;
-                // G(h) = 2·s²·w·(Io − s²|Fc|²)·|Fc|·exp(iφc)
-                coeff_mag = 2.0 * s2 * w * (Io - s2 * fc2) * fc;
+                // G(h) = ε_c·2·s²·w·(Io − s²|Fc|²)·|Fc|·exp(iφc)
+                coeff_mag = ew * 2.0 * s2 * w * (Io - s2 * fc2) * fc;
             }
             std::complex<ftype32> coeff =
                 ftype32(coeff_mag) * std::polar(ftype32(1.0f), ftype32(phi));
@@ -488,21 +514,23 @@ struct XrayGradientEvaluator::Impl {
 
         // Reciprocal route: the gradient is assembled by back-FFT (fft_from) of the
         // reciprocal residual, whose Clipper normalization differs from the direct
-        // reciprocal-space target T by the geometric factor n_sym·V²/(2·N_grid):
+        // reciprocal-space target T by the geometric factor V²/(2·N_grid):
         //   V/N   — real-space grid quadrature,
         //   1/V   — Clipper's fft_from convention (extra power of V),
         //   ½     — Friedel pairing (the ASU sum counts each |F| once, the real FFT
-        //           distributes over ±h),
-        //   n_sym — the ASU reflection sum under-counts the full-sphere symmetry
-        //           mates the FFT expands over (verified: P-1 ratio = 2 = n_sym).
-        // The value T is the reflection-sum least-squares as defined; its true
-        // gradient is this factor times the raw Agarwal sum. The real-space route
-        // needs no such factor. Validated by finite difference to <1e-3 across all
-        // parameters, both target kinds, P1/P-1/triclinic.
+        //           distributes over ±h).
+        // This factor is spacegroup-INDEPENDENT: the per-reflection symmetry
+        // multiplicity is carried exactly by the epsilonc() weight on each driving
+        // coefficient (see eps_weight / target_and_driving_reciprocal), so no n_sym
+        // appears here (a former n_sym factor was a wrong stand-in for it). The value
+        // T is the ASU reflection-sum least-squares as defined; its true gradient is
+        // this factor times the (epsilonc-weighted) back-FFT Agarwal sum over the one
+        // ASU. The real-space route needs no such factor. Validated by finite
+        // difference to <1% for both target kinds across
+        // P1/P-1/P2/P2_1/P2_12_12_1/C2/C2/c.
         if (!realspace) {
             const double V     = cell.volume();
-            const double nsym  = (double)density_xmap.spacegroup().num_symops();
-            const double grad_scale = nsym * V * V / (2.0 * (double)grid_sampling.size());
+            const double grad_scale = V * V / (2.0 * (double)grid_sampling.size());
             for (double& g : raw_grad) g *= grad_scale;
         }
 
