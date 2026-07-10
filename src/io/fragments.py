@@ -106,10 +106,11 @@ def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=
         return None
 
     import numpy
-    from ..clipper_python import Xmap_double
+    from ..clipper_util import site_multiplicities
     fracs = _frac_coords(atoms, cell)
-    xm = Xmap_double(spacegroup, cell, grid)
-    special = {a: (xm.multiplicity(fracs[a].coord_grid(grid)) > 1) for a in atoms}
+    mults = site_multiplicities(numpy.array([a.coord for a in atoms], float),
+                                cell, spacegroup, grid)
+    special = {a: (int(mults[i]) > 1) for i, a in enumerate(atoms)}
     by_name = {a.name: a for a in atoms}
 
     # CIF-declared operators and the bonds that cross them (both optional).

@@ -223,9 +223,10 @@ The **mode** keyword selects:
   occupancy). The added atoms are excluded from the live structure-factor
   calculation and do not follow live edits of their source atoms.
 
-The command refuses to run on a model that already has a live small-molecule map
-(splitting would invalidate the map's atom index); close and reopen with
-``clipper smallmol ... fragments <mode>`` instead.
+The command may be run whether or not the model already has a live small-molecule
+map: the map rebuilds its structure factors from ``model.atoms`` on each recompute,
+so it simply reflects the renamed (and, in ``complete`` mode, added) atoms on its
+next update.
 
 .. _`smallmol_examples`:
 
@@ -368,19 +369,26 @@ cell and spacegroup for models whose own metadata (PDB ``CRYST1`` / mmCIF header
 does not carry them; no maps are generated. Models with no usable crystallographic
 symmetry are skipped with a warning.
 
-By default (**pruneSpecialPositions true**) a symmetry copy of a small,
-self-contained molecule (ion, water, small solvent) that maps back onto a molecule
-already present - i.e. one sitting on a special position - is dropped as a
-redundant duplicate. Larger fragments and anything belonging to a polymer chain are
-always kept, since coincidence there is genuine crystallographic interface contact.
-Set **pruneSpecialPositions false** to realise every copy verbatim.
+By default (**pruneSpecialPositions true**) a fragment copy that maps back exactly
+onto a molecule already present - i.e. one sitting on a special position - is
+dropped as a redundant duplicate. Which atoms lie on a special position is
+determined exactly from Clipper's crystallographic site multiplicity (not a
+distance/size heuristic), so a metal on a crystallographic axis in a protein is
+handled just as cleanly as an ion or water in a small-molecule cell. Dropping
+exactly the redundant copies is also what makes the occupancy correct after an
+inverse collapse (below). Set **pruneSpecialPositions false** to realise every copy
+verbatim. Molecules split across a special position should first be completed with
+:ref:`fragments` ``complete`` (also needed for sensible connectivity); the command
+warns if it detects an un-completed one.
 
-Because every copy shares the original's chain IDs, merging them reassigns those
-IDs, which ChimeraX normally reports one line per chain per copy. That is
-suppressed by default; pass **logChainRemapping true** to see the reassignments
-(useful when the exact chain-ID mapping matters). For large expansions - e.g.
-packing a box with a small-molecule crystal - leaving it suppressed avoids
-thousands of log lines.
+**Invertible expansion.** The new model carries a ``clipper_sym_expansion`` record
+mapping each symmetry operator to the chain IDs it produced (with its inverse and
+``n_asu``). Every copy is given unique chain IDs, so nothing is renamed on merge and
+the mapping is exact. From the Python layer this lets a caller fold the expanded
+model back onto the original ASU - ``from chimerax.clipper import collapse_to_asu``
+applies each operator's inverse and sets occupancy ``1/n_asu`` - which is how a full
+P1 box can be relaxed (e.g. by an MD engine) and then collapsed to a single ASU for a
+structure-factor calculation.
 
 The new model is placed exactly where the crystallographic copies sit relative
 to the original, so - unlike the general-purpose core symmetry tools - the view
@@ -397,7 +405,6 @@ Syntax: clipper unitcells [*structures*]
 [**cells** *n,m,o*] [**box** *x,y,z*]
 [**name** *string*] [**focus** *true/false* (false)]
 [**reflFile** *filename*] [**pruneSpecialPositions** *true/false* (true)]
-[**logChainRemapping** *true/false* (false)]
 
 Generate one or more complete crystallographic unit cells as a single new,
 real atomic model. Each unit cell is the model's ASU replicated by every
@@ -416,14 +423,14 @@ The size of the block is set by exactly one of:
   cell axis.)
 * *neither* - a single unit cell.
 
-**reflFile**, **name**, **focus**, **pruneSpecialPositions** and
-**logChainRemapping** behave exactly as for :ref:`symcopies`; in particular,
-redundant special-position copies of small self-contained molecules (ions/water)
-are pruned by default, and the per-chain "remapping" messages are suppressed
-unless **logChainRemapping true** is given - worth remembering when packing a
-box with many copies of a small-molecule crystal. Models with
-no usable crystallographic symmetry are skipped with a warning (a single unit
-cell of a ``P 1`` structure is just the input model, so nothing is generated).
+**reflFile**, **name**, **focus** and **pruneSpecialPositions** behave exactly as
+for :ref:`symcopies`; in particular, special-position copies are pruned by default
+using exact site multiplicity, and the result carries the same invertible
+``clipper_sym_expansion`` record (so a packed box can be collapsed back to the ASU
+with ``collapse_to_asu``). Models with no usable crystallographic symmetry are
+skipped with a warning (a single unit cell of a ``P 1`` structure is just the input
+model, so nothing is generated). For an MD-ready box, complete any
+special-position-split molecules first with :ref:`fragments` ``complete``.
 
 .. _`bsharp`:
 

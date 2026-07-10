@@ -116,12 +116,15 @@ from .symmetry import (
 # GUI-free crystallographic symmetry realisation (usable headless / by ISOLDE).
 from .sym_realize import (
     CrystalSymmetry,
+    SymmetryExpansion,
     crystal_symmetry_for,
     realize_symmetry_copies,
+    collapse_to_asu,
     sym_select_within,
     places_from_matrices,
     unit_cell_places,
     )
+from .clipper_util import site_multiplicities
 
 
 from chimerax.core.toolshed import BundleAPI

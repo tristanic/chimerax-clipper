@@ -511,7 +511,7 @@ def split_fragments_cmd(session, structures, mode='rename'):
     across a special position.
     '''
     from chimerax.core.errors import UserError
-    from .symmetry import crystal_symmetry_from_cif_file, get_map_mgr
+    from .symmetry import crystal_symmetry_from_cif_file
     from .io.fragments import split_fragments
     from .io.small_molecule import _clipper_frame_coords
     if structures is None or not len(structures):
@@ -524,14 +524,10 @@ def split_fragments_cmd(session, structures, mode='rename'):
             session.logger.warning('(CLIPPER) %s is not a small-molecule (corecif) '
                 'model; skipping fragment split.' % m)
             continue
-        # Re-splitting a model that already carries a live small-molecule map would
-        # invalidate that map's positional scaffold->model index; refuse rather than
-        # silently corrupt it.
-        mmgr = get_map_mgr(m)
-        if mmgr is not None and any(getattr(xs, '_small_molecule_data', None) is not None
-                                    for xs in mmgr.xmapsets):
-            raise UserError('%s already has a live small-molecule map. Close it and '
-                'reopen with "clipper smallmol ... fragments %s" to split it.' % (m, mode))
+        # A live small-molecule map builds its structure-factor atom list fresh from
+        # model.atoms on every recompute (no frozen scaffold), so splitting - even
+        # 'complete', which adds atoms - is safe while a map is open: the map simply
+        # reflects the new atoms/residues on its next update.
         path = getattr(m, 'filename', None)
         if path is None:
             session.logger.warning('(CLIPPER) %s has no source file; cannot recover '
@@ -547,9 +543,15 @@ def split_fragments_cmd(session, structures, mode='rename'):
     return results
 
 
+def _site_multiplicities_for(sym, structure):
+    '''Per-atom site multiplicity of a structure's ASU, for special-position dedup.'''
+    from .clipper_util import site_multiplicities
+    return site_multiplicities(structure.atoms.coords, sym.cell, sym.spacegroup,
+        sym.grid)
+
+
 def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
-        name=None, focus=False, refl_file=None, prune_special_positions=True,
-        log_chain_remapping=False):
+        name=None, focus=False, refl_file=None, prune_special_positions=True):
     '''
     Create real, whole-model copies of crystallographic symmetry mates and merge
     them (together with the original ASU) into a single new model. Works both in
@@ -567,8 +569,10 @@ def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
 
     `refl_file` (a .mtz/.cif structure-factor file) supplies the cell and
     spacegroup for models whose own metadata lacks them. When
-    `prune_special_positions` is True (default), redundant special-position copies
-    of small self-contained molecules (ions/water) are removed.
+    `prune_special_positions` is True (default), redundant copies of atoms sitting
+    on special positions are removed using exact Clipper site multiplicity. The
+    result carries a `clipper_sym_expansion` recording which operator produced
+    which chains, so the expansion can be inverted (see clipper.collapse_to_asu).
     '''
     from .symmetry import get_symmetry_handler, get_all_symmetry_handlers
     from .sym_realize import crystal_symmetry_for, realize_symmetry_copies
@@ -621,9 +625,9 @@ def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
             session.logger.warning('No symmetry copies {} for model {}.'.format(
                 descr, s.id_string))
             continue
+        mults = _site_multiplicities_for(sym, s) if prune_special_positions else None
         combined = realize_symmetry_copies(session, s, places, name=name,
-            prune_special_positions=prune_special_positions,
-            log_chain_remapping=log_chain_remapping)
+            prune_special_positions=prune_special_positions, multiplicities=mults)
         if combined is None:
             session.logger.warning('All symmetry copies {} for model {} were '
                 'redundant special-position duplicates; nothing added.'.format(
@@ -640,8 +644,7 @@ def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
 
 
 def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
-        focus=False, refl_file=None, prune_special_positions=True,
-        log_chain_remapping=False):
+        focus=False, refl_file=None, prune_special_positions=True):
     '''
     Generate one or more whole crystallographic unit cells as a single new,
     real atomic model. Each unit cell is the model's ASU replicated by every
@@ -656,7 +659,10 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
     If neither is given, a single unit cell is generated.
 
     Runs headless as well as in the GUI. `refl_file`, `name`,
-    `prune_special_positions` and `focus` behave as for `clipper symcopies`.
+    `prune_special_positions` and `focus` behave as for `clipper symcopies`, and
+    the result carries an invertible `clipper_sym_expansion` (see
+    clipper.collapse_to_asu) - so a P1 box can be relaxed and folded back to the
+    ASU for structure-factor work.
     '''
     from math import ceil
     from .symmetry import get_all_symmetry_handlers
@@ -700,9 +706,9 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
         cell_name = name
         if cell_name is None:
             cell_name = '{} unit cells ({}x{}x{})'.format(s.name, na, nb, nc)
+        mults = _site_multiplicities_for(sym, s) if prune_special_positions else None
         combined = realize_symmetry_copies(session, s, places, name=cell_name,
-            prune_special_positions=prune_special_positions,
-            log_chain_remapping=log_chain_remapping)
+            prune_special_positions=prune_special_positions, multiplicities=mults)
         if combined is None:
             session.logger.warning('No atoms survived generating unit cells for '
                 '{}.'.format(s.id_string))
@@ -901,7 +907,6 @@ def register_clipper_cmd(logger):
             ('focus', BoolArg),
             ('refl_file', OpenFileNameArg),
             ('prune_special_positions', BoolArg),
-            ('log_chain_remapping', BoolArg),
         ],
         synopsis=('Make real, whole-model copies of crystallographic symmetry '
             'mates and combine them with the original ASU into a single new '
@@ -925,7 +930,6 @@ def register_clipper_cmd(logger):
             ('focus', BoolArg),
             ('refl_file', OpenFileNameArg),
             ('prune_special_positions', BoolArg),
-            ('log_chain_remapping', BoolArg),
         ],
         synopsis=('Generate whole crystallographic unit cells as a single new '
             'model. With "cells n,m,o", make an n x m x o block of unit cells; '
