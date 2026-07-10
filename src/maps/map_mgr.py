@@ -200,6 +200,16 @@ class MapMgr(Model):
         return self._mgr
 
     @property
+    def radiation_type(self):
+        '''Scattering regime ('xray'/'electron') of the crystallographic dataset
+        managed here, or None if there is no crystallographic (live) xmapset.'''
+        for xs in self.xmapsets:
+            rt = getattr(xs, 'radiation_type', None)
+            if rt is not None:
+                return rt
+        return None
+
+    @property
     def box_center(self):
         return self.crystal_mgr.spotlight_center
 
@@ -283,16 +293,30 @@ class MapMgr(Model):
             self._reapply_zone()
 
     def add_xmapset_from_mtz(self, mtzfile, oversampling_rate=None,
-            auto_choose_reflection_data=True, auto_choose_free_flags=True):
+            auto_choose_reflection_data=True, auto_choose_free_flags=True,
+            radiation='auto'):
         if oversampling_rate is None:
             oversampling_rate = self._default_oversampling_rate
         return self.add_xmapset_from_file(mtzfile, oversampling_rate,
-            auto_choose_reflection_data, auto_choose_free_flags)
+            auto_choose_reflection_data, auto_choose_free_flags,
+            radiation=radiation)
 
     def add_xmapset_from_file(self, sffile, oversampling_rate=None,
             auto_choose_reflection_data=True, auto_choose_free_flags=True,
             free_flag_label=None, free_flags_file=None,
-            fsigf_name=None, map_columns=None, browse=False):
+            fsigf_name=None, map_columns=None, browse=False, radiation='auto'):
+        # Resolve 'auto' here, the point every entry funnels through (the `clipper
+        # open` command, drag-and-drop, and core ChimeraX's `open <id>
+        # structureFactors true` fetch, which calls this method directly). 'auto'
+        # reads the associated model's mmCIF _exptl.method, so electron-diffraction
+        # entries get electron scattering factors without any extra argument.
+        if str(radiation).lower() not in ('xray', 'electron'):
+            from ..cmd import _resolve_macro_radiation
+            radiation = _resolve_macro_radiation(radiation, sffile, self.structure,
+                logger=self.session.logger)
+        if radiation == 'electron':
+            self.session.logger.info('(CLIPPER) Using electron scattering factors '
+                '(micro-ED / 3D-ED) for structure-factor calculation and R-factors.')
         if oversampling_rate is None:
             oversampling_rate = self._default_oversampling_rate
         from ..clipper_mtz import ReflectionDataContainer
@@ -348,7 +372,8 @@ class MapMgr(Model):
                 fsigf_name = selection.get('fsigf_name', fsigf_name)
                 map_columns = selection.get('map_columns', map_columns)
         from .xmapset import XmapSet
-        return XmapSet(self, mtzdata, fsigf_name=fsigf_name, map_columns=map_columns)
+        return XmapSet(self, mtzdata, fsigf_name=fsigf_name, map_columns=map_columns,
+            radiation=radiation)
 
     def symmetry_matches(self, xtal_data):
         return (

@@ -104,7 +104,8 @@ class XmapSet(MapSetBase):
         show_r_factors=True,
         auto_add_to_session=True,
         small_molecule_data=None,
-        map_columns=None):
+        map_columns=None,
+        radiation='xray'):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -173,6 +174,11 @@ class XmapSet(MapSetBase):
 
         xm = self._live_xmap_mgr = None
         self._small_molecule_data = small_molecule_data
+        # X-ray (default) vs electron scattering factors for the live Fcalc. For
+        # small-molecule maps radiation travels inside small_molecule_data; for the
+        # macromolecular path it is applied to the C++ Xtal_thread_mgr (see
+        # _launch_live_xmap_mgr).
+        self._radiation = radiation
         self._live_update = False
         self._recalc_needed = False
         self._model_changes_handler = None
@@ -207,10 +213,10 @@ class XmapSet(MapSetBase):
 
     def _init_small_molecule_maps(self):
         '''Set up live small-molecule maps from self._small_molecule_data (cell,
-        spacegroup, grid, hklinfo, resolution, scaffold, fobs amplitudes, the live
-        structure and a scaffold->model index map). Uses SmallMoleculeXmapMgr (FFT
-        structure factors, no bulk solvent) in place of the C++ Xtal_thread_mgr, and
-        reuses the standard box/spotlight + live-recalc machinery.'''
+        spacegroup, grid, hklinfo, resolution, fobs amplitudes and the live structure).
+        Uses SmallMoleculeXmapMgr (FFT structure factors, no bulk solvent) in place of
+        the C++ Xtal_thread_mgr, and reuses the standard box/spotlight + live-recalc
+        machinery. The manager reads per-atom SF inputs live from the structure.'''
         smd = self._small_molecule_data
         from .. import Unit_Cell, atom_list_from_sel
         alist = atom_list_from_sel(self.structure.atoms)
@@ -222,9 +228,8 @@ class XmapSet(MapSetBase):
         from .small_molecule_map import SmallMoleculeXmapMgr
         self._live_xmap_mgr = SmallMoleculeXmapMgr(
             smd['hklinfo'], smd['cell'], smd['spacegroup'], smd['grid'],
-            smd['scaffold'], smd['fobs'],
-            structure=smd.get('structure'),
-            scaffold_to_model=smd.get('scaffold_to_model'))
+            smd['fobs'], smd['structure'],
+            radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
         self.add_live_xmap('2mFo-DFc', is_difference_map=False)
         diff = self.add_live_xmap('mFo-DFc', is_difference_map=True)
@@ -521,11 +526,18 @@ class XmapSet(MapSetBase):
         xm = self._live_xmap_mgr = Xtal_thread_mgr(self.hklinfo,
             crystal_data.free_flags.data, self.grid, f_sigf,
             num_threads=available_cores())
+        # Select the scattering-factor table before the first (threaded) recalc.
+        # Electron factors give an electrostatic-potential map + kinematical R-factor
+        # for micro-ED / 3D-ED; X-ray (default) is byte-identical to before.
+        radiation = getattr(self, '_radiation', 'xray')
+        from ..clipper_python import AtomShapeFn
+        xm.radiation = (AtomShapeFn.ELECTRON if str(radiation).lower() == 'electron'
+                        else AtomShapeFn.XRAY)
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms
         from ..scattering import ionic_scattering_names
-        xm.init(atoms.pointers, ionic_scattering_names(atoms))
+        xm.init(atoms.pointers, ionic_scattering_names(atoms, radiation=radiation))
         end_time = time()
         print(f'Launching live xmap mgr took {end_time-start_time} seconds.')
 
@@ -826,8 +838,10 @@ class XmapSet(MapSetBase):
         # ca = self._clipper_atoms = atom_list_from_sel(atoms)
         # Ionic scattering factors for any monatomic ions; recomputed here (rather
         # than cached) so it tracks ions added/removed during modelling. The
-        # per-atom species aligns by index with atoms.pointers.
-        elements = ionic_scattering_names(atoms)
+        # per-atom species aligns by index with atoms.pointers. Uses the same
+        # radiation as the manager so per-frame recalcs stay on the electron table
+        # for micro-ED (otherwise they would silently revert to X-ray).
+        elements = ionic_scattering_names(atoms, radiation=getattr(self, '_radiation', 'xray'))
         delayed_reaction(self.session.triggers, 'new frame',
             xm.recalculate_all_maps, [atoms.pointers, elements],
             xm.ready,
@@ -922,6 +936,12 @@ class XmapSet(MapSetBase):
             self._r_factor_label.delete()
             self._r_factor_label = None
 
+    @property
+    def radiation_type(self):
+        '''Scattering regime of this crystal dataset: 'xray' or 'electron'
+        (None only if somehow unset). Consumed by child XmapHandler_Live.'''
+        return getattr(self, '_radiation', None)
+
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
         data = {
@@ -929,6 +949,7 @@ class XmapSet(MapSetBase):
             'model state': Model.take_snapshot(self, session, flags),
             'F/sigF': self._f_sigf_data_name,
             'live update': self.live_update,
+            'radiation': getattr(self, '_radiation', 'xray'),
         }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
@@ -943,6 +964,10 @@ class XmapSet(MapSetBase):
         xmapset = XmapSet(cm, auto_add_to_session=False)
         Model.set_state_from_snapshot(xmapset, session, data['model state'])
         xmapset._f_sigf_data_name = data['F/sigF']
+        # v2 sessions lack 'radiation'; default to X-ray so old sessions restore
+        # byte-identically. Set before _end_restore_session_cb relaunches the live
+        # manager, which reads _radiation to pick the scattering-factor table.
+        xmapset._radiation = data.get('radiation', 'xray')
         xmapset._session_restore_live_update = data['live update']
         session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
         return xmapset
@@ -1090,6 +1115,13 @@ class XmapHandler_Live(XmapHandlerBase):
     a box around the centre of rotation, and static display of a given region.
     '''
     SESSION_SAVE=True
+
+    @property
+    def radiation_type(self):
+        # Live crystallographic map: report the scattering regime of the owning
+        # XmapSet ('xray'/'electron'). Overrides the None default on MapHandlerBase.
+        return getattr(self.mapset, 'radiation_type', None)
+
     def __init__(self, mapset, name,
         is_difference_map=False, session_restore=False):
         '''

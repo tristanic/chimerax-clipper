@@ -26,6 +26,7 @@
 
 #include <clipper/clipper.h>
 #include <clipper/clipper-contrib.h>
+#include <clipper/core/atomsf.h>   // for AtomShapeFn::RADIATION (X-ray vs electron)
 
 #include "imex.h"
 
@@ -60,7 +61,13 @@ public:
     void set_n_threads(size_t n) { nthreads=n; }
     //! If called, then the bulk solvent scale and B-factor will be re-optimised on the next run.
     void set_bulk_solvent_optimization_needed() { bulk_solvent_optimization_needed_ = true; }
+    //! Select the scattering-factor table (X-ray vs electron for micro-ED). Read by
+    //! the EDcalc built in each operator() call, so it must be set before the first
+    //! (threaded) structure-factor calculation; it is never mutated concurrently.
+    void set_radiation(AtomShapeFn::RADIATION r) { radiation_ = r; }
+    AtomShapeFn::RADIATION radiation() const { return radiation_; }
 private:
+    AtomShapeFn::RADIATION radiation_ = AtomShapeFn::XRAY;
     bool bulk_solvent_optimization_needed_ = true;
     //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
     //! from the stored (bulkscl, bulk_u) rather than cold-starting.

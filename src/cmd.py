@@ -21,20 +21,81 @@
 
 from chimerax.core.errors import UserError
 
+def _radiation_from_structure(structure_model):
+    '''Radiation implied by the model's mmCIF _exptl.method, or None.
+
+    Deposited PDB entries record the experiment as "ELECTRON CRYSTALLOGRAPHY" vs
+    "X-RAY DIFFRACTION" in _exptl.method - the most reliable radiation signal, and
+    the natural one for `open <pdbid> structureFactors true`. Uses ChimeraX's own
+    metadata accessor rather than re-parsing the header.'''
+    if structure_model is None:
+        return None
+    try:
+        from chimerax.mmcif import get_mmcif_tables_from_metadata
+        tbl = get_mmcif_tables_from_metadata(structure_model, ['exptl'])[0]
+        if not tbl:
+            return None
+        method = tbl.fields(['method'], allow_missing_fields=True)[0][0]
+    except Exception:
+        return None
+    if method and 'electron' in method.lower():
+        return 'electron'
+    if method and 'x-ray' in method.lower():
+        return 'xray'
+    return None
+
+
+def _resolve_macro_radiation(radiation, path, structure_model=None, logger=None):
+    '''Resolve the macromolecular `radiation` argument to 'xray' or 'electron'.
+
+    Explicit choices pass through. 'auto' consults, in order of reliability, the
+    model's mmCIF _exptl.method, then a positive electron signal from a
+    structure-factor CIF's _diffrn_radiation_probe. When nothing declares the
+    experiment (e.g. a PDB-format model with no mmCIF metadata, or an mmCIF with
+    no _exptl loop) it defaults to X-ray and, if a logger is given, warns - so a
+    silent wrong default on electron data is at least visible and overridable.'''
+    r = (radiation or 'auto').lower()
+    if r in ('xray', 'electron'):
+        return r
+    # Model _exptl.method is authoritative when present and recognised.
+    from_model = _radiation_from_structure(structure_model)
+    if from_model is not None:
+        return from_model
+    # Model didn't declare a recognised experiment; trust only a *positive*
+    # electron probe from a structure-factor CIF (its 'xray' is a bare default).
+    if str(path).lower().endswith('.cif'):
+        try:
+            from .io.small_molecule import _radiation_from_cif
+            if _radiation_from_cif(path) == 'electron':
+                return 'electron'
+        except Exception:
+            pass
+    if logger is not None:
+        logger.warning(
+            '(CLIPPER) Could not determine the experiment type from the model '
+            'metadata (no mmCIF _exptl.method); defaulting to X-ray scattering '
+            'factors. If this is electron-diffraction (micro-ED / 3D-ED) data, '
+            're-open with "radiation electron".')
+    return 'xray'
+
+
 def open_structure_factors(session, path, structure_model = None,
         over_sampling=2.0, always_raise_errors=True, auto_free_flags=True,
         browse=False, fsigf=None, map_columns=None, free_flags=None,
-        free_flags_file=None):
+        free_flags_file=None, radiation='auto'):
     if structure_model is None:
         raise UserError('Reflection data must be associated with an atomic '
             'structure, provided via the structure_model argument.')
     from .symmetry import get_map_mgr
     mmgr = get_map_mgr(structure_model, create=True)
     try:
+        # radiation ('auto'|'xray'|'electron') is resolved centrally in
+        # add_xmapset_from_file ('auto' reads the model's mmCIF _exptl.method).
         xmapset = mmgr.add_xmapset_from_file(path, oversampling_rate=over_sampling,
             auto_choose_free_flags=auto_free_flags,
             free_flag_label=free_flags, free_flags_file=free_flags_file,
-            fsigf_name=fsigf, map_columns=map_columns, browse=browse)
+            fsigf_name=fsigf, map_columns=map_columns, browse=browse,
+            radiation=radiation)
         log_str = 'Opened crystallographic dataset from {}\n'.format(path)
         if xmapset.experimental_data:
             log_str += 'Found experimental reflection data: \n'
@@ -61,11 +122,11 @@ def open_structure_factors(session, path, structure_model = None,
 def open_structure_factors_and_add_to_session(session, path, structure_model=None,
         over_sampling=2.0, always_raise_errors=False, auto_free_flags=True,
         browse=False, fsigf=None, map_columns=None, free_flags=None,
-        free_flags_file=None):
+        free_flags_file=None, radiation='auto'):
     models, log_str = open_structure_factors(session, path, structure_model,
         over_sampling, always_raise_errors, auto_free_flags,
         browse=browse, fsigf=fsigf, map_columns=map_columns,
-        free_flags=free_flags, free_flags_file=free_flags_file)
+        free_flags=free_flags, free_flags_file=free_flags_file, radiation=radiation)
     if models is not None:
         session.models.add(models)
 
@@ -132,6 +193,19 @@ def associate_volumes(session, volumes, to_model=None):
         mgr.nxmapset.add_nxmap_handler_from_volume(v)
     if mgr.crystal_mgr not in session.models.list():
         session.models.add([mgr.crystal_mgr])
+
+def discard_symmetry(session, models):
+    '''Discard a model's crystallographic symmetry (revert to a P1 box) and
+    rewrite its symmetry metadata so this is preserved across sessions. Useful
+    when a model's original symmetry is irrelevant to its current use (e.g. an
+    old crystal structure reused as a starting model in a cryo-EM map).'''
+    from chimerax.clipper.symmetry import get_symmetry_handler, SymmetryManager
+    for m in models:
+        sh = m if isinstance(m, SymmetryManager) else get_symmetry_handler(m)
+        if sh is None:
+            session.logger.warning('No Clipper symmetry manager for {}; skipping.'.format(m))
+            continue
+        sh.discard_model_symmetry()
 
 def isolate(session, atoms,
         surround_distance=0,
@@ -382,18 +456,26 @@ def set_oversampling(session, oversampling, models=None):
     for mm in mmgrs:
         mm.set_oversampling_rate(oversampling)
 
-def open_small_molecule(session, path, hkl=None):
+def open_small_molecule(session, path, hkl=None, radiation='auto', fragments='rename'):
     '''
     Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
     its unit cell, crystallographic symmetry, and - when reflections are available
     (an `hkl` file, or a sibling .hkl) - live 2mFo-DFc / mFo-DFc electron-density
     maps that update as the model changes.
+
+    radiation: 'xray', 'electron' (micro-ED / 3D-ED), or 'auto' (default; read from
+    the CIF _diffrn_radiation_probe) - selects the scattering-factor table.
+
+    fragments: 'off', 'rename' (default) or 'complete' - split the asymmetric unit
+    into named covalent-fragment residues (see the `clipper fragments` command).
     '''
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, path, hkl_path=hkl)
+    return show_cod_crystal(session, path, hkl_path=hkl, radiation=radiation,
+                            fragments=fragments)
 
 
-def fetch_cod_crystal(session, cod_id, ignore_cache=False):
+def fetch_cod_crystal(session, cod_id, ignore_cache=False, radiation='auto',
+                      fragments='rename'):
     '''
     Fetch a structure (and, if deposited, its reflections) from the Crystallography
     Open Database by numeric COD ID, and open it as a live crystal structure.
@@ -414,7 +496,55 @@ def fetch_cod_crystal(session, cod_id, ignore_cache=False):
         session.logger.info('(CLIPPER) No reflections deposited for COD %s; '
             'showing model + symmetry only.' % cod_id)
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, cif, hkl_path=hkl)
+    return show_cod_crystal(session, cif, hkl_path=hkl, radiation=radiation,
+                            fragments=fragments)
+
+
+def split_fragments_cmd(session, structures, mode='rename'):
+    '''
+    Split each (small-molecule / corecif) structure's asymmetric unit into named
+    covalent-fragment residues: CCD codes for the common simple species (water,
+    monatomic ions, small inorganic ions) and LIG01, LIG02, ... otherwise.
+
+    mode 'off' leaves the model unchanged; 'rename' (default) splits and names;
+    'complete' also adds the symmetry-generated atoms that finish molecules split
+    across a special position.
+    '''
+    from chimerax.core.errors import UserError
+    from .symmetry import crystal_symmetry_from_cif_file, get_map_mgr
+    from .io.fragments import split_fragments
+    from .io.small_molecule import _clipper_frame_coords
+    if structures is None or not len(structures):
+        raise UserError('No structures specified.')
+    if mode == 'off':
+        return []
+    results = []
+    for m in structures:
+        if not getattr(m, 'is_corecif', False):
+            session.logger.warning('(CLIPPER) %s is not a small-molecule (corecif) '
+                'model; skipping fragment split.' % m)
+            continue
+        # Re-splitting a model that already carries a live small-molecule map would
+        # invalidate that map's positional scaffold->model index; refuse rather than
+        # silently corrupt it.
+        mmgr = get_map_mgr(m)
+        if mmgr is not None and any(getattr(xs, '_small_molecule_data', None) is not None
+                                    for xs in mmgr.xmapsets):
+            raise UserError('%s already has a live small-molecule map. Close it and '
+                'reopen with "clipper smallmol ... fragments %s" to split it.' % (m, mode))
+        path = getattr(m, 'filename', None)
+        if path is None:
+            session.logger.warning('(CLIPPER) %s has no source file; cannot recover '
+                'crystal symmetry for fragment split; skipping.' % m)
+            continue
+        cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
+        # Ensure Clipper-frame coordinates (as the `clipper smallmol` open path does):
+        # corecif mis-orthogonalises oblique cells, which would misplace completed
+        # symmetry atoms and defeat the special-position test. Idempotent.
+        m.atoms.coords = _clipper_frame_coords(m, path, cell)
+        results.append(split_fragments(session, m, cell, spacegroup, grid, mode=mode,
+                                       path=path))
+    return results
 
 
 def symmetry_copies_real(session, models=None, contacting=None, distance=5.0,
@@ -590,13 +720,15 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
 def register_clipper_cmd(logger):
     from chimerax.core.commands import (
         register, CmdDesc,
-        BoolArg, FloatArg, IntArg, StringArg,
+        BoolArg, FloatArg, IntArg, StringArg, EnumOf,
         Int3Arg, Float3Arg,
         OpenFileNameArg, SaveFileNameArg,
         ModelsArg,
         create_alias
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
+    RadiationArg = EnumOf(['auto', 'xray', 'electron'])
+    FragmentsArg = EnumOf(['off', 'rename', 'complete'])
 
     init_desc = CmdDesc(
         keyword=[
@@ -634,8 +766,10 @@ def register_clipper_cmd(logger):
             ('map_columns', ListOf(StringArg)),
             ('free_flags', StringArg),
             ('free_flags_file', OpenFileNameArg),
+            ('radiation', RadiationArg),
         ],
-        synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model'
+        synopsis='Open a structure factor .mtz or .cif file and generate maps for the given model '
+                 '(radiation xray|electron for micro-ED / 3D-ED; default xray)'
     )
     register('clipper open', open_desc, open_structure_factors_and_add_to_session, logger=logger)
 
@@ -645,9 +779,13 @@ def register_clipper_cmd(logger):
         ],
         keyword=[
             ('hkl', OpenFileNameArg),
+            ('radiation', RadiationArg),
+            ('fragments', FragmentsArg),
         ],
         synopsis='Open a small-molecule CIF as a live crystal structure: model in the '
-                 'unit cell, symmetry, and (with reflections) live electron-density maps'
+                 'unit cell, symmetry, and (with reflections) live electron-density maps '
+                 '(radiation xray|electron|auto for micro-ED support; fragments '
+                 'off|rename|complete to split the ASU into named residues)'
     )
     register('clipper smallmol', smallmol_desc, open_small_molecule, logger=logger)
 
@@ -657,11 +795,26 @@ def register_clipper_cmd(logger):
         ],
         keyword=[
             ('ignore_cache', BoolArg),
+            ('radiation', RadiationArg),
+            ('fragments', FragmentsArg),
         ],
         synopsis='Fetch a structure from the Crystallography Open Database (by numeric '
                  'COD ID) and open it as a live crystal structure'
     )
     register('clipper cod', cod_desc, fetch_cod_crystal, logger=logger)
+
+    fragments_desc = CmdDesc(
+        required=[
+            ('structures', StructuresArg),
+        ],
+        keyword=[
+            ('mode', FragmentsArg),
+        ],
+        synopsis='Split a small-molecule asymmetric unit into named covalent-fragment '
+                 'residues (mode off|rename|complete; complete adds symmetry-generated '
+                 'atoms to finish molecules split across a special position)'
+    )
+    register('clipper fragments', fragments_desc, split_fragments_cmd, logger=logger)
 
     save_desc = CmdDesc(
         required=[
@@ -688,6 +841,16 @@ def register_clipper_cmd(logger):
         synopsis='Switch on/off "Scrolling sphere" visualisation with live atomic symmetry'
     )
     register('clipper spotlight', spot_desc, spotlight, logger=logger)
+
+    discard_sym_desc = CmdDesc(
+        required=[
+            ('models', AtomicStructuresOrSymmetryMgrsArg),
+        ],
+        synopsis='Discard a model\'s crystallographic symmetry (revert to a P1 box) '
+                 'and rewrite its metadata so the change persists across sessions. '
+                 'Fails if a crystal dataset is currently loaded.'
+    )
+    register('clipper discardSymmetry', discard_sym_desc, discard_symmetry, logger=logger)
 
     vol_desc = CmdDesc(
         required=[

@@ -275,7 +275,7 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   }
 
   // do ed calc from atomu (uniformly B-shifted for proper FFT sampling)
-  EDcalc_aniso_thread<ftype32> edcalc(nthreads);
+  EDcalc_aniso_thread<ftype32> edcalc(nthreads, radiation_);
   edcalc( xmap, atomu);
 
   xmap.fft_to( fphi_atom, nthreads );

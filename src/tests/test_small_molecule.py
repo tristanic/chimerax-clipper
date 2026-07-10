@@ -96,7 +96,7 @@ def test_live_map_engine(session):
     import numpy
     from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
     from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
-        _clipper_frame_coords, _small_molecule_map_data)
+        _clipper_frame_coords, hydrate_small_molecule_model, _small_molecule_map_data)
     from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
     from chimerax.clipper.clipper_python import Coord_orth, Map_stats
     cif = os.path.join(_DATA, 'cod_1100908.cif')   # C2/c, Cu on a 2-fold; published R 0.041
@@ -104,10 +104,10 @@ def test_live_map_engine(session):
     try:
         cell, sg, grid = crystal_symmetry_from_cif_file(cif)
         model.atoms.coords = _clipper_frame_coords(model, cif, cell)
+        hydrate_small_molecule_model(session, model, cif, cell, 'xray')
         smd = _small_molecule_map_data(model, cif, None, cell, sg, grid)
         mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
-            smd['grid'], smd['scaffold'], smd['fobs'], structure=model,
-            scaffold_to_model=smd['scaffold_to_model'])
+            smd['grid'], smd['fobs'], smd['structure'])
         mgr.add_xmap('2mFo-DFc', is_difference_map=False)
         mgr.add_xmap('mFo-DFc', is_difference_map=True)
         # R-work close to the published 0.041 (aniso+spline scaling).
@@ -122,6 +122,85 @@ def test_live_map_engine(session):
         assert (vals.mean() - st.mean) / st.std_dev > 2.0
     finally:
         session.models.close([model])
+
+
+def test_electron_scattering_selected(session):
+    '''Electron scattering factors (micro-ED): selecting radiation='electron' must
+    actually swap the scattering-factor table, so the recomputed R differs from the
+    X-ray value. (On this X-ray dataset the electron R is far worse - the point is
+    only that the electron table is genuinely used; correctness of the electron
+    coefficients is validated separately against Int. Tab. Vol C.)'''
+    from chimerax.clipper.io.small_molecule import extract_cod_structure
+    cif = os.path.join(_DATA, 'cod_1100908.cif')
+    px = extract_cod_structure(session, cif, radiation='xray')
+    pe = extract_cod_structure(session, cif, radiation='electron')
+    assert px['radiation'] == 'xray' and pe['radiation'] == 'electron'
+    assert px['recomputed_r_factor'] is not None
+    assert pe['recomputed_r_factor'] is not None
+    # X-ray reproduces the published R; electron (wrong for X-ray data) differs.
+    assert px['recomputed_r_factor_all'] < 0.06, px['recomputed_r_factor_all']
+    assert abs(px['recomputed_r_factor'] - pe['recomputed_r_factor']) > 1e-2, \
+        (px['recomputed_r_factor'], pe['recomputed_r_factor'])
+
+
+def test_radiation_autodetect(session):
+    '''radiation='auto' reads _diffrn_radiation_probe from the CIF; a standard X-ray
+    entry (no electron probe) resolves to X-ray.'''
+    from chimerax.clipper.io.small_molecule import _radiation_from_cif
+    assert _radiation_from_cif(os.path.join(_DATA, 'cod_1100908.cif')) == 'xray'
+
+
+def test_electron_map_engine(session):
+    '''The live-map engine runs under electron radiation (thread + GIL release) and
+    produces a finite R-work that differs from the X-ray one - i.e. the electron
+    table reaches the FFT Fcalc path, not just the summation R-factor path.'''
+    from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
+    from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
+        _clipper_frame_coords, hydrate_small_molecule_model, _small_molecule_map_data)
+    from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
+    cif = os.path.join(_DATA, 'cod_1100908.cif')
+    model = open_small_molecule_cif(session, cif)
+    try:
+        cell, sg, grid = crystal_symmetry_from_cif_file(cif)
+        model.atoms.coords = _clipper_frame_coords(model, cif, cell)
+        def rwork(radiation):
+            hydrate_small_molecule_model(session, model, cif, cell, radiation)
+            smd = _small_molecule_map_data(model, cif, None, cell, sg, grid, radiation)
+            mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
+                smd['grid'], smd['fobs'], smd['structure'], radiation=smd['radiation'])
+            mgr.add_xmap('2mFo-DFc', is_difference_map=False)
+            return mgr.rwork
+        rx, re = rwork('xray'), rwork('electron')
+        assert rx > 0 and re > 0 and abs(rx - re) > 1e-2, (rx, re)
+    finally:
+        session.models.close([model])
+
+
+def test_ionic_electron_factors(session):
+    '''Ionic electron scattering factors (Peng 1998): the compiled AtomShapeFn must
+    reproduce eq (5) = screened Gaussians + 0.023934*dZ/s^2 exactly, the Coulomb
+    term must NOT leak into X-ray, and Peng-only ions (absent from the X-ray table,
+    e.g. Cr4+) must resolve under electron radiation.'''
+    import numpy
+    from chimerax.clipper.clipper_python import AtomShapeFn, Coord_orth
+    K = 0.023934
+    # (dZ, a[5], b[5]) from Peng 1998 Table 1.
+    peng = {
+        'O2-':  (-2, [0.0421,0.210,0.852,1.82,1.17],   [0.0609,0.559,2.96,11.5,37.7]),
+        'Cu2+': (+2, [0.224,0.544,0.970,0.727,0.182],  [0.145,0.933,2.69,7.11,19.4]),
+    }
+    s = numpy.array([0.05, 0.15, 0.3, 0.6, 1.0])
+    for ion, (dz, a, b) in peng.items():
+        asf = AtomShapeFn(Coord_orth(0, 0, 0), ion, 0.0, 1.0, AtomShapeFn.ELECTRON)
+        got = numpy.array([asf.f(4.0 * x * x) for x in s])
+        ref = sum(a[i] * numpy.exp(-b[i] * s * s) for i in range(5)) + K * dz / (s * s)
+        assert numpy.max(numpy.abs(got - ref)) < 1e-6, (ion, got, ref)
+    # Cr4+ is not in Clipper's X-ray table but is in Peng's electron table.
+    cr = AtomShapeFn(Coord_orth(0, 0, 0), 'Cr4+', 0.0, 1.0, AtomShapeFn.ELECTRON)
+    assert cr.f(4.0 * 0.3 * 0.3) > 0
+    # X-ray must stay finite at low s (no ionic Coulomb 1/s^2 term).
+    xr = AtomShapeFn(Coord_orth(0, 0, 0), 'Cu2+', 0.0, 1.0, AtomShapeFn.XRAY)
+    assert xr.f(4.0 * 0.02 * 0.02) < 30.0
 
 
 def run_all(session):

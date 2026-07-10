@@ -346,7 +346,8 @@ void BFactorOccRefiner::init_derived()
         fcalc_hkl_   = HKL_data<F_phi<ftype32>>(hkls, cell_);
         driving_hkl_ = HKL_data<F_phi<ftype32>>(hkls, cell_);
     }
-    edcalc_ = EDcalc_aniso_thread<ftype32>((size_t)cfg_.n_threads);
+    edcalc_ = EDcalc_aniso_thread<ftype32>((size_t)cfg_.n_threads,
+        cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON : AtomShapeFn::XRAY);
 
     // Validate and derive any_occ_refined_
     if (!cfg_.refine_occ.empty()) {
@@ -627,7 +628,9 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
             if (a.is_null()) continue;
 
             AtomShapeFn sf(a.coord_orth(), a.element(),
-                           (ftype)current_u_iso_[j], (ftype)current_occ_[j]);
+                           (ftype)current_u_iso_[j], (ftype)current_occ_[j],
+                           cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON
+                                                        : AtomShapeFn::XRAY);
             sf.agarwal_params() = agarwal_types_;
 
             Grid_range gd(cell, grid, (ftype)atom_radii_[j]);
@@ -801,7 +804,9 @@ double BFactorOccRefiner::operator_realspace_(const Eigen::VectorXd& x, Eigen::V
         Coord_orth pos_p1 = a.coord_orth() - target_origin_;
 
         AtomShapeFn sf(pos_p1, a.element(),
-                       (ftype)current_u_iso_[j], (ftype)current_occ_[j]);
+                       (ftype)current_u_iso_[j], (ftype)current_occ_[j],
+                       cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON
+                                                    : AtomShapeFn::XRAY);
         sf.agarwal_params() = agarwal_types_;
 
         Grid_range gd(cell, grid, (ftype)atom_radii_[j]);
@@ -1273,7 +1278,8 @@ Xmap<ftype32>* BFactorOccRefinerThread::compute_realspace_density(
             atomu_all.push_back(shift_atom(a, a.u_iso(), a.occupancy()));
     }
 
-    EDcalc_aniso_thread<ftype32> edcalc((size_t)std::max(1, cfg_.n_threads));
+    EDcalc_aniso_thread<ftype32> edcalc((size_t)std::max(1, cfg_.n_threads),
+        cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON : AtomShapeFn::XRAY);
     edcalc(*xmap, atomu_all);
     return xmap;   // ownership transferred to Python via take_ownership
 }
