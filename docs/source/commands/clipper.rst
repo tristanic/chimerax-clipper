@@ -89,6 +89,7 @@ clipper smallmol
 
 Syntax: clipper smallmol *path* [**hkl** *path*]
 [**radiation** *xray/electron/auto* (auto)]
+[**fragments** *off/rename/complete* (rename)]
 
 Open a small-molecule CIF (the "core CIF" dialect used by, e.g., the
 Crystallography Open Database) as a live crystal structure: the model in its
@@ -142,6 +143,11 @@ calculated structure factors:
 * ``auto`` (default) reads ``_diffrn_radiation_probe`` from the CIF and uses
   electron factors when it names electrons, otherwise X-ray.
 
+The **fragments** keyword controls how the asymmetric unit is divided into
+residues (a core CIF carries no per-species annotation, so ChimeraX's parser
+otherwise delivers the whole ASU as a single ``UNL`` residue). See
+:ref:`fragments` for the full description; the default is ``rename``.
+
 .. _`cod`:
 
 clipper cod
@@ -149,6 +155,7 @@ clipper cod
 
 Syntax: clipper cod *id* [**ignoreCache** *true/false* (false)]
 [**radiation** *xray/electron/auto* (auto)]
+[**fragments** *off/rename/complete* (rename)]
 
 Fetch a structure from the Crystallography Open Database
 (https://www.crystallography.net) by its numeric COD *id*, then open it with
@@ -157,11 +164,64 @@ them, its structure factors (``<id>.hkl``) are downloaded; roughly 10% of COD
 entries include structure factors, and only those will produce live maps.
 
 Downloads are cached locally; pass **ignoreCache true** to force a fresh fetch.
-The **radiation** keyword is passed through to :ref:`smallmol` (X-ray, electron
-for micro-ED, or auto-detected from the CIF).
+The **radiation** and **fragments** keywords are passed through to
+:ref:`smallmol` (X-ray/electron/auto radiation; ``off``/``rename``/``complete``
+fragment splitting).
 
 For example, ``clipper cod 1100908`` fetches the Cu complex used as a bundled
 example (see :ref:`smallmol_examples`).
+
+.. _`fragments`:
+
+clipper fragments
+-----------------
+
+Syntax: clipper fragments *structures* [**mode** *off/rename/complete* (rename)]
+
+Split a small-molecule asymmetric unit into its individual covalent fragments,
+each in its own residue with a sensible name. A core CIF encodes no per-species
+identity, so ChimeraX's parser delivers the whole ASU as one ``UNL`` residue;
+this command (also available as the **fragments** keyword of :ref:`smallmol` /
+:ref:`cod`, applied automatically on opening) gives water, ions and each distinct
+molecule their own residues. It operates on already-open small-molecule
+(core-CIF) *structures*.
+
+Fragments are the connected components of the covalent-bond graph, with two
+crystallographic refinements:
+
+* **Metals stand alone.** A bond to a metal atom is treated as a fragment
+  boundary, so a coordinated water, counter-ion or ligand is separated from the
+  metal it coordinates (the metal becomes its own residue). This is applied
+  uniformly, including for metals embedded in a larger ligand (heme, chlorophyll):
+  the metal is always its own residue.
+* **Symmetry-split molecules are recognised.** A molecule can be only partly
+  present in the ASU because it straddles a symmetry element - e.g. a water whose
+  oxygen sits on a 2-fold axis, with only one of its hydrogens modelled, looks
+  like a hydroxide. Such molecules are identified from the site symmetry and the
+  CIF's own ``_geom_bond_site_symmetry_2`` records (which name every bond to a
+  symmetry-equivalent atom), and named correctly.
+
+Naming uses a small built-in table of the common simple species - water
+(``HOH``), monatomic ions (``NA``, ``CL``, ``CU``, ...) and small inorganic ions
+(``SO4``, ``PO4``, ``NO3``, ``CO3``, ...); everything else becomes ``LIG01``,
+``LIG02``, ... .
+
+The **mode** keyword selects:
+
+* ``off`` - do nothing (leave the single ``UNL`` residue).
+* ``rename`` (default) - split and name the fragments; the atom set is
+  unchanged. A symmetry-split molecule is named for what it really is (the
+  special-position water becomes ``HOH``, not hydroxide) but its missing
+  symmetry-equivalent atoms are not added.
+* ``complete`` - additionally add the symmetry-generated atoms that finish the
+  split molecules (e.g. the second hydrogen of the special-position water),
+  correcting occupancies (atoms lying on a special position are given unit
+  occupancy). The added atoms are excluded from the live structure-factor
+  calculation and do not follow live edits of their source atoms.
+
+The command refuses to run on a model that already has a live small-molecule map
+(splitting would invalidate the map's atom index); close and reopen with
+``clipper smallmol ... fragments <mode>`` instead.
 
 .. _`smallmol_examples`:
 

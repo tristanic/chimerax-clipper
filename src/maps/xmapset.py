@@ -211,10 +211,10 @@ class XmapSet(MapSetBase):
 
     def _init_small_molecule_maps(self):
         '''Set up live small-molecule maps from self._small_molecule_data (cell,
-        spacegroup, grid, hklinfo, resolution, scaffold, fobs amplitudes, the live
-        structure and a scaffold->model index map). Uses SmallMoleculeXmapMgr (FFT
-        structure factors, no bulk solvent) in place of the C++ Xtal_thread_mgr, and
-        reuses the standard box/spotlight + live-recalc machinery.'''
+        spacegroup, grid, hklinfo, resolution, fobs amplitudes and the live structure).
+        Uses SmallMoleculeXmapMgr (FFT structure factors, no bulk solvent) in place of
+        the C++ Xtal_thread_mgr, and reuses the standard box/spotlight + live-recalc
+        machinery. The manager reads per-atom SF inputs live from the structure.'''
         smd = self._small_molecule_data
         from .. import Unit_Cell, atom_list_from_sel
         alist = atom_list_from_sel(self.structure.atoms)
@@ -226,9 +226,7 @@ class XmapSet(MapSetBase):
         from .small_molecule_map import SmallMoleculeXmapMgr
         self._live_xmap_mgr = SmallMoleculeXmapMgr(
             smd['hklinfo'], smd['cell'], smd['spacegroup'], smd['grid'],
-            smd['scaffold'], smd['fobs'],
-            structure=smd.get('structure'),
-            scaffold_to_model=smd.get('scaffold_to_model'),
+            smd['fobs'], smd['structure'],
             radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
         self.add_live_xmap('2mFo-DFc', is_difference_map=False)

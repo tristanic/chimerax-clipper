@@ -96,7 +96,7 @@ def test_live_map_engine(session):
     import numpy
     from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
     from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
-        _clipper_frame_coords, _small_molecule_map_data)
+        _clipper_frame_coords, hydrate_small_molecule_model, _small_molecule_map_data)
     from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
     from chimerax.clipper.clipper_python import Coord_orth, Map_stats
     cif = os.path.join(_DATA, 'cod_1100908.cif')   # C2/c, Cu on a 2-fold; published R 0.041
@@ -104,10 +104,10 @@ def test_live_map_engine(session):
     try:
         cell, sg, grid = crystal_symmetry_from_cif_file(cif)
         model.atoms.coords = _clipper_frame_coords(model, cif, cell)
+        hydrate_small_molecule_model(session, model, cif, cell, 'xray')
         smd = _small_molecule_map_data(model, cif, None, cell, sg, grid)
         mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
-            smd['grid'], smd['scaffold'], smd['fobs'], structure=model,
-            scaffold_to_model=smd['scaffold_to_model'])
+            smd['grid'], smd['fobs'], smd['structure'])
         mgr.add_xmap('2mFo-DFc', is_difference_map=False)
         mgr.add_xmap('mFo-DFc', is_difference_map=True)
         # R-work close to the published 0.041 (aniso+spline scaling).
@@ -156,7 +156,7 @@ def test_electron_map_engine(session):
     table reaches the FFT Fcalc path, not just the summation R-factor path.'''
     from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
     from chimerax.clipper.io.small_molecule import (open_small_molecule_cif,
-        _clipper_frame_coords, _small_molecule_map_data)
+        _clipper_frame_coords, hydrate_small_molecule_model, _small_molecule_map_data)
     from chimerax.clipper.maps.small_molecule_map import SmallMoleculeXmapMgr
     cif = os.path.join(_DATA, 'cod_1100908.cif')
     model = open_small_molecule_cif(session, cif)
@@ -164,10 +164,10 @@ def test_electron_map_engine(session):
         cell, sg, grid = crystal_symmetry_from_cif_file(cif)
         model.atoms.coords = _clipper_frame_coords(model, cif, cell)
         def rwork(radiation):
+            hydrate_small_molecule_model(session, model, cif, cell, radiation)
             smd = _small_molecule_map_data(model, cif, None, cell, sg, grid, radiation)
             mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
-                smd['grid'], smd['scaffold'], smd['fobs'], structure=model,
-                scaffold_to_model=smd['scaffold_to_model'], radiation=smd['radiation'])
+                smd['grid'], smd['fobs'], smd['structure'], radiation=smd['radiation'])
             mgr.add_xmap('2mFo-DFc', is_difference_map=False)
             return mgr.rwork
         rx, re = rwork('xray'), rwork('electron')

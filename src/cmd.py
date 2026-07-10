@@ -348,7 +348,7 @@ def set_camera_auto(session, flag):
     from . import symmetry
     symmetry.auto_reset_camera = flag
 
-def open_small_molecule(session, path, hkl=None, radiation='auto'):
+def open_small_molecule(session, path, hkl=None, radiation='auto', fragments='rename'):
     '''
     Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
     its unit cell, crystallographic symmetry, and - when reflections are available
@@ -357,12 +357,17 @@ def open_small_molecule(session, path, hkl=None, radiation='auto'):
 
     radiation: 'xray', 'electron' (micro-ED / 3D-ED), or 'auto' (default; read from
     the CIF _diffrn_radiation_probe) - selects the scattering-factor table.
+
+    fragments: 'off', 'rename' (default) or 'complete' - split the asymmetric unit
+    into named covalent-fragment residues (see the `clipper fragments` command).
     '''
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, path, hkl_path=hkl, radiation=radiation)
+    return show_cod_crystal(session, path, hkl_path=hkl, radiation=radiation,
+                            fragments=fragments)
 
 
-def fetch_cod_crystal(session, cod_id, ignore_cache=False, radiation='auto'):
+def fetch_cod_crystal(session, cod_id, ignore_cache=False, radiation='auto',
+                      fragments='rename'):
     '''
     Fetch a structure (and, if deposited, its reflections) from the Crystallography
     Open Database by numeric COD ID, and open it as a live crystal structure.
@@ -383,7 +388,55 @@ def fetch_cod_crystal(session, cod_id, ignore_cache=False, radiation='auto'):
         session.logger.info('(CLIPPER) No reflections deposited for COD %s; '
             'showing model + symmetry only.' % cod_id)
     from .io.small_molecule import show_cod_crystal
-    return show_cod_crystal(session, cif, hkl_path=hkl, radiation=radiation)
+    return show_cod_crystal(session, cif, hkl_path=hkl, radiation=radiation,
+                            fragments=fragments)
+
+
+def split_fragments_cmd(session, structures, mode='rename'):
+    '''
+    Split each (small-molecule / corecif) structure's asymmetric unit into named
+    covalent-fragment residues: CCD codes for the common simple species (water,
+    monatomic ions, small inorganic ions) and LIG01, LIG02, ... otherwise.
+
+    mode 'off' leaves the model unchanged; 'rename' (default) splits and names;
+    'complete' also adds the symmetry-generated atoms that finish molecules split
+    across a special position.
+    '''
+    from chimerax.core.errors import UserError
+    from .symmetry import crystal_symmetry_from_cif_file, get_map_mgr
+    from .io.fragments import split_fragments
+    from .io.small_molecule import _clipper_frame_coords
+    if structures is None or not len(structures):
+        raise UserError('No structures specified.')
+    if mode == 'off':
+        return []
+    results = []
+    for m in structures:
+        if not getattr(m, 'is_corecif', False):
+            session.logger.warning('(CLIPPER) %s is not a small-molecule (corecif) '
+                'model; skipping fragment split.' % m)
+            continue
+        # Re-splitting a model that already carries a live small-molecule map would
+        # invalidate that map's positional scaffold->model index; refuse rather than
+        # silently corrupt it.
+        mmgr = get_map_mgr(m)
+        if mmgr is not None and any(getattr(xs, '_small_molecule_data', None) is not None
+                                    for xs in mmgr.xmapsets):
+            raise UserError('%s already has a live small-molecule map. Close it and '
+                'reopen with "clipper smallmol ... fragments %s" to split it.' % (m, mode))
+        path = getattr(m, 'filename', None)
+        if path is None:
+            session.logger.warning('(CLIPPER) %s has no source file; cannot recover '
+                'crystal symmetry for fragment split; skipping.' % m)
+            continue
+        cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
+        # Ensure Clipper-frame coordinates (as the `clipper smallmol` open path does):
+        # corecif mis-orthogonalises oblique cells, which would misplace completed
+        # symmetry atoms and defeat the special-position test. Idempotent.
+        m.atoms.coords = _clipper_frame_coords(m, path, cell)
+        results.append(split_fragments(session, m, cell, spacegroup, grid, mode=mode,
+                                       path=path))
+    return results
 
 
 def register_clipper_cmd(logger):
@@ -395,6 +448,7 @@ def register_clipper_cmd(logger):
         )
     from chimerax.atomic import StructuresArg, StructureArg, AtomsArg
     RadiationArg = EnumOf(['auto', 'xray', 'electron'])
+    FragmentsArg = EnumOf(['off', 'rename', 'complete'])
 
     init_desc = CmdDesc(
         keyword=[
@@ -440,10 +494,12 @@ def register_clipper_cmd(logger):
         keyword=[
             ('hkl', OpenFileNameArg),
             ('radiation', RadiationArg),
+            ('fragments', FragmentsArg),
         ],
         synopsis='Open a small-molecule CIF as a live crystal structure: model in the '
                  'unit cell, symmetry, and (with reflections) live electron-density maps '
-                 '(radiation xray|electron|auto for micro-ED support)'
+                 '(radiation xray|electron|auto for micro-ED support; fragments '
+                 'off|rename|complete to split the ASU into named residues)'
     )
     register('clipper smallmol', smallmol_desc, open_small_molecule, logger=logger)
 
@@ -454,11 +510,25 @@ def register_clipper_cmd(logger):
         keyword=[
             ('ignore_cache', BoolArg),
             ('radiation', RadiationArg),
+            ('fragments', FragmentsArg),
         ],
         synopsis='Fetch a structure from the Crystallography Open Database (by numeric '
                  'COD ID) and open it as a live crystal structure'
     )
     register('clipper cod', cod_desc, fetch_cod_crystal, logger=logger)
+
+    fragments_desc = CmdDesc(
+        required=[
+            ('structures', StructuresArg),
+        ],
+        keyword=[
+            ('mode', FragmentsArg),
+        ],
+        synopsis='Split a small-molecule asymmetric unit into named covalent-fragment '
+                 'residues (mode off|rename|complete; complete adds symmetry-generated '
+                 'atoms to finish molecules split across a special position)'
+    )
+    register('clipper fragments', fragments_desc, split_fragments_cmd, logger=logger)
 
     save_desc = CmdDesc(
         required=[
