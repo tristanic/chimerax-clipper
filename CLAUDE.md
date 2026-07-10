@@ -150,7 +150,10 @@ cosmetic — the code is correct because the STL members are private implementat
 
 Runtime (key):
 - `ChimeraX-Core ~1.11`, `ChimeraX-Atomic ~1.61`, `ChimeraX-AtomicLibrary ~14.2`
-- `numpy ~1.26.4`
+- `numpy >=2.4.6` (ChimeraX moved its bundled numpy to the 2.x series in the
+  2026-07 daily; the build pin in `pyproject.toml` tracks the shipped version. Was
+  `~=1.26.4` through mid-2026 — bump the lower bound if ChimeraX ships a newer numpy,
+  since a build dep pinned below what ChimeraX ships is never the binding constraint.)
 
 Bundled C++ (source-compiled):
 - Clipper (`src_cpp/deps/clipper/`) — Kevin Cowtan's crystallography library

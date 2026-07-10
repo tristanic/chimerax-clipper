@@ -413,7 +413,12 @@ def _cif_symop_strings(path):
     '''The space group's symmetry operators as xyz strings, in CIF order (1-based, as
     referenced by _geom_bond_site_symmetry_2 codes). None if absent.'''
     from chimerax.mmcif import get_cif_tables
-    sgs_t, symm_t = get_cif_tables(path, ['space_group_symop', 'symmetry'])
+    # get_cif_tables returns [] (not padded) when the file has NONE of the requested
+    # categories - guard the unpack for CIFs lacking any symmetry-operator table.
+    tables = get_cif_tables(path, ['space_group_symop', 'symmetry'])
+    if not tables:
+        return None
+    sgs_t, symm_t = tables
     for table, field in ((sgs_t, 'operation_xyz'), (symm_t, 'equiv_pos_as_xyz')):
         if table is not None and table.has_field(field):
             ops = [r[0].strip().strip("'\"").replace(' ', '')
@@ -429,7 +434,9 @@ def _cross_symmetry_bonds(path):
     (label_1, label_2, (n, dk, dl, dm)) where n is the 1-based symmetry-operator index
     and (dk, dl, dm) the accompanying lattice translation. None if the loop is absent.'''
     from chimerax.mmcif import get_cif_tables
-    gb = get_cif_tables(path, ['geom_bond'])[0]
+    # get_cif_tables returns [] (not [empty_table]) when the file has no _geom_bond loop.
+    tables = get_cif_tables(path, ['geom_bond'])
+    gb = tables[0] if tables else None
     if gb is None or not gb.has_field('atom_site_label_1'):
         return None
     rows = gb.fields(('atom_site_label_1', 'atom_site_label_2', 'site_symmetry_2'),
