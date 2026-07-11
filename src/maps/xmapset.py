@@ -93,6 +93,17 @@ class XmapSet(MapSetBase):
         '2mFo-DFc': {'b_sharp': 0, 'is_difference_map': False, 'display': True},
         'mFo-DFc': {'b_sharp': 0, 'is_difference_map': True, 'display': True},
     }
+    # Structure-factor component maps for the `clipper debugmaps` command. Each is a
+    # live map that FFTs a raw component rather than sigmaa-weighted coefficients:
+    # Fcalc = total model (atoms + bulk); Fatoms = atoms only; Fbulk = k_sol*F_mask
+    # bulk contribution; Fmask = the (smoothed) solvent-mask transform. They are
+    # display-gated (Part B): created hidden and only FFT'd while shown.
+    DEBUG_MAP_SPECS = (
+        ('Fcalc (total)', 'fcalc'),
+        ('Fatoms',        'fatoms'),
+        ('Fbulk',         'fbulk'),
+        ('Fmask',         'fmask'),
+    )
     def __init__(self, manager, crystal_data = None,
         use_live_maps = True,
         use_static_maps = True,
@@ -696,6 +707,96 @@ class XmapSet(MapSetBase):
                 new_handler.display=False
         return new_handler
 
+    def add_live_debug_xmap(self, name, component, color=None, style=None,
+        transparency=0.0, contour=None):
+        '''
+        Add a display-gated live map for a raw structure-factor component (one of
+        'fcalc', 'fatoms', 'fbulk', 'fmask'). The map is created hidden; while
+        hidden it is skipped by the background recalculation (no FFT), and it is
+        brought up to date only when shown or otherwise read. Not saved in sessions.
+        '''
+        xm = self._live_xmap_mgr
+        if xm is None:
+            raise RuntimeError('This crystal dataset has no experimental amplitudes!')
+        xm.add_debug_xmap(name, component)
+        new_handler = XmapHandler_Live(self, name, is_difference_map=False)
+        new_handler._display_gated = True
+        new_handler.bsharp_adjustable = False
+        # Debug maps are a transient diagnostic aid: keep them out of saved sessions
+        # (the restore path replays add_xmap(**_rebuild_args), which does not apply
+        # to component maps).
+        new_handler.SESSION_SAVE = False
+        self.set_xmap_display_style(new_handler, is_difference_map=False,
+            color=color, style=style, transparency=transparency, contour=contour)
+        self.add([new_handler])
+        # Created hidden; sync the manager's display state so it starts gated-off.
+        new_handler.display = False
+        xm.set_map_displayed(name, False)
+        return new_handler
+
+    def add_debug_maps(self):
+        '''Create the standard set of live structure-factor component maps.'''
+        xm = self._live_xmap_mgr
+        if xm is None:
+            from chimerax.core.errors import UserError
+            raise UserError('This crystal dataset has no live maps to debug '
+                '(no experimental amplitudes).')
+        if getattr(self, '_debug_handlers', None):
+            return self._debug_handlers
+        self._register_debug_display_handler()
+        handlers = []
+        for name, component in self.DEBUG_MAP_SPECS:
+            handlers.append(self.add_live_debug_xmap(name, component))
+        self._debug_handlers = handlers
+        return handlers
+
+    def remove_debug_maps(self):
+        '''Remove any live structure-factor component maps.'''
+        handlers = getattr(self, '_debug_handlers', None)
+        if not handlers:
+            return
+        xm = self._live_xmap_mgr
+        for h in handlers:
+            name = h._map_name
+            if not h.deleted:
+                h.delete()
+            if xm is not None:
+                try:
+                    xm.delete_xmap(name)
+                except Exception:
+                    pass
+        self._debug_handlers = []
+        self._deregister_debug_display_handler()
+
+    def _register_debug_display_handler(self):
+        if getattr(self, '_debug_display_handler', None) is not None:
+            return
+        from chimerax.core.models import MODEL_DISPLAY_CHANGED
+        self._debug_display_handler = self.session.triggers.add_handler(
+            MODEL_DISPLAY_CHANGED, self._debug_map_display_changed_cb)
+
+    def _deregister_debug_display_handler(self):
+        h = getattr(self, '_debug_display_handler', None)
+        if h is not None:
+            self.session.triggers.remove_handler(h)
+            self._debug_display_handler = None
+
+    def _debug_map_display_changed_cb(self, trigger_name, model):
+        # A gated component map's visibility drives whether it is FFT'd. On show,
+        # mark it live and refill from fresh data (the read triggers ensure_current
+        # in the C++ manager); on hide, mark it gated-off.
+        if not isinstance(model, XmapHandler_Live):
+            return
+        if not getattr(model, '_display_gated', False) or model.mapset is not self:
+            return
+        xm = self._live_xmap_mgr
+        if xm is None:
+            return
+        shown = bool(model.display)
+        xm.set_map_displayed(model._map_name, shown)
+        if shown:
+            model._map_recalc_cb(model._map_name)
+
     def add_static_xmap(self, dataset,
         is_difference_map=None,
         color=None,
@@ -872,6 +973,11 @@ class XmapSet(MapSetBase):
         # radiation as the manager so per-frame recalcs stay on the electron table
         # for micro-ED (otherwise they would silently revert to X-ray).
         elements = ionic_scattering_names(atoms, radiation=getattr(self, '_radiation', 'xray'))
+        # Keep gated component maps' display state current so this recalc FFTs only
+        # the ones currently shown (Part B); hidden ones are refreshed lazily on read.
+        for h in getattr(self, '_debug_handlers', None) or ():
+            if not h.deleted:
+                xm.set_map_displayed(h._map_name, bool(h.display))
         delayed_reaction(self.session.triggers, 'new frame',
             xm.recalculate_all_maps, [atoms.pointers, elements],
             xm.ready,
@@ -1266,6 +1372,12 @@ class XmapHandler_Live(XmapHandlerBase):
 
     def _map_recalc_cb(self, name, *_):
         if self.deleted:
+            return
+        # A hidden display-gated (debug) map is skipped by the recalc loop and left
+        # dirty; refilling it would force a synchronous FFT via ensure_current and
+        # defeat the gating. It is refreshed on show instead (see
+        # XmapSet._debug_map_display_changed_cb).
+        if getattr(self, '_display_gated', False) and not self.display:
             return
         # Defer the in-place box refill if a contour worker is still reading the
         # buffer (avoids tearing the surface into garbage triangle indices).

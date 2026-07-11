@@ -194,6 +194,47 @@ def associate_volumes(session, volumes, to_model=None):
     if mgr.crystal_mgr not in session.models.list():
         session.models.add([mgr.crystal_mgr])
 
+def debug_maps(session, models=None, enable=True):
+    '''Add (or remove) live structure-factor component maps -- Fcalc, Fatoms,
+    Fbulk and Fmask -- for the given crystallographic model(s), as a debugging
+    aid. Each is a live map that FFTs a raw component rather than sigmaa-weighted
+    coefficients, and is display-gated: created hidden, recomputed only while
+    shown. Not saved in sessions.'''
+    from chimerax.clipper.symmetry import get_map_mgr
+    from chimerax.core.errors import UserError
+    if models is None:
+        models = session.models.list()
+    mgrs = []
+    seen = set()
+    for m in models:
+        try:
+            mgr = get_map_mgr(m, create=False)
+        except Exception:
+            mgr = None
+        if mgr is not None and id(mgr) not in seen:
+            seen.add(id(mgr))
+            mgrs.append(mgr)
+    if not mgrs:
+        raise UserError('No Clipper crystallographic maps found for the specified '
+            'model(s). Open reflection data first with "clipper open".')
+    n_sets = 0
+    for mgr in mgrs:
+        for xs in mgr.xmapsets:
+            if xs.live_xmap_mgr is None:
+                continue
+            if enable:
+                xs.add_debug_maps()
+            else:
+                xs.remove_debug_maps()
+            n_sets += 1
+    if enable:
+        session.logger.info('Added Fcalc/Fatoms/Fbulk/Fmask component maps to {} '
+            'crystallographic dataset(s). They are hidden by default; show one to '
+            'view it (each is recomputed only while shown).'.format(n_sets))
+    else:
+        session.logger.info('Removed structure-factor component maps from {} '
+            'dataset(s).'.format(n_sets))
+
 def discard_symmetry(session, models):
     '''Discard a model's crystallographic symmetry (revert to a P1 box) and
     rewrite its symmetry metadata so this is preserved across sessions. Useful
@@ -847,6 +888,16 @@ def register_clipper_cmd(logger):
         synopsis='Switch on/off "Scrolling sphere" visualisation with live atomic symmetry'
     )
     register('clipper spotlight', spot_desc, spotlight, logger=logger)
+
+    debugmaps_desc = CmdDesc(
+        optional=[
+            ('models', StructuresArg),
+            ('enable', BoolArg),
+        ],
+        synopsis='Add/remove live structure-factor component maps (Fcalc, Fatoms, '
+                 'Fbulk, Fmask) for the given model(s), as a debugging aid'
+    )
+    register('clipper debugmaps', debugmaps_desc, debug_maps, logger=logger)
 
     discard_sym_desc = CmdDesc(
         required=[

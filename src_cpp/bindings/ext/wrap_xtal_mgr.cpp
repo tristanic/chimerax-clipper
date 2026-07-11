@@ -149,6 +149,26 @@ void declare_xtal_thread_mgr(py::module& m)
             py::arg("exclude_free_reflections")=true,
             py::arg("fill_with_fcalc")=true)
         .def("delete_xmap", &Class::delete_xmap)
+        .def("add_debug_xmap",
+            [](Class& self, const std::string& name, const std::string& component,
+               const ftype& b_sharp)
+            {
+                using MC = cx::Xtal_mgr_base::MapComponent;
+                MC c;
+                if      (component == "fcalc")  c = MC::FCALC;
+                else if (component == "fatoms") c = MC::FATOMS;
+                else if (component == "fbulk")  c = MC::FBULK;
+                else if (component == "fmask")  c = MC::FMASK;
+                else throw std::invalid_argument(
+                    "Unknown debug map component '" + component +
+                    "' (expected one of: fcalc, fatoms, fbulk, fmask)");
+                self.add_debug_xmap(name, c, b_sharp);
+            },
+            py::arg("name"), py::arg("component"), py::arg("b_sharp")=0)
+        .def("set_map_display_gated", &Class::set_map_display_gated,
+            py::arg("name"), py::arg("gated"))
+        .def("set_map_displayed", &Class::set_map_displayed,
+            py::arg("name"), py::arg("displayed"))
         .def("set_map_b_sharp", &Class::set_map_b_sharp,
             py::arg("name"), py::arg("b_sharp"))
         .def("set_grid_sampling", &Class::set_grid_sampling,

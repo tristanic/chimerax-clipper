@@ -45,7 +45,9 @@ Xmap_details::Xmap_details(const Xmap_details& other)
       b_sharp_(other.b_sharp()), is_difference_map_(other.is_difference_map()),
       exclude_missing_(other.exclude_missing()),
       exclude_freer_(other.exclude_free_reflections()),
-      fill_(other.fill_with_fcalc())
+      fill_(other.fill_with_fcalc()),
+      display_gated_(other.display_gated()), displayed_(other.displayed()),
+      dirty_(other.is_dirty())
 {
     xmap_ = std::unique_ptr<Xmap<ftype32>>(new Xmap<ftype32>(other.xmap()));
     coeffs_ = std::unique_ptr<HKL_data<F_phi<ftype32>>>( new HKL_data<F_phi<ftype32>>(other.coeffs()) );
@@ -205,8 +207,78 @@ Xtal_mgr_base::generate_fcalc(const Atom_list& atoms)
     // guess_initial_gaussian_params_();
     fcalc_initialized_ = true;
 
+    // Refresh the atoms-only Fcalc (total minus bulk) only while an FATOMS debug
+    // map is present, so this costs nothing in normal operation. Must happen here,
+    // before the per-map FFT loop, so those maps FFT current coefficients.
+    if (fatoms_map_present_())
+        compute_fcalc_atoms_();
+
     calculate_r_factors();
 } // generate_fcalc
+
+bool
+Xtal_mgr_base::fatoms_map_present_() const
+{
+    for (const auto& it: maps_)
+        if (&it.second.base_coeffs() == &fcalc_atoms_)
+            return true;
+    return false;
+}
+
+void
+Xtal_mgr_base::compute_fcalc_atoms_()
+{
+    const auto& fbulk = bulk_solvent_calculator_.f_bulk();
+    fcalc_atoms_ = HKL_data<F_phi<ftype32>>(hklinfo_);
+    for (auto ih = fcalc_.first(); !ih.last(); ih.next())
+    {
+        if (fcalc_[ih].missing()) { fcalc_atoms_[ih].set_null(); continue; }
+        std::complex<ftype32> v = std::complex<ftype32>(fcalc_[ih]);
+        if (!fbulk[ih].missing()) v -= std::complex<ftype32>(fbulk[ih]);
+        fcalc_atoms_[ih] = F_phi<ftype32>(v);
+    }
+}
+
+const HKL_data<F_phi<ftype32>>*
+Xtal_mgr_base::component_coeffs_ptr(MapComponent c) const
+{
+    switch (c)
+    {
+        case FCALC:  return &fcalc_;
+        case FATOMS: return &fcalc_atoms_;
+        case FBULK:  return &bulk_solvent_calculator_.f_bulk();
+        case FMASK:  return &bulk_solvent_calculator_.f_mask();
+    }
+    throw std::logic_error("Unknown map component!");
+}
+
+void
+Xtal_mgr_base::add_debug_xmap(const std::string& name, MapComponent component,
+    const ftype& bsharp, size_t num_threads)
+{
+    if (!coeffs_initialized())
+        throw std::logic_error("You need to calculate base coefficients before "
+        "creating any maps! Run init() on a suitable set of atoms first.");
+    if (maps_.find(name) != maps_.end())
+        throw std::logic_error("Each map must have a unique name!");
+    // Raw component FFT: no difference-map colouring, no free-term filling, no
+    // missing-reflection handling -- recalculate_map just copies the component
+    // coefficients and FFTs them.
+    maps_.emplace(name, Xmap_details(hklinfo_, component_coeffs_ptr(component), bsharp,
+        grid_sampling_, /*is_difference*/false, /*exclude_missing*/false,
+        /*exclude_free*/false, /*fill*/false));
+    // Opt-in display gating: created hidden and gated, so it is not FFT'd until
+    // shown (Part B). generate_fcalc()/component_coeffs_ptr already point at fresh
+    // data, so the initial recalculate_map below produces a valid map immediately.
+    auto& xmd = maps_.at(name);
+    xmd.set_display_gated(true);
+    xmd.set_displayed(false);
+    // If this is an FATOMS map, fcalc_atoms_ may not have been populated yet (it is
+    // only refreshed while such a map exists); populate it now for the first FFT.
+    if (component == FATOMS && fcalc_initialized())
+        compute_fcalc_atoms_();
+    recalculate_map(name, num_threads);
+} // add_debug_xmap
 
 // Generate the standard set of map coefficients
 void
@@ -757,9 +829,7 @@ Xtal_thread_mgr::recalculate_all(std::vector<uintptr_t> cxatoms,
 bool
 Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
 {
-    auto map_names = mgr_->map_names();
-    auto nmaps = map_names.size();
-    if(nmaps==0) return true;
+    if(mgr_->n_maps()==0) return true;
     ready_ = false;
     try
     {
@@ -772,7 +842,23 @@ Xtal_thread_mgr::recalculate_all_(const Atom_list& atoms)
         std::rethrow_exception(std::current_exception());
     }
 
-    size_t maps_per_thread = (size_t) ceil(( (float)(mgr_->n_maps())) /num_threads_);
+    // Opt-in display gating (Part B): only FFT maps that need it this pass (not
+    // gated, or gated+shown). Gated-hidden maps are marked dirty and skipped; a
+    // later read brings them current via ensure_current(). generate_fcalc() above
+    // still ran, so R-factors and the component datasets are always up to date.
+    active_names_.clear();
+    for (auto& it: mgr_->maps_)
+    {
+        if (it.second.needs_recalc())
+            active_names_.push_back(it.first);
+        else
+            it.second.set_dirty(true);
+    }
+    const auto& map_names = active_names_;
+    auto nmaps = map_names.size();
+    if (nmaps == 0) { ready_ = true; return true; }
+
+    size_t maps_per_thread = (size_t) ceil(( (float)(nmaps)) /num_threads_);
     size_t threads_per_map = std::max(num_threads_ / nmaps * maps_per_thread, size_t(1));
     // Make copies of all maps to work on. Expensive, but necessary for thread
     // safety.
@@ -833,10 +919,13 @@ Xtal_thread_mgr::apply_new_maps()
             "recalculate_all() first.");
     master_thread_result_.get();
     try {
-        for (auto& it: xmap_thread_results_)
+        // Swap back only the maps FFT'd this pass (active_names_); gated-hidden maps
+        // were skipped and their thread-work copies hold stale data -- leave the
+        // manager's copy in place (marked dirty) for ensure_current() to refresh.
+        for (const auto& name: active_names_)
         {
-            auto& source = it.second;
-            auto& target = mgr_->maps_.at(it.first);
+            auto& source = xmap_thread_results_.at(name);
+            auto& target = mgr_->maps_.at(name);
             source.coeffs_.swap(target.coeffs_);
             source.xmap_.swap(target.xmap_);
             source.map_stats_.swap(target.map_stats_);
@@ -948,6 +1037,53 @@ Xtal_thread_mgr::add_xmap(const std::string& name,
         exclude_missing_reflections, exclude_free_reflections, fill_with_fcalc, num_threads_);
     xmap_thread_results_.emplace(name, mgr_->maps_[name]);
 
+}
+
+void
+Xtal_thread_mgr::add_debug_xmap(const std::string& name,
+    Xtal_mgr_base::MapComponent component, const ftype& bsharp)
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    mgr_->add_debug_xmap(name, component, bsharp, num_threads_);
+    xmap_thread_results_.emplace(name, mgr_->maps_[name]);
+}
+
+void
+Xtal_thread_mgr::set_map_display_gated(const std::string& name, bool gated)
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    mgr_->maps_.at(name).set_display_gated(gated);
+}
+
+void
+Xtal_thread_mgr::set_map_displayed(const std::string& name, bool displayed)
+{
+    deletion_guard();
+    finalize_threads_if_necessary();
+    mgr_->maps_.at(name).set_displayed(displayed);
+}
+
+void
+Xtal_thread_mgr::ensure_current(const std::string& name)
+{
+    deletion_guard();
+    // Fast path keyed on display_gated_ (set only from the main thread), NOT on
+    // dirty_ (which a running worker may be concurrently setting). Every non-gated
+    // map -- all existing maps, incl. MDFF -- returns here immediately: no thread
+    // finalize, no synchronous FFT, no blocking, exactly as before.
+    auto it = mgr_->maps_.find(name);
+    if (it == mgr_->maps_.end() || !it->second.display_gated())
+        return;
+    // Gated map: finalise any in-flight recalculation first (so dirty_ and the base
+    // coefficients are settled and we never touch an Xmap_details a worker holds),
+    // then FFT from the current base coefficients if still stale.
+    finalize_threads_if_necessary();
+    if (!it->second.is_dirty())
+        return;
+    mgr_->recalculate_map(it->second, num_threads_);
+    it->second.set_dirty(false);
 }
 
 void

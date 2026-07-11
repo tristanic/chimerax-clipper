@@ -303,6 +303,28 @@ centre of rotation) for the given models, and optionally set the radius of the
 sphere. If *structures* is not specified, the command will only apply to models
 which are already initialised into the ChimeraX-Clipper data structure.
 
+.. _`debugmaps`:
+
+clipper debugmaps
+-----------------
+
+Syntax: clipper debugmaps [*structures*] [*enable* *true/false* (true)]
+
+Add (or, with *enable false*, remove) a set of live "debug" maps exposing the
+individual structure-factor components that go into the bulk-solvent model, as a
+diagnostic aid:
+
+* **Fcalc (total)** - the full model structure factors (atoms + bulk solvent).
+* **Fatoms** - the atoms-only contribution (Fcalc minus the bulk term).
+* **Fbulk** - the additive bulk-solvent contribution (k_sol scaled).
+* **Fmask** - the (smoothed) solvent-mask transform; viewing this shows the
+  bulk-solvent region directly, e.g. to inspect occupancy-weighted masking.
+
+Each is a live map that updates with the model, just like the standard maps. They
+are created hidden and are *display-gated*: while hidden they are not transformed
+(so they cost nothing), and each is recomputed only while shown. Debug maps are
+not saved in sessions; re-run this command to recreate them.
+
 .. _`isolate`:
 
 clipper isolate
