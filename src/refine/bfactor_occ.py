@@ -733,9 +733,18 @@ class BFactorOccRefineManager:
 
         f_bulk is the bulk-solvent contribution (F_total = F_atoms + f_bulk),
         held fixed during refinement and added to the calculated F_atoms each
-        cycle.  Fetched fresh on every launch() call so that updated sigma_A
-        weights (phi_fom.fom()) and bulk-solvent model from the most recent map
-        recalculation are used.
+        cycle.  Fetched fresh on every launch() call so that the sigma_A weights
+        (phi_fom.fom()) and bulk-solvent model are current.
+
+        The live map fits its Fcalc->Fobs scale (and hence f_bulk AND the sigma_A
+        weights, since both derive from the scaled Fcalc) on a small random
+        reflection subset for speed, so those inputs jitter by ~1% run-to-run --
+        which propagates into the refined B-factors.  Refinement should be
+        reproducible, so if the map is not already deterministic we run ONE
+        fully-deterministic recalculation (scale fit over all reflections), pull
+        the resulting f_bulk / weights / fobs, then restore the map's original
+        (fast, stochastic) setting.  The pulled values are copies, so the restore
+        does not disturb them.
 
         Raises NotImplementedError for NXmapSet (no crystallographic data).
         Raises RuntimeError if no live map manager is available.
@@ -752,7 +761,43 @@ class BFactorOccRefineManager:
                 'No live map manager is available on the XmapSet. '
                 'B-factor refinement requires a live (Xtal_thread_mgr) map set.')
 
-        return xm.f_obs, xm.weights, xm.usage_flags, xm.f_bulk
+        was_deterministic = xm.deterministic_scaling
+        if not was_deterministic:
+            xm.deterministic_scaling = True
+        try:
+            # The live map fits the bulk scale only when flagged (a change to
+            # B-factors/occupancies/coords does so via XmapSet._model_changed_cb);
+            # force a fresh fit here so f_bulk matches the current model, and run one
+            # blocking recalc so it (and the sigma_A weights) are ready to read. In
+            # deterministic mode this fit uses all reflections, cutting the ~1% run-to-
+            # run scale jitter (a residual warm-start dependence of ~0.01% remains).
+            xm.bulk_solvent_optimization_needed()
+            self._recompute_maps_blocking(xm)
+            return xm.f_obs, xm.weights, xm.usage_flags, xm.f_bulk
+        finally:
+            if not was_deterministic:
+                # Restore the fast stochastic scaling for interactive live maps.
+                xm.deterministic_scaling = False
+
+    def _recompute_maps_blocking(self, xm):
+        '''Drive the live manager's recalc/ready/apply cycle synchronously (the
+        XmapSet's normal path defers it to a "new frame" trigger, which never fires in
+        the middle of this call).'''
+        import time
+        from ..scattering import ionic_scattering_names
+        atoms = self._map_set.structure.atoms
+        elements = ionic_scattering_names(
+            atoms, radiation=getattr(self._map_set, '_radiation', 'xray'))
+        for _ in range(60000):
+            if not xm.thread_running:
+                break
+            time.sleep(0.005)
+        xm.recalculate_all_maps(atoms.pointers, elements)
+        for _ in range(60000):
+            if xm.ready():
+                break
+            time.sleep(0.005)
+        xm.apply_new_maps()
 
     def _compute_smart_tolerances(self, n_atoms, d_min,
                                    delta_factor=1.0, epsilon_factor=1.0):
