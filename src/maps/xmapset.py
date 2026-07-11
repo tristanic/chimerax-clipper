@@ -429,34 +429,35 @@ class XmapSet(MapSetBase):
             self.recalc_needed()
 
     @property
-    def deterministic_scaling(self):
+    def all_reflections(self):
         '''
-        If False (default), the Fcalc->Fobs bulk-solvent scale is fit on a small
-        random subset of reflections (fast, but Rwork jitters by ~1e-3 between
-        recalculations). If True, it is fit over all reflections - reproducible and
-        unbiased, at a small extra cost. Recommended for differentiable/quantitative
-        use (e.g. force-field training); leave False for interactive live maps.
+        If False (default), the Fcalc->Fobs bulk-solvent scale is fit on a fixed,
+        seeded subset of reflections (see scaling_seed): fast and reproducible, with
+        a tiny fixed bias vs the full fit. If True, it is fit over all reflections -
+        exact and unbiased, at a larger (one-off) cost. Leave False for interactive
+        live maps; True is used internally where the exact scale matters (e.g. the
+        B-factor/occupancy refiner).
         '''
         xm = self._live_xmap_mgr
         if xm is not None:
-            return xm.deterministic_scaling
-        return getattr(self, '_deterministic_scaling', False)
+            return xm.all_reflections
+        return getattr(self, '_all_reflections', False)
 
-    @deterministic_scaling.setter
-    def deterministic_scaling(self, flag):
+    @all_reflections.setter
+    def all_reflections(self, flag):
         flag = bool(flag)
-        self._deterministic_scaling = flag
+        self._all_reflections = flag
         xm = self._live_xmap_mgr
-        if xm is not None and xm.deterministic_scaling != flag:
-            xm.deterministic_scaling = flag
+        if xm is not None and xm.all_reflections != flag:
+            xm.all_reflections = flag
             xm.bulk_solvent_optimization_needed()
             self.recalc_needed()
 
     @property
     def scaling_reflections_per_bin(self):
-        '''Reflections per resolution bin in the random subset used to fit the
-        bulk-solvent scale (default 500). Ignored when deterministic_scaling is
-        True. Exposed for tuning/characterising the subset size.'''
+        '''Reflections per resolution bin in the seeded subset used to fit the
+        bulk-solvent scale (default 500). Ignored when all_reflections is True.
+        Exposed for tuning/characterising the subset size.'''
         xm = self._live_xmap_mgr
         if xm is not None:
             return xm.scaling_reflections_per_bin
@@ -474,8 +475,8 @@ class XmapSet(MapSetBase):
 
     @property
     def scaling_num_bins(self):
-        '''Number of resolution bins in the random subset used to fit the
-        bulk-solvent scale (default 20). Ignored when deterministic_scaling is True.'''
+        '''Number of resolution bins in the seeded subset used to fit the
+        bulk-solvent scale (default 20). Ignored when all_reflections is True.'''
         xm = self._live_xmap_mgr
         if xm is not None:
             return xm.scaling_num_bins
@@ -488,6 +489,27 @@ class XmapSet(MapSetBase):
         xm = self._live_xmap_mgr
         if xm is not None and xm.scaling_num_bins != n:
             xm.scaling_num_bins = n
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_seed(self):
+        '''Seed for the fixed reflection subset used to fit the bulk-solvent scale
+        (default 10061865). The subset is drawn once and reused across recalculations,
+        so the scale is reproducible; vary the seed to probe sensitivity to which
+        reflections were chosen. Ignored when all_reflections is True.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_seed
+        return getattr(self, '_scaling_seed', 10061865)
+
+    @scaling_seed.setter
+    def scaling_seed(self, s):
+        s = int(s)
+        self._scaling_seed = s
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_seed != s:
+            xm.scaling_seed = s
             xm.bulk_solvent_optimization_needed()
             self.recalc_needed()
 
@@ -637,15 +659,19 @@ class XmapSet(MapSetBase):
         # set before the manager existed; harmless no-op when left at the default.
         xm.occupancy_weighted_solvent_mask = getattr(
             self, '_occupancy_weighted_solvent_mask', True)
-        # Deterministic scaling + random-subset size. Apply only preferences set
-        # before the manager existed (enabling deterministic re-derives the working
-        # set, so avoid a needless startup re-sample when left at the default).
+        # Seeded-subset scaling knobs (size + seed) and the all-reflections toggle.
+        # Apply only preferences set before the manager existed; the default (seeded
+        # subset with the C++ default seed) needs no push. Enabling all_reflections
+        # re-derives the working set, so avoid a needless startup re-sample when left
+        # at the default.
         if getattr(self, '_scaling_reflections_per_bin', None) is not None:
             xm.scaling_reflections_per_bin = self._scaling_reflections_per_bin
         if getattr(self, '_scaling_num_bins', None) is not None:
             xm.scaling_num_bins = self._scaling_num_bins
-        if getattr(self, '_deterministic_scaling', False):
-            xm.deterministic_scaling = True
+        if getattr(self, '_scaling_seed', None) is not None:
+            xm.scaling_seed = self._scaling_seed
+        if getattr(self, '_all_reflections', False):
+            xm.all_reflections = True
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms

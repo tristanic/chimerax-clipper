@@ -309,12 +309,17 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     HKL_data<E_sigE<ftype32>> selected_esige;
 
     int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
-    if (!deterministic_scaling_ && n_bins > MAX_N_BINS) {
-        selected_reflections = select_random_reflections_in_bins(esige, reflections_per_bin, MAX_N_BINS);
+    if (!use_all_reflections_ && n_bins > MAX_N_BINS) {
+        // Subsample for the E-value normalisation, using a FIXED seed so the
+        // outlier-cleaned working set is reproducible. This seed is independent of
+        // the (user-tunable) scaling_seed, so probing scaling sensitivity never
+        // perturbs which reflections were rejected as outliers.
+        const size_t OUTLIER_SELECTION_SEED = 10061865;
+        selected_reflections = select_random_reflections_in_bins(esige, reflections_per_bin, MAX_N_BINS, OUTLIER_SELECTION_SEED);
         selected_esige = reflection_subset(esige, selected_reflections);
         n_bins = MAX_N_BINS;
     } else {
-        // Deterministic (or small dataset): use all reflections for the E-value
+        // All reflections (or small dataset): use every reflection for the E-value
         // normalisation, capping only the bin count.
         selected_reflections = hklinfo_;
         selected_esige = esige;
@@ -368,13 +373,13 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
 }
 
 void
-Xtal_mgr_base::set_deterministic_scaling(bool b)
+Xtal_mgr_base::set_all_reflections(bool b)
 {
-    deterministic_scaling_ = b;
-    bulk_solvent_calculator_.set_deterministic(b);
-    // Re-derive the outlier-cleaned working set with the new determinism setting
-    // (remove_outliers reads deterministic_scaling_), mirroring the constructor, then
-    // flag the bulk solvent for re-optimisation on the next generate_fcalc.
+    use_all_reflections_ = b;
+    bulk_solvent_calculator_.set_all_reflections(b);
+    // Re-derive the outlier-cleaned working set with the new setting (remove_outliers
+    // reads use_all_reflections_), mirroring the constructor, then flag the bulk
+    // solvent for re-optimisation on the next generate_fcalc.
     remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
     set_freeflag(guess_free_flag_value(free_flags_));
     bulk_solvent_calculator_.set_bulk_solvent_optimization_needed();

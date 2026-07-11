@@ -114,8 +114,11 @@ The bundle builder injects `/std:c++11` (MSVC) / `-std=c++11` (GCC/Clang) into a
 the **`clipper_cx`** library and the **`clipper_python`** bindings (Eigen reaches the
 bindings via `clipper_ext/adp_occ_refiner.h`'s `Eigen::VectorXd` interface) — are compiled
 with **C++14** (`/std:c++14` win, `-std=c++14` mac/linux) because Eigen ≥5.0.1 hard-requires
-it (`#error Eigen requires at least c++14 support`). Do **not** jump to C++17:
-`std::random_shuffle` (used in `util.h`) was removed in C++17.
+it (`#error Eigen requires at least c++14 support`). **Do NOT jump to C++17.** ChimeraX
+development itself is pinned at C++11 (C++14 on Windows), and these extensions must match its
+toolchain/ABI — C++14 is the ceiling, not just a floor. (Historically the concrete tripwire was
+`std::random_shuffle` in `util.h`, removed in C++17; that has since been migrated to a seeded
+`std::shuffle` — C++11 — so it no longer fails a stray C++17 build, but C++17 is still off-limits.)
 
 **MSVC masks standard-version bugs.** MSVC has no real `/std:c++11` mode (its floor is C++14),
 so code that needs C++14 compiles silently on Windows and only fails on Clang/GCC. This is

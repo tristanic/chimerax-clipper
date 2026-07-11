@@ -333,14 +333,23 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   if (bulk_solvent_optimization_needed_)
   {
-      // Deterministic mode fits over all reflections; otherwise a random per-bin
-      // subset (sized by the exposed knobs) for speed.
-      HKL_info selected_hkls = deterministic_
-          ? fsig.hkl_info()
-          : select_random_reflections_in_bins(fsig, scaling_refls_per_bin_, scaling_num_bins_);
+      // All-reflections mode fits over the full set; otherwise a seeded per-bin
+      // subset (sized by the exposed knobs), drawn ONCE and cached. The selection
+      // and the observed-F subset depend only on the HKL set + knobs + seed -- none
+      // of which change during a refinement -- so they are reused across recalcs,
+      // sparing the HKL_info rebuild + obs-subset copy each fit.
+      if (!all_reflections_ && !scaling_subset_valid_)
+      {
+          scaling_subset_hkls_ = select_random_reflections_in_bins(
+              fsig, scaling_refls_per_bin_, scaling_num_bins_, scaling_seed_);
+          scaling_subset_fsig_ = reflection_subset(fsig, scaling_subset_hkls_);
+          scaling_subset_valid_ = true;
+      }
+      const HKL_info& selected_hkls = all_reflections_ ? fsig.hkl_info() : scaling_subset_hkls_;
+      const HKL_data<F_sigF<T>>& fsig_temp = all_reflections_ ? fsig : scaling_subset_fsig_;
+      // The fcalc-dependent subsets change every fit and must be refreshed here.
       auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
       auto fphi_mask_temp = reflection_subset(mask, selected_hkls);
-      auto fsig_temp = reflection_subset(fsig, selected_hkls);
       auto fphi_temp = reflection_subset(fphi, selected_hkls);
 
       T sum_fobs=0, tolerance=0;
