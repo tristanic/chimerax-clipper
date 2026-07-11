@@ -392,6 +392,32 @@ class XmapSet(MapSetBase):
         return self._live_xmap_mgr
 
     @property
+    def occupancy_weighted_solvent_mask(self):
+        '''
+        If True (default), the bulk-solvent mask is occupancy-weighted: a
+        partial-occupancy atom (e.g. a partially-occupied ligand or one altloc of
+        a branched side chain) excludes solvent only fractionally, rather than
+        stamping a full exclusion sphere. Set False for the original binary mask
+        (useful for A/B comparison against other refinement packages).
+        '''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.occupancy_weighted_solvent_mask
+        return getattr(self, '_occupancy_weighted_solvent_mask', True)
+
+    @occupancy_weighted_solvent_mask.setter
+    def occupancy_weighted_solvent_mask(self, flag):
+        flag = bool(flag)
+        self._occupancy_weighted_solvent_mask = flag
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.occupancy_weighted_solvent_mask != flag:
+            xm.occupancy_weighted_solvent_mask = flag
+            # Changing the mode alters the mask (and hence f_bulk), so refit the
+            # bulk solvent and recompute the maps.
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
     def live_xmaps(self):
         return [m for m in self.child_models() if isinstance(m, XmapHandler_Live)]
 
@@ -533,6 +559,10 @@ class XmapSet(MapSetBase):
         from ..clipper_python import AtomShapeFn
         xm.radiation = (AtomShapeFn.ELECTRON if str(radiation).lower() == 'electron'
                         else AtomShapeFn.XRAY)
+        # Occupancy-weighted bulk-solvent mask (default on). Apply any preference
+        # set before the manager existed; harmless no-op when left at the default.
+        xm.occupancy_weighted_solvent_mask = getattr(
+            self, '_occupancy_weighted_solvent_mask', True)
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms

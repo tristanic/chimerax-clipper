@@ -21,6 +21,8 @@
 
  #include <future>
  #include <chrono>
+ #include <algorithm>
+ #include <vector>
 
 #include "edcalc_ext.h"
 #include <clipper/core/atomsf.h>
@@ -56,10 +58,18 @@ bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& 
     Grid_range gd(cell, grid, grid_radius_);
     ftype atom_radius;
     typename Xmap<T>::Map_reference_coord i0, iu, iv, iw;
+    // Partial-occupancy atoms (0 < occ < 1) are deferred to a second pass that
+    // accumulates fractional protein content; full-occupancy atoms stamp a solid
+    // sphere here as before.  With occupancy weighting off, every non-zero atom is
+    // treated as full and partial_atoms stays empty.
+    std::vector<size_t> partial_atoms;
     // Step 1: set all grid points within (atom radius + probe radius) to 1.
-    for (const Atom &a: atoms) if ( !a.is_null() )
+    for (size_t ai=0; ai<atoms.size(); ++ai)
     {
+        const Atom& a = atoms[ai];
+        if (a.is_null()) continue;
         if (ignore_zero_occ_atoms_ && a.occupancy() == 0) continue;
+        if (occupancy_weighted_ && a.occupancy() < 1.0) { partial_atoms.push_back(ai); continue; }
         try {
             atom_radius = clipper_cx::data::vdw_radius(a.element());
         } catch (...) {
@@ -76,6 +86,29 @@ bool EDcalc_mask_vdw<T>::edcalc_single_thread_ (Xmap<T>& xmap, const Atom_list& 
                 for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
                     if ( (xyz-iw.coord_orth()).lengthsq() < pow(atom_radius+probe_radius_, 2) )
                         xmap[iw] = 1.0;
+                }
+            }
+        }
+    }
+    // Step 1b: accumulate fractional protein content for partial-occupancy atoms.
+    // protein_content = min(1, sum of covering occupancies).  Single-threaded, so a
+    // plain read-modify-write is race-free; voxels already saturated to 1.0 by a
+    // full-occupancy atom are left untouched.
+    for (size_t ai: partial_atoms)
+    {
+        const Atom& a = atoms[ai];
+        const T occ = (T)a.occupancy();
+        atom_radius = clipper_cx::data::vdw_radius(a.element());
+        xyz = a.coord_orth();
+        g0 = xmap.coord_map( xyz ).coord_grid() + gd.min();
+        g1 = xmap.coord_map( xyz ).coord_grid() + gd.max();
+        i0 = typename Xmap<T>::Map_reference_coord( xmap, g0 );
+        for (iu = i0; iu.coord().u() < g1.u(); iu.next_u() ) {
+            for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() ) {
+                for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() ) {
+                    if ( xmap[iw] < 1.0 &&
+                         (xyz-iw.coord_orth()).lengthsq() < pow(atom_radius+probe_radius_, 2) )
+                        xmap[iw] = std::min(T(1.0), xmap[iw] + occ);
                 }
             }
         }
@@ -126,17 +159,32 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
     const Cell& cell = xmap.cell();
     const Grid_sampling& grid = xmap.grid_sampling();
 
+    // Partial-occupancy atoms (0 < occ < 1) are deferred to Step 1b; full-occupancy
+    // atoms stamp a solid sphere in Step 1 as before.  With occupancy weighting off
+    // the list stays empty and Step 1b is skipped entirely (byte-identical, same
+    // speed as the original binary mask).
+    std::vector<size_t> partial_atoms;
+    if (occupancy_weighted_)
+        for (size_t ai=0; ai<atoms.size(); ++ai)
+        {
+            const auto& a = atoms[ai];
+            if (a.is_null()) continue;
+            if (ignore_zero_occ_atoms_ && a.occupancy() == 0) continue;
+            if (a.occupancy() < 1.0) partial_atoms.push_back(ai);
+        }
+
     // Step 1: set all grid points within (atom radius + probe radius) to 1.
     std::vector<std::future<void>> thread_results;
     size_t atoms_per_thread = atoms.size() / n_threads_ + 1;
     size_t start=0, end;
     Grid_range gd(cell, grid, grid_radius_);
     bool izo = ignore_zero_occ_atoms_;
+    bool ow = occupancy_weighted_;
     for (size_t i=0; i< n_threads_; ++i)
     {
         end = std::min(start+atoms_per_thread, atoms.size());
         thread_results.push_back(std::async(std::launch::async,
-            [gd, izo](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
+            [gd, izo, ow](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
             {
                 Coord_orth xyz;
                 Coord_grid cg, g0, g1;
@@ -146,6 +194,7 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
                     const auto& a = atoms[j];
                     if (a.is_null()) continue;
                     if (izo && a.occupancy() == 0) continue;
+                    if (ow && a.occupancy() < 1.0) continue;  // deferred to Step 1b
                     const auto atom_radius = clipper_cx::data::vdw_radius(a.element());
                     xyz = a.coord_orth();
                     cg = xmap.coord_map(xyz).coord_grid();
@@ -168,6 +217,69 @@ bool EDcalc_mask_vdw<T>::edcalc_threaded_ (Xmap<T>& xmap, const Atom_list& atoms
     }
     for (auto& r: thread_results)
         r.get();
+
+    // Step 1b: accumulate fractional protein content for partial-occupancy atoms,
+    // protein_content = min(1, sum of covering occupancies).  Uses Xmap's per-grid-
+    // point lock (test_and_set) with the retry-later pattern from EDcalc_aniso_thread:
+    // on a lock collision the voxel is deferred to a later sweep rather than spin-
+    // waiting (fast because collisions are rare).  Safe because Step 1 has fully
+    // joined -- no lock-free writer is live -- and every writer here takes the lock;
+    // the capped-additive rule is order-independent, so the result is deterministic.
+    if (!partial_atoms.empty())
+    {
+        thread_results.clear();
+        const size_t n_partial = partial_atoms.size();
+        size_t partial_per_thread = n_partial / n_threads_ + 1;
+        start = 0;
+        for (size_t i=0; i<n_threads_ && start < n_partial; ++i)
+        {
+            end = std::min(start+partial_per_thread, n_partial);
+            thread_results.push_back(std::async(std::launch::async,
+                [gd, &partial_atoms](Xmap<T>& xmap, const Atom_list& atoms, const ftype& probe_radius, size_t start, size_t end)
+                {
+                    Coord_orth xyz;
+                    Coord_grid cg, g0, g1;
+                    typename Xmap<T>::Map_reference_coord i0, iu, iv, iw;
+                    std::vector<typename Xmap<T>::Map_reference_coord> in_range, remaining;
+                    for (size_t k=start; k<end; ++k)
+                    {
+                        const auto& a = atoms[partial_atoms[k]];
+                        const T occ = (T)a.occupancy();
+                        const auto atom_radius = clipper_cx::data::vdw_radius(a.element());
+                        const auto r2 = pow(atom_radius+probe_radius, 2);
+                        xyz = a.coord_orth();
+                        cg = xmap.coord_map(xyz).coord_grid();
+                        g0 = cg + gd.min();
+                        g1 = cg + gd.max();
+                        i0 = typename Xmap<T>::Map_reference_coord( xmap, g0 );
+                        in_range.clear();
+                        remaining.clear();
+                        for (iu=i0; iu.coord().u() < g1.u(); iu.next_u() )
+                            for (iv=iu; iv.coord().v() < g1.v(); iv.next_v() )
+                                for (iw=iv; iw.coord().w() < g1.w(); iw.next_w() )
+                                    if ( (xyz-iw.coord_orth()).lengthsq() < r2 )
+                                        in_range.push_back(iw);
+                        while (!in_range.empty())
+                        {
+                            for (const auto& ix: in_range)
+                            {
+                                if (xmap.lock_element(ix)) { remaining.push_back(ix); continue; }
+                                if (xmap[ix] < 1.0)
+                                    xmap[ix] = std::min(T(1.0), xmap[ix] + occ);
+                                xmap.unlock_element(ix);
+                            }
+                            in_range.swap(remaining);
+                            remaining.clear();
+                        }
+                    }
+                },
+                std::ref(xmap), std::cref(atoms), probe_radius_, start, end
+            ));
+            start += partial_per_thread;
+        }
+        for (auto& r: thread_results)
+            r.get();
+    }
 
     // Step 2: "shrink-wrap" the solvent mask back to the model atoms. For every
     // grid point with a non-zero value, check if it is within shrink_radius_ of

@@ -159,6 +159,8 @@ void declare_xtal_thread_mgr(py::module& m)
         .def("get_map_stats", &Class::get_map_stats)
         .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
         .def_property("radiation", &Class::radiation, &Class::set_radiation)
+        .def_property("occupancy_weighted_solvent_mask",
+            &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
         .def("delete", &Class::delete_all)
         ;
 }

@@ -43,10 +43,12 @@ public:
                      const ftype probe_radius = 1.0,
                      const ftype shrink_radius = 1.1,
                      const size_t n_threads = 1,
-                     const bool ignore_zero_occ_atoms = true)
+                     const bool ignore_zero_occ_atoms = true,
+                     const bool occupancy_weighted = true)
         : grid_radius_(grid_radius), probe_radius_(probe_radius),
           shrink_radius_(shrink_radius), n_threads_(n_threads),
-          ignore_zero_occ_atoms_(ignore_zero_occ_atoms)
+          ignore_zero_occ_atoms_(ignore_zero_occ_atoms),
+          occupancy_weighted_(occupancy_weighted)
     {}
     bool operator() (Xmap<T>& xmap, const Atom_list& atoms) const;
     bool operator() (NXmap<T>& nxmap, const Atom_list& atoms) const;
@@ -60,6 +62,11 @@ private:
     const ftype shrink_radius_;
     size_t n_threads_;
     bool ignore_zero_occ_atoms_;
+    // When true, a partial-occupancy atom excludes solvent only fractionally: the
+    // protein content at each grid point is the occupancy sum of covering atoms,
+    // capped at 1 (solvent = 1 - that).  When false, every non-zero-occupancy atom
+    // stamps a full binary sphere (the original Jiang & Brunger behaviour).
+    bool occupancy_weighted_;
 }; // class EDcalc_mask_vdw
 
 template<class T> class EDcalc_aniso_thread : public EDcalc_base<T> {

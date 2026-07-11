@@ -66,8 +66,17 @@ public:
     //! (threaded) structure-factor calculation; it is never mutated concurrently.
     void set_radiation(AtomShapeFn::RADIATION r) { radiation_ = r; }
     AtomShapeFn::RADIATION radiation() const { return radiation_; }
+    //! When true (default), the solvent mask is occupancy-weighted: a partial-
+    //! occupancy atom excludes solvent only fractionally (protein content =
+    //! min(1, sum of covering occupancies)).  When false, every non-zero-occupancy
+    //! atom stamps a full binary sphere (original Jiang & Brunger behaviour).  Read
+    //! by the EDcalc built in each operator() call and folded into mask_signature,
+    //! so toggling it invalidates the mask cache on the next call.
+    void set_occupancy_weighted(bool b) { occupancy_weighted_ = b; }
+    bool occupancy_weighted() const { return occupancy_weighted_; }
 private:
     AtomShapeFn::RADIATION radiation_ = AtomShapeFn::XRAY;
+    bool occupancy_weighted_ = true;
     bool bulk_solvent_optimization_needed_ = true;
     //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
     //! from the stored (bulkscl, bulk_u) rather than cold-starting.
@@ -80,18 +89,22 @@ private:
     HKL_data<F_phi<T>> fmask_, fbulk_;
     //! Cache for the solvent-mask transform.  The mask (and hence fmask_, plus
     //! the mean solvent fraction bulkfrc) is a function of atom positions,
-    //! elements and zero-occupancy status ONLY -- it is invariant to B-factor
-    //! and occupancy-value changes.  When those inputs are unchanged from the
-    //! previous call (e.g. across B-factor/occupancy refinement macrocycles,
-    //! where coordinates are fixed) the cached fmask_ is reused and a full
-    //! EDcalc_mask + FFT is skipped -- roughly half the cost of operator().
+    //! elements, and -- when occupancy_weighted_ is on -- per-atom occupancy
+    //! values (otherwise only zero-occupancy status).  It is invariant to
+    //! B-factor changes.  When the mask-determining inputs are unchanged from the
+    //! previous call (e.g. across B-factor refinement macrocycles, where
+    //! coordinates and occupancies are fixed) the cached fmask_ is reused and a
+    //! full EDcalc_mask + FFT is skipped -- roughly half the cost of operator().
     //! mask_signature_ fingerprints exactly those inputs; mask_cache_valid_
-    //! guards the first call.
+    //! guards the first call.  Note: with occupancy weighting on, an occupancy
+    //! change now invalidates the mask (it genuinely alters the solvent content),
+    //! so occupancy-refinement macrocycles rebuild the mask between cycles.
     bool mask_cache_valid_ = false;
     //! 64-bit FNV-1a fingerprint of the mask-determining inputs (atom count, and
-    //! per-atom coordinates, element and zero-occupancy flag).  A plain integer
-    //! (not a heap-allocating std::string) so the member is trivially destructible
-    //! and safe across the DLL boundary of this CLIPPER_CX_IMEX-exported class.
+    //! per-atom coordinates, element, and occupancy -- as a value when weighting
+    //! is on, else a zero-occupancy flag).  A plain integer (not a heap-allocating
+    //! std::string) so the member is trivially destructible and safe across the
+    //! DLL boundary of this CLIPPER_CX_IMEX-exported class.
     uint64_t mask_signature_ = 0;
     //! Compute the mask-determining fingerprint for `atoms`.
     uint64_t mask_signature(const Atom_list& atoms) const;

@@ -178,6 +178,11 @@ public:
     inline void set_radiation(AtomShapeFn::RADIATION r) { bulk_solvent_calculator_.set_radiation(r); }
     inline AtomShapeFn::RADIATION radiation() const { return bulk_solvent_calculator_.radiation(); }
 
+    // Occupancy-weighted bulk-solvent mask: when true (default), partial-occupancy
+    // atoms exclude solvent only fractionally. Forwarded to the bulk-solvent engine.
+    inline void set_occupancy_weighted_solvent_mask(bool b) { bulk_solvent_calculator_.set_occupancy_weighted(b); }
+    inline bool occupancy_weighted_solvent_mask() const { return bulk_solvent_calculator_.occupancy_weighted(); }
+
     const Xmap_details& map_details(const std::string& name) const { return maps_.at(name); }
 
     size_t n_maps() const { return maps_.size(); }
@@ -533,6 +538,8 @@ public:
     // races the write.
     inline AtomShapeFn::RADIATION radiation() const { deletion_guard(); return mgr_->radiation(); }
     inline void set_radiation(AtomShapeFn::RADIATION r) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_radiation(r); }
+    inline bool occupancy_weighted_solvent_mask() const { deletion_guard(); return mgr_->occupancy_weighted_solvent_mask(); }
+    inline void set_occupancy_weighted_solvent_mask(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_occupancy_weighted_solvent_mask(b); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();
