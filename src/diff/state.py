@@ -401,28 +401,6 @@ class SupercellXrayTargetState:
         return L
 
 
-def _u6_congruence(R):
-    '''6×6 matrix ``A`` mapping stored ADP vectors ``(u11,u22,u33,u12,u13,u23)`` under
-    the operator whose orthogonal rotation part is ``R``, matching Clipper's
-    ``U_aniso_orth.transform``: ``U' = rᵀ·U·r`` with ``r = R⁻¹`` (NB **not** ``R·U·Rᵀ``
-    — these differ when ``R`` is not exactly orthogonal, as symop ``Place`` rotations
-    in a non-orthogonal cell generally are not). This is the exact linear map the
-    engine's expansion / ``collapse_to_asu`` apply, so folding the box ADPs with it
-    reproduces the ASU-frame ADPs; its transpose unfolds the aniso-U gradient
-    (``dL/dU_box = Aᵀ·dL/dU_asu``). Column ``k`` is the transformed ``k``-th basis
-    tensor.'''
-    r = numpy.linalg.inv(R)
-    idx = ((0, 0), (1, 1), (2, 2), (0, 1), (0, 2), (1, 2))
-    A = numpy.empty((6, 6), numpy.double)
-    for k, (a, b) in enumerate(idx):
-        E = numpy.zeros((3, 3), numpy.double)
-        E[a, b] = 1.0
-        E[b, a] = 1.0                      # symmetric basis tensor
-        RER = r.T @ E @ r                  # r·U·rᵀ with r = R⁻¹  (Clipper convention)
-        A[:, k] = (RER[0, 0], RER[1, 1], RER[2, 2], RER[0, 1], RER[0, 2], RER[1, 2])
-    return A
-
-
 class EnsembleXrayTargetState:
     '''
     Small-molecule **ensemble** crystallographic target for a periodic MD box.
@@ -432,9 +410,20 @@ class EnsembleXrayTargetState:
     the bulk-solvent mask stays correct), the small-molecule regime has no bulk
     solvent, so the crystallographically-standard **occupancy-weighted overlay** is
     used: a full P1 box (``n_asu`` symmetry copies produced by ``clipper unitcells`` /
-    ``symcopies``, carrying a ``SymmetryExpansion``) is folded onto a single ASU at
-    occupancy ``1/n_asu`` and scored — in **one** SF calc — against the observed
-    structure factors through :class:`XrayTargetState` (reciprocal, **no** ``f_bulk``).
+    ``symcopies``, carrying a ``SymmetryExpansion``) is scored — in **one** SF calc, at
+    occupancy ``1/n_asu`` — against the observed structure factors through
+    :class:`XrayTargetState` (reciprocal, **no** ``f_bulk``).
+
+    **No box→ASU fold.** Clipper's SFcalc applies the full space group to every atom
+    regardless of position, so a box copy generates the same reflection-weighted orbit
+    as its ASU parent — the box atoms are handed to the evaluator at their **real
+    positions** (coords and box-frame ADPs verbatim) and the gradient comes back in the
+    box frame. Verified numerically identical to an explicit fold (residual and gradient
+    to float32-FFT rounding, including a perturbed box and anisotropic ADPs, 2026-07-11),
+    the precondition being that the box is a **complete set of orbits** — a whole unit
+    cell (or integer supercell), which ``clipper unitcells`` produces. ``collapse_to_asu``
+    remains a convenience for *viewing*, but is unnecessary — and wasteful — here. This
+    is the same trick :class:`SupercellXrayTargetState` already uses.
 
     No explicit per-atom multiplicity is needed: exact special-position dedup at
     expansion leaves a multiplicity-``m`` site with only ``n_asu/m`` images, so at
@@ -444,26 +433,19 @@ class EnsembleXrayTargetState:
     **Selectable gradient terms.** ``param_names`` chooses any subset of the eleven
     per-atom parameters (default ``('X','Y','Z')`` for the "frozen snapshots" use;
     include ``U11..U23`` to estimate anisotropic ADPs, ``Uiso``/``Occ`` as needed).
-    The box→ASU fold rotates coordinates (``asu = R·box + t``) *and* aniso tensors
-    (``U_asu = R·U·Rᵀ``), so the returned gradient is unfolded back into the **box**
-    frame per term: **X,Y,Z** by ``Rᵀ``, **U11..U23** by the congruence-transpose
-    ``Aᵀ``, and **Uiso**/**Occ** unchanged (rotation-invariant). Because coordinates
-    couple within their triple and aniso-U within its sextet, each of those groups
-    must be requested whole (all three / all six) or not at all.
+    With no fold, each parameter's gradient is independent, so terms may be requested
+    **individually** — a single component such as ``('U11',)`` is allowed.
 
     Interface mirrors :class:`XrayTargetState` — ``value_and_gradient(box_coords,
     u_iso, u_aniso, occ, is_aniso, refresh_scale) -> (L, (M, P))`` over all ``M`` box
     atoms, columns in ``param_names`` order — so
     :func:`chimerax.clipper.diff.targets.xray_loss` wraps it directly (and, for the
     coords-only default, ``crystallographic_loss`` does too). All coordinate/ADP/occ
-    inputs are in the **box** frame; the fold/unfold is internal. ADP and occupancy
-    args left ``None`` fall back to builder-supplied defaults, so a coords-only caller
-    can simply pass ``box_coords``.
+    inputs are in the **box** frame. ADP and occupancy args left ``None`` fall back to
+    builder-supplied defaults, so a coords-only caller can simply pass ``box_coords``.
 
     Args:
         * elements: ``M`` box-atom element symbols.
-        * inv_rot / inv_trn: ``(M,3,3)`` / ``(M,3)`` per-atom **inverse** operator
-          (box→ASU rigid fold); from ``exp.inverse_operators`` via the builder.
         * param_names: subset of the eleven parameters (see above).
         * fobs / phi_fom / usage: observed data (reciprocal; small molecules supply
           ``phi_fom.fom()==1``).
@@ -473,25 +455,15 @@ class EnsembleXrayTargetState:
 
     _ALL = ('X', 'Y', 'Z', 'Uiso', 'Occ', 'U11', 'U22', 'U33', 'U12', 'U13', 'U23')
 
-    def __init__(self, elements, inv_rot, inv_trn, *, param_names=('X', 'Y', 'Z'),
+    def __init__(self, elements, *, param_names=('X', 'Y', 'Z'),
                  fobs, phi_fom, usage, kind='amplitude', u_iso=None, u_aniso=None,
                  is_aniso=None, occupancy=None, n_threads=1, threaded_density=True):
         self.param_names = tuple(param_names)
         bad = [p for p in self.param_names if p not in self._ALL]
         if bad:
             raise ValueError('unknown parameter name(s): {}'.format(bad))
-        xyz = [p for p in ('X', 'Y', 'Z') if p in self.param_names]
-        if xyz and len(xyz) != 3:
-            raise ValueError('X, Y, Z must be selected together (the fold rotates them)')
-        u6 = [p for p in ('U11', 'U22', 'U33', 'U12', 'U13', 'U23') if p in self.param_names]
-        if u6 and len(u6) != 6:
-            raise ValueError('U11..U23 must be selected together (the fold rotates the tensor)')
 
         n = self._M = len(elements)
-        self._R = numpy.ascontiguousarray(inv_rot, numpy.double).reshape(n, 3, 3)
-        self._t = numpy.ascontiguousarray(inv_trn, numpy.double).reshape(n, 3)
-        # Per-atom 6×6 congruence for the box→ASU aniso fold (U_asu = R·U·Rᵀ).
-        self._A = numpy.stack([_u6_congruence(self._R[a]) for a in range(n)])
         self._state = XrayTargetState(
             elements, param_names=self.param_names, fobs=fobs, phi_fom=phi_fom,
             usage=usage, kind=kind, n_threads=n_threads,
@@ -509,9 +481,6 @@ class EnsembleXrayTargetState:
             self._def_occ = numpy.full(n, float(occupancy), numpy.double)
         else:
             self._def_occ = numpy.ascontiguousarray(occupancy, numpy.double).reshape(n)
-        col = {name: i for i, name in enumerate(self.param_names)}
-        self._xyz_cols = [col[c] for c in ('X', 'Y', 'Z')] if xyz else None
-        self._u6_cols = [col[c] for c in ('U11', 'U22', 'U33', 'U12', 'U13', 'U23')] if u6 else None
 
     @property
     def n_atoms(self):
@@ -520,11 +489,12 @@ class EnsembleXrayTargetState:
     def value_and_gradient(self, box_coords, u_iso=None, u_aniso=None, occ=None,
                            is_aniso=None, refresh_scale=False):
         '''
-        Fold box→ASU, score, unfold. ``box_coords`` and any ADP/occ arrays are in the
-        **box** frame (whole box, ``M`` atoms); ADP/occ args left ``None`` use the
-        builder-supplied defaults. Returns ``(L, grad)`` with ``grad`` ``(M, P)`` =
-        ``dL/d(box params)``, columns in :attr:`param_names` order. Scale is fixed
-        unless ``refresh_scale`` (call :meth:`refresh_scaling` between optimiser steps).
+        Score the box at its real positions. ``box_coords`` and any ADP/occ arrays are
+        in the **box** frame (whole box, ``M`` atoms); ADP/occ args left ``None`` use the
+        builder-supplied defaults. Clipper folds each atom into the ASU internally, so the
+        returned ``(L, grad)`` has ``grad`` ``(M, P)`` = ``dL/d(box params)`` directly,
+        columns in :attr:`param_names` order. Scale is fixed unless ``refresh_scale``
+        (call :meth:`refresh_scaling` between optimiser steps).
         '''
         n = self._M
         box = numpy.ascontiguousarray(box_coords, numpy.double).reshape(n, 3)
@@ -533,22 +503,14 @@ class EnsembleXrayTargetState:
         b_occ = self._def_occ if occ is None else numpy.ascontiguousarray(occ, numpy.double).reshape(n)
         b_isan = self._def_isan if is_aniso is None else numpy.ascontiguousarray(is_aniso, numpy.uint8).reshape(n)
 
-        # Fold to the ASU frame: coords rigidly, aniso-U by the congruence; Uiso/Occ
-        # are rotation-invariant and pass straight through.
-        asu = numpy.einsum('aij,aj->ai', self._R, box) + self._t
-        asu_uan = None if b_uan is None else numpy.einsum('akl,al->ak', self._A, b_uan)
-        L, g_asu = self._state.value_and_gradient(
-            asu, u_iso=b_uiso, u_aniso=asu_uan, occ=b_occ, is_aniso=b_isan,
+        # Hand the box atoms to the evaluator AS-IS: Clipper's SFcalc applies the full
+        # space group to every atom regardless of position, so an atom at its real box
+        # position generates the same orbit as its ASU parent and the gradient comes back
+        # in the box frame directly — no box→ASU fold or gradient unfold needed.
+        L, grad = self._state.value_and_gradient(
+            box, u_iso=b_uiso, u_aniso=b_uan, occ=b_occ, is_aniso=b_isan,
             refresh_scale=refresh_scale)
-        g_asu = numpy.ascontiguousarray(g_asu, numpy.double)
-
-        # Unfold ASU→box: X,Y,Z by Rᵀ; U11..U23 by Aᵀ; Uiso/Occ unchanged.
-        g_box = g_asu.copy()
-        if self._xyz_cols is not None:
-            g_box[:, self._xyz_cols] = numpy.einsum('aij,ai->aj', self._R, g_asu[:, self._xyz_cols])
-        if self._u6_cols is not None:
-            g_box[:, self._u6_cols] = numpy.einsum('akl,ak->al', self._A, g_asu[:, self._u6_cols])
-        return float(L), g_box
+        return float(L), numpy.ascontiguousarray(grad, numpy.double)
 
     def refresh_scaling(self, box_coords, u_iso=None, u_aniso=None, occ=None,
                         is_aniso=None):

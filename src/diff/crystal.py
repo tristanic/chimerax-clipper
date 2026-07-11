@@ -40,16 +40,12 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
 
     ``box_model`` is a P1 box produced by the symmetry-expansion engine — it must
     carry ``box_model.clipper_sym_expansion`` (a ``SymmetryExpansion``). The target
-    folds the box onto a single ASU at occupancy ``1/n_asu`` and scores that
-    occupancy-weighted overlay against the observed data through a single-ASU
-    (bulk-free) reciprocal SF calc; the box→ASU fold is differentiable, so the
-    coordinate gradient propagates straight back to the box atoms.
-
-    The per-atom **inverse** operators come from ``clipper_sym_expansion`` (the same
-    ones ``collapse_to_asu`` applies); the target folds box→ASU with them, rotating
-    aniso-U tensors by ``U' = R U Rᵀ`` internally (matching ``collapse_to_asu``), so
-    the box-frame model values are passed straight through here. Occupancy defaults to
-    ``1/n_asu``.
+    scores the box (occupancy ``1/n_asu``) as an occupancy-weighted overlay against the
+    observed data through a single-ASU (bulk-free) reciprocal SF calc. Clipper maps each
+    box atom into the ASU internally, so the atoms are passed at their real box positions
+    and the gradient propagates straight back to them — no explicit box→ASU fold, and
+    ``collapse_to_asu`` is needed only for viewing. (Only ``n_asu`` is read from the
+    expansion record here, to set the occupancy.)
 
     ``param_names`` selects which gradient terms the target returns (default coords
     only; include ``U11..U23`` to estimate anisotropic ADPs, etc.) — see
@@ -86,17 +82,7 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
     M = len(atoms)
     elements = ionic_scattering_names(atoms, radiation=radiation)
 
-    # Per-atom operator index (which symmetry copy each atom belongs to), and the
-    # per-atom inverse operator that folds it back onto the ASU.
-    obc = exp.operator_by_chain
-    op_of_atom = numpy.array(
-        [obc.get(cid, 0) for cid in atoms.residues.chain_ids], dtype=int)
-    inv_ops = exp.inverse_operators                    # list[Place]
-    inv_mats = [numpy.asarray(p.matrix, numpy.double) for p in inv_ops]  # (3,4)
-    inv_R = numpy.stack([inv_mats[o][:, :3] for o in op_of_atom])   # (M,3,3)
-    inv_t = numpy.stack([inv_mats[o][:, 3] for o in op_of_atom])    # (M,3)
-
-    # Default BOX-frame ADPs (the target rotates them into the ASU frame itself).
+    # BOX-frame ADPs, passed straight through (Clipper folds each atom into the ASU).
     # Isotropic B → u_iso; anisotropic atoms carry aniso_u6 (in the box frame).
     u_iso = numpy.asarray(atoms.bfactors, numpy.double) * _B2U
     has_aniso = numpy.asarray(atoms.has_aniso_u)
@@ -106,6 +92,6 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
         u_aniso[has_aniso] = atoms.filter(has_aniso).aniso_u6
 
     return EnsembleXrayTargetState(
-        elements, inv_R, inv_t, param_names=param_names, fobs=fobs, phi_fom=phi_fom,
+        elements, param_names=param_names, fobs=fobs, phi_fom=phi_fom,
         usage=usage, kind=kind, u_iso=u_iso, u_aniso=u_aniso, is_aniso=is_aniso,
         occupancy=1.0 / exp.n_asu, n_threads=n_threads)
