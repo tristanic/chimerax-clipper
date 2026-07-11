@@ -89,6 +89,19 @@ void declare_xtal_mgr(py::module& m)
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
         .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
+        // Occupancy-weighted bulk-solvent mask (parity with Xtal_thread_mgr): when True
+        // (default) partial-occupancy atoms exclude solvent only fractionally; False
+        // restores the original binary mask, for A/B comparison.
+        .def_property("occupancy_weighted_solvent_mask",
+            &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
+        // Deterministic scaling (fit over all reflections) + the random-subset size
+        // knobs used when it is off. Parity with Xtal_thread_mgr.
+        .def_property("deterministic_scaling",
+            &Class::deterministic_scaling, &Class::set_deterministic_scaling)
+        .def_property("scaling_reflections_per_bin",
+            &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
+        .def_property("scaling_num_bins",
+            &Class::scaling_num_bins, &Class::set_scaling_num_bins)
         .def("delete_xmap", &Class::delete_xmap)
         ;
 } // declare_xal_mgr
@@ -181,6 +194,12 @@ void declare_xtal_thread_mgr(py::module& m)
         .def_property("radiation", &Class::radiation, &Class::set_radiation)
         .def_property("occupancy_weighted_solvent_mask",
             &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
+        .def_property("deterministic_scaling",
+            &Class::deterministic_scaling, &Class::set_deterministic_scaling)
+        .def_property("scaling_reflections_per_bin",
+            &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
+        .def_property("scaling_num_bins",
+            &Class::scaling_num_bins, &Class::set_scaling_num_bins)
         .def("delete", &Class::delete_all)
         ;
 }

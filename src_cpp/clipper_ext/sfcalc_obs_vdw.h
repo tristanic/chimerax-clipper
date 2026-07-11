@@ -74,9 +74,25 @@ public:
     //! so toggling it invalidates the mask cache on the next call.
     void set_occupancy_weighted(bool b) { occupancy_weighted_ = b; }
     bool occupancy_weighted() const { return occupancy_weighted_; }
+    //! Deterministic scaling: when true, the bulk-solvent/scale fit uses ALL
+    //! reflections instead of the random per-bin subset -- reproducible and
+    //! unbiased, at the cost of a larger (one-off) fit. Default false (the fast,
+    //! stochastic subset used for live maps). The bin knobs below are ignored when
+    //! this is true.
+    void set_deterministic(bool b) { deterministic_ = b; }
+    bool deterministic() const { return deterministic_; }
+    //! Size of the random reflection subset used for the (non-deterministic) scale
+    //! fit: reflections per resolution bin x number of bins. Defaults 500 x 20.
+    void set_scaling_reflections_per_bin(size_t n) { scaling_refls_per_bin_ = n; }
+    size_t scaling_reflections_per_bin() const { return scaling_refls_per_bin_; }
+    void set_scaling_num_bins(size_t n) { scaling_num_bins_ = n; }
+    size_t scaling_num_bins() const { return scaling_num_bins_; }
 private:
     AtomShapeFn::RADIATION radiation_ = AtomShapeFn::XRAY;
     bool occupancy_weighted_ = true;
+    bool deterministic_ = false;
+    size_t scaling_refls_per_bin_ = 500;
+    size_t scaling_num_bins_ = 20;
     bool bulk_solvent_optimization_needed_ = true;
     //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
     //! from the stored (bulkscl, bulk_u) rather than cold-starting.

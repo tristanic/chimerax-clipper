@@ -235,6 +235,55 @@ def debug_maps(session, models=None, enable=True):
         session.logger.info('Removed structure-factor component maps from {} '
             'dataset(s).'.format(n_sets))
 
+def set_scaling(session, models=None, deterministic=None, reflections_per_bin=None,
+                num_bins=None):
+    '''Control how the live crystallographic maps fit the Fcalc->Fobs bulk-solvent
+    scale. By default the scale is fit on a small random subset of reflections (fast,
+    but Rwork jitters by ~1e-3 between recalculations). "deterministic true" fits over
+    all reflections instead -- reproducible and unbiased, at a small extra cost.
+    reflectionsPerBin / numBins set the size of the random subset used when
+    deterministic is false (defaults 500 and 20), exposed for tuning. With no options,
+    reports the current settings.'''
+    from chimerax.clipper.symmetry import get_map_mgr
+    from chimerax.core.errors import UserError
+    if models is None:
+        models = session.models.list()
+    mgrs = []
+    seen = set()
+    for m in models:
+        try:
+            mgr = get_map_mgr(m, create=False)
+        except Exception:
+            mgr = None
+        if mgr is not None and id(mgr) not in seen:
+            seen.add(id(mgr))
+            mgrs.append(mgr)
+    if not mgrs:
+        raise UserError('No Clipper crystallographic maps found for the specified '
+            'model(s). Open reflection data first with "clipper open".')
+    n_sets = 0
+    for mgr in mgrs:
+        for xs in mgr.xmapsets:
+            if xs.live_xmap_mgr is None:
+                continue
+            if deterministic is not None:
+                xs.deterministic_scaling = deterministic
+            if reflections_per_bin is not None:
+                xs.scaling_reflections_per_bin = reflections_per_bin
+            if num_bins is not None:
+                xs.scaling_num_bins = num_bins
+            n_sets += 1
+            session.logger.info(
+                '(CLIPPER) {}: bulk-solvent scaling = {} (reflections/bin={}, '
+                'bins={})'.format(
+                    xs.name,
+                    'deterministic (all reflections)' if xs.deterministic_scaling
+                    else 'random subset',
+                    xs.scaling_reflections_per_bin, xs.scaling_num_bins))
+    if n_sets == 0:
+        raise UserError('No live crystallographic maps found for the specified '
+            'model(s) (static maps have no scaling to control).')
+
 def discard_symmetry(session, models):
     '''Discard a model's crystallographic symmetry (revert to a P1 box) and
     rewrite its symmetry metadata so this is preserved across sessions. Useful
@@ -898,6 +947,20 @@ def register_clipper_cmd(logger):
                  'Fbulk, Fmask) for the given model(s), as a debugging aid'
     )
     register('clipper debugmaps', debugmaps_desc, debug_maps, logger=logger)
+
+    scaling_desc = CmdDesc(
+        optional=[
+            ('models', StructuresArg),
+        ],
+        keyword=[
+            ('deterministic', BoolArg),
+            ('reflections_per_bin', IntArg),
+            ('num_bins', IntArg),
+        ],
+        synopsis='Control live-map bulk-solvent scaling: deterministic (fit over all '
+                 'reflections) vs a random subset, and the random subset size'
+    )
+    register('clipper scaling', scaling_desc, set_scaling, logger=logger)
 
     discard_sym_desc = CmdDesc(
         required=[

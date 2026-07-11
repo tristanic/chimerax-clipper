@@ -333,7 +333,11 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   if (bulk_solvent_optimization_needed_)
   {
-      HKL_info selected_hkls = select_random_reflections_in_bins(fsig, 500, 20);
+      // Deterministic mode fits over all reflections; otherwise a random per-bin
+      // subset (sized by the exposed knobs) for speed.
+      HKL_info selected_hkls = deterministic_
+          ? fsig.hkl_info()
+          : select_random_reflections_in_bins(fsig, scaling_refls_per_bin_, scaling_num_bins_);
       auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
       auto fphi_mask_temp = reflection_subset(mask, selected_hkls);
       auto fsig_temp = reflection_subset(fsig, selected_hkls);

@@ -429,6 +429,69 @@ class XmapSet(MapSetBase):
             self.recalc_needed()
 
     @property
+    def deterministic_scaling(self):
+        '''
+        If False (default), the Fcalc->Fobs bulk-solvent scale is fit on a small
+        random subset of reflections (fast, but Rwork jitters by ~1e-3 between
+        recalculations). If True, it is fit over all reflections - reproducible and
+        unbiased, at a small extra cost. Recommended for differentiable/quantitative
+        use (e.g. force-field training); leave False for interactive live maps.
+        '''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.deterministic_scaling
+        return getattr(self, '_deterministic_scaling', False)
+
+    @deterministic_scaling.setter
+    def deterministic_scaling(self, flag):
+        flag = bool(flag)
+        self._deterministic_scaling = flag
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.deterministic_scaling != flag:
+            xm.deterministic_scaling = flag
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_reflections_per_bin(self):
+        '''Reflections per resolution bin in the random subset used to fit the
+        bulk-solvent scale (default 500). Ignored when deterministic_scaling is
+        True. Exposed for tuning/characterising the subset size.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_reflections_per_bin
+        return getattr(self, '_scaling_reflections_per_bin', 500)
+
+    @scaling_reflections_per_bin.setter
+    def scaling_reflections_per_bin(self, n):
+        n = int(n)
+        self._scaling_reflections_per_bin = n
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_reflections_per_bin != n:
+            xm.scaling_reflections_per_bin = n
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_num_bins(self):
+        '''Number of resolution bins in the random subset used to fit the
+        bulk-solvent scale (default 20). Ignored when deterministic_scaling is True.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_num_bins
+        return getattr(self, '_scaling_num_bins', 20)
+
+    @scaling_num_bins.setter
+    def scaling_num_bins(self, n):
+        n = int(n)
+        self._scaling_num_bins = n
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_num_bins != n:
+            xm.scaling_num_bins = n
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
     def live_xmaps(self):
         return [m for m in self.child_models() if isinstance(m, XmapHandler_Live)]
 
@@ -574,6 +637,15 @@ class XmapSet(MapSetBase):
         # set before the manager existed; harmless no-op when left at the default.
         xm.occupancy_weighted_solvent_mask = getattr(
             self, '_occupancy_weighted_solvent_mask', True)
+        # Deterministic scaling + random-subset size. Apply only preferences set
+        # before the manager existed (enabling deterministic re-derives the working
+        # set, so avoid a needless startup re-sample when left at the default).
+        if getattr(self, '_scaling_reflections_per_bin', None) is not None:
+            xm.scaling_reflections_per_bin = self._scaling_reflections_per_bin
+        if getattr(self, '_scaling_num_bins', None) is not None:
+            xm.scaling_num_bins = self._scaling_num_bins
+        if getattr(self, '_deterministic_scaling', False):
+            xm.deterministic_scaling = True
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms

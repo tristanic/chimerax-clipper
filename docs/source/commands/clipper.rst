@@ -325,6 +325,28 @@ are created hidden and are *display-gated*: while hidden they are not transforme
 (so they cost nothing), and each is recomputed only while shown. Debug maps are
 not saved in sessions; re-run this command to recreate them.
 
+.. _`scaling`:
+
+clipper scaling
+---------------
+
+Syntax: clipper scaling [*structures*] [*deterministic* *true/false*] [*reflectionsPerBin* *N*] [*numBins* *N*]
+
+Control how the live crystallographic maps fit the Fcalc-to-Fobs bulk-solvent scale
+for the given model(s). By default the scale is fit on a small *random subset* of
+reflections (500 per bin across 20 resolution bins) - fast, and the resulting Rwork
+jitter between recalculations is tiny (~1e-3), a good trade for interactive maps.
+
+* **deterministic true** fits the scale over *all* reflections instead: fully
+  reproducible and unbiased, at a small (one-off) extra cost. Recommended when the
+  R-factor or map must be deterministic - e.g. quantitative comparison, or a
+  differentiable target for force-field training.
+* **reflectionsPerBin** / **numBins** set the size of the random subset used when
+  *deterministic* is false (defaults 500 and 20). Exposed for tuning and
+  characterisation; ignored when *deterministic* is true.
+
+With no options, reports the current settings. Applies to live maps only.
+
 .. _`isolate`:
 
 clipper isolate

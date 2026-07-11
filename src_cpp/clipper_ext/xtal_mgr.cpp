@@ -309,13 +309,16 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
     HKL_data<E_sigE<ftype32>> selected_esige;
 
     int n_bins = std::max(hklinfo_.num_reflections() / reflections_per_bin, 1);
-    if (n_bins > MAX_N_BINS) {
+    if (!deterministic_scaling_ && n_bins > MAX_N_BINS) {
         selected_reflections = select_random_reflections_in_bins(esige, reflections_per_bin, MAX_N_BINS);
         selected_esige = reflection_subset(esige, selected_reflections);
         n_bins = MAX_N_BINS;
     } else {
+        // Deterministic (or small dataset): use all reflections for the E-value
+        // normalisation, capping only the bin count.
         selected_reflections = hklinfo_;
         selected_esige = esige;
+        if (n_bins > MAX_N_BINS) n_bins = MAX_N_BINS;
     }
     //BasisFn_gaussian iso_basisfn;
     BasisFn_binner basisfn(selected_reflections, n_bins, 1.0);
@@ -362,6 +365,19 @@ Xtal_mgr_base::remove_outliers(const HKL_data<F_sigF<ftype32>>& f_sigf_in,
         std::cout << "Removed " << outlier_count << " outliers from reflection data." << std::endl;
     }
 
+}
+
+void
+Xtal_mgr_base::set_deterministic_scaling(bool b)
+{
+    deterministic_scaling_ = b;
+    bulk_solvent_calculator_.set_deterministic(b);
+    // Re-derive the outlier-cleaned working set with the new determinism setting
+    // (remove_outliers reads deterministic_scaling_), mirroring the constructor, then
+    // flag the bulk solvent for re-optimisation on the next generate_fcalc.
+    remove_outliers(fobs_original_, fobs_, 750, OUTLIER_REJECTION_LIMIT);
+    set_freeflag(guess_free_flag_value(free_flags_));
+    bulk_solvent_calculator_.set_bulk_solvent_optimization_needed();
 }
 
 
