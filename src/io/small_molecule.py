@@ -337,9 +337,15 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
     model against the observed amplitudes and return the SF-derived fields.
     Returns None when no reflections are available (the common COD case).
 
-    Small-molecule convention: Fo = sqrt(F_squared_meas) over the observed set
-    (I > 2 sigma); R = sum||Fo| - k|Fc|| / sum|Fo|. (Not French-Wilson, which is a
-    macromolecular technique and would not match the published small-molecule R.)
+    Small-molecule convention: Fo = sqrt(F_squared_meas); the headline R is
+    R = sum||Fo| - |Fc_scaled|| / sum|Fo| over ALL reflections (a single R over all
+    data, matching the live map and the published small-molecule R), with the
+    I > 2 sigma observed-subset value reported alongside. Fcalc is placed on the Fo
+    scale by the same anisotropic-Gaussian + isotropic-spline model the live map
+    (SmallMoleculeXmapMgr) and the published R use — NOT a single linear scale, which
+    piles the residual onto the heaviest scatterer and biases R low on metal-containing
+    entries. (Not French-Wilson, a macromolecular technique that would not match the
+    published small-molecule R.)
     '''
     refln = _find_reflection_table(path)
     if refln is None:
@@ -357,9 +363,10 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
                        if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
                        for r in rows], numpy.double)
 
-    from .. import HKL_info, HKL_data_I_sigI
-    from ..clipper_python import HKL, Resolution, SFcalc_aniso_sum_double
-    from ..clipper_python.data64 import HKL_data_F_phi_double
+    from .. import HKL_info
+    from ..clipper_python import HKL, Resolution, SFcalc_aniso_sum_float
+    from ..clipper_python.data32 import HKL_data_F_phi_float, HKL_data_F_sigF_float
+    from ..clipper_python.ext import scale_fcalc_to_fobs
 
     # Resolution limit from the measured reflections, so the generated ASU covers
     # every observation.
@@ -368,8 +375,15 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
     res = 1.0 / numpy.sqrt(invresolsq.max())
     hkl_info = HKL_info(spacegroup, cell, Resolution(res), True)
 
-    fobs = HKL_data_I_sigI(hkl_info)
-    fobs.set_data(hkls, numpy.stack([fsq, sig], axis=1))
+    # Observed amplitudes for the aniso+spline scaling: Fo = sqrt(I) (I > 0),
+    # sigma(Fo) ~= sigma(I) / (2 sqrt(I)).
+    valid = fsq > 0.0
+    fo_amp = numpy.zeros(len(fsq), numpy.double)
+    sig_amp = numpy.ones(len(fsq), numpy.double)
+    fo_amp[valid] = numpy.sqrt(fsq[valid])
+    sig_amp[valid] = sig[valid] / (2.0 * numpy.sqrt(fsq[valid]))
+    fobs = HKL_data_F_sigF_float(hkl_info)
+    fobs.set_data(hkls, numpy.stack([fo_amp, sig_amp], axis=1).astype(numpy.float32))
 
     atoms = _sfcalc_atom_list(path, cell, spacegroup, grid, radiation)
     if atoms is None:
@@ -378,39 +392,57 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
 
     # Exact direct summation of structure factors with NO bulk-solvent term
     # (correct for densely-packed small-molecule crystals; FFT is an unnecessary
-    # approximation at this atom count). The functor must be built then called -
-    # the shorthand "compute in constructor" form does not fill fcalc through the
-    # bindings.
-    fcalc = HKL_data_F_phi_double(hkl_info)
-    sfcalc = SFcalc_aniso_sum_double(radiation=_radiation_enum(radiation))
-    sfcalc(fcalc, atoms)
+    # approximation at this atom count). Build the functor then call it - the
+    # "compute in constructor" shorthand does not fill fcalc through the bindings.
+    fcalc = HKL_data_F_phi_float(hkl_info)
+    SFcalc_aniso_sum_float(radiation=_radiation_enum(radiation))(fcalc, atoms)
 
-    fo, fc, fo_sig = [], [], []
+    # Place Fcalc on the Fobs scale with the anisotropic-Gaussian + isotropic-spline
+    # model - the SAME scaling the live small-molecule map (SmallMoleculeXmapMgr) and
+    # the published R use, so headless R matches the GUI/published value. A single
+    # linear scale k = sum(Fo Fc)/sum(Fc^2) piles the residual onto the heaviest
+    # scatterer, biasing R low on metal-containing entries - the bug this replaces.
+    scaled = HKL_data_F_phi_float(hkl_info)
+    scale_fcalc_to_fobs(fcalc, fobs, scaled)
+
+    # Gather Fo and scaled Fc by reference index (both indexed off hkl_info's ASU,
+    # so no raw-HKL lookup that could miss the ASU). od.f = Fo, od.sigf = sigma(Fo),
+    # scaled[ih.hkl].f = Fc on the Fo scale.
+    fo_l, fc_l, sf_l = [], [], []
     ih = fobs.first_data
     while not ih.last():
         od = fobs[ih]
-        if not od.missing and od.i > 0:
-            cd = fcalc[ih.hkl]
+        if not od.missing and od.f > 0:
+            cd = scaled[ih.hkl]
             if not cd.missing:
-                fo.append(numpy.sqrt(od.i)); fc.append(cd.f); fo_sig.append(od.sigi)
+                fo_l.append(od.f); fc_l.append(cd.f); sf_l.append(od.sigf)
         fobs.next_data(ih)
-    fo = numpy.array(fo); fc = numpy.array(fc); fo_sig = numpy.array(fo_sig)
+    fo = numpy.array(fo_l); fc = numpy.array(fc_l); sf = numpy.array(sf_l)
     if not len(fo) or fc.sum() == 0:
         return {'has_structure_factors': True, 'recomputed_r_factor': None,
                 'n_reflections_used': 0}
 
-    # Observed set: I > 2 sigma(I)  (fo_sig holds sigma(I), fo**2 = I).
-    obs = fo ** 2 > 2.0 * fo_sig
+    # Observed set I > 2 sigma(I): with I = Fo^2 and sigma(I) = 2 Fo sigma(Fo) this is
+    # Fo > 4 sigma(Fo). R uses the aniso+spline-scaled Fc (no manual scale factor) via the
+    # shared R-factor core (reflection_tools.compute_r_factors) - the same routine the live
+    # small-molecule map and the command log use, so the three surfaces cannot drift. No
+    # epsilon weighting (small-molecule convention: unweighted, all reflections).
+    from ..reflection_tools import compute_r_factors
+    obs = fo > 4.0 * sf
     if not obs.any():
         obs = numpy.ones(len(fo), bool)
-    k = numpy.sum(fo[obs] * fc[obs]) / numpy.sum(fc[obs] ** 2)
-    r_obs = numpy.sum(numpy.abs(fo[obs] - k * fc[obs])) / numpy.sum(fo[obs])
-    r_all = numpy.sum(numpy.abs(fo - k * fc)) / numpy.sum(fo)
+    rf = compute_r_factors(fo, fc, observed_mask=obs)
+    # Headline recomputed_r_factor is over ALL reflections - matching the live map and the
+    # published small-molecule R (a single R over all data) - so headless == GUI. The
+    # I > 2 sigma observed value is retained under recomputed_r_factor_observed.
     return {
         'has_structure_factors': True,
-        'recomputed_r_factor': float(r_obs),
-        'recomputed_r_factor_all': float(r_all),
-        'n_reflections_used': int(obs.sum()),
+        'recomputed_r_factor': float(rf.r_all),
+        'recomputed_r_factor_all': float(rf.r_all),
+        'recomputed_r_factor_observed': (float(rf.r_observed)
+                                         if rf.r_observed is not None else None),
+        'n_reflections_used': int(rf.n_all),
+        'n_reflections_observed': int(rf.n_observed),
         'resolution_data': float(res),
     }
 
@@ -657,9 +689,17 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
     smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radiation)
     if smd is not None:
         from ..maps.xmapset import XmapSet
-        XmapSet(mmgr, small_molecule_data=smd)
+        xset = XmapSet(mmgr, small_molecule_data=smd)
         session.logger.info('(CLIPPER) %s: live maps using %s scattering factors.'
             % (os.path.basename(path), radiation))
+        # Surface the model-vs-data R on the command line too (the macromolecular
+        # 'clipper open' already logs Rwork/Rfree). This is the single R over all
+        # reflections the live map computes through the shared R-factor core, so the
+        # command log, the GUI status line and the headless metrics all agree.
+        rwork = getattr(xset, 'rwork', None)
+        if rwork:
+            session.logger.info('(CLIPPER) %s: R = %.4f (all reflections).'
+                % (os.path.basename(path), rwork))
     else:
         session.logger.info('(CLIPPER) No reflections found for %s; showing model '
             '+ symmetry only.' % os.path.basename(path))

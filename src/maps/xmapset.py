@@ -869,8 +869,8 @@ class XmapSet(MapSetBase):
         xm = self.live_xmap_mgr
         xm.apply_new_maps()
         if self.show_r_factors:
-            rfactor_string = 'R-work: {:0.4f}  Rfree: {:0.4f}'.format(xm.rwork, xm.rfree)
-            self.session.logger.status(rfactor_string, secondary=True)
+            self.session.logger.status(self._r_factor_string(precision=4),
+                                       secondary=True)
         if self.report_timing:
             self.session.logger.info(f'Applying new maps for live xmapset #{self.id_string} before "maps recalculated" trigger took {(perf_counter()-start_time)*1e3:.3f} ms.')
             start_time = perf_counter()
@@ -918,6 +918,19 @@ class XmapSet(MapSetBase):
             )
         self._update_r_factor_text()
 
+    def _r_factor_string(self, precision=4, trailing=''):
+        '''Format the current R-factor(s) for display. A macromolecular manager
+        carries a genuine R-free set, so both Rwork and Rfree are shown; a small-
+        molecule manager (has_rfree = False) has none - it reports a single R, rather
+        than a misleading Rwork == Rfree pair.'''
+        lxm = self.live_xmap_mgr
+        if lxm is None:
+            return ''
+        if getattr(lxm, 'has_rfree', True):
+            return 'Rwork: {0:0.{p}f}  Rfree: {1:0.{p}f}{t}'.format(
+                self.rwork, self.rfree, p=precision, t=trailing)
+        return 'R: {0:0.{p}f}{t}'.format(self.rwork, p=precision, t=trailing)
+
     def _update_r_factor_text(self, *_):
         lb = self._r_factor_label
         lxm = self.live_xmap_mgr
@@ -925,7 +938,7 @@ class XmapSet(MapSetBase):
             self._r_factor_label_handler = None
             from chimerax.core.triggerset import DEREGISTER
             return DEREGISTER
-        lb.text = 'Rwork: {:0.3f} Rfree: {:0.3f}  '.format(self.rwork, self.rfree)
+        lb.text = self._r_factor_string(precision=3, trailing='  ')
         lb.update_drawing()
 
     def stop_showing_r_factors(self, *_):

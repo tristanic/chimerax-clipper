@@ -23,6 +23,11 @@ class SmallMoleculeXmapMgr:
     # small molecules; higher rates are slower with no meaningful accuracy gain).
     FFT_RATE = 1.5
 
+    # Small-molecule data carries no R-free set, so this manager reports a single R.
+    # The display layer (XmapSet) branches on this to avoid showing a misleading
+    # Rwork == Rfree pair.
+    has_rfree = False
+
     def __init__(self, hklinfo, cell, spacegroup, grid_sampling, fobs, structure,
                  radiation='xray'):
         '''
@@ -216,9 +221,15 @@ class SmallMoleculeXmapMgr:
         scF = sdata[:, 0]
         fo = self._fo
 
-        fit = self._meas & numpy.isfinite(scF) & (scF > 0) & (fo > 0)
-        self._rwork = float(numpy.sum(numpy.abs(fo[fit] - scF[fit]))
-                            / numpy.sum(fo[fit])) if fit.any() else 0.0
+        # Single R over all measured reflections via the shared R-factor core - the same
+        # routine the headless metrics (_structure_factor_metrics) and the command log
+        # use, so the numbers cannot drift. No epsilon weighting, no free set (small-
+        # molecule convention). fo is already NaN off the measured set; masking scF > 0
+        # reproduces the previous fit condition, and the core drops the rest.
+        from ..reflection_tools import compute_r_factors
+        good_fc = numpy.where(scF > 0, scF, numpy.nan)
+        r = compute_r_factors(fo, good_fc).r_all
+        self._rwork = float(r) if r is not None else 0.0
 
         # Put Fobs on the ABSOLUTE (electrons / A^3) scale via the same per-reflection
         # scale S = scaled_Fcalc/Fcalc (so Fo/S ~ Fc); fft_from of electron-scale

@@ -20,3 +20,4 @@
 # of these is redistributed under its own license terms.
 
 from .french_wilson import french_wilson_analytical
+from .r_factor import compute_r_factors, r_factor, RFactors

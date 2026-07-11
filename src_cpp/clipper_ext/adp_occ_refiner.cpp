@@ -22,6 +22,7 @@
 #pragma warning(disable: 4251)
 #include "adp_occ_refiner.h"
 #include "edcalc_ext.h"
+#include "aniso_scale.h"   // scale_fcalc_to_fobs (aniso-Gaussian x isotropic-spline)
 
 #include <algorithm>
 #include <atomic>
@@ -1206,30 +1207,26 @@ std::pair<double, double> BFactorOccRefiner::compute_rfactors()
         }
     }
 
-    // Isotropic scale k = Σ(|Fo||Fc|) / Σ|Fc|²  (working set only, flag != 0):
-    // the least-squares scale of |Fc| onto |Fo|.  STANDARD (not FOM-weighted) so the
-    // reported R-factors are the same quantity the manager/GUI reports and the
-    // before/after bail-out comparison is like-for-like.  (FOM-weighting here used to
-    // inflate the "R" by ~(1−⟨m⟩), spuriously tripping the bail-out on incomplete
-    // models where ⟨m⟩ ≪ 1.)
-    ftype sum_cross = 0.0, sum_sq = 0.0;
-    for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()
-            || usage_[ih].flag() == 0) continue;
-        ftype fc = fcalc_hkl_[ih].f();
-        ftype fo = fobs_[ih].f();
-        sum_cross += fo * fc;
-        sum_sq    += fc * fc;
-    }
-    ftype k = (sum_sq > ftype(1e-10)) ? sum_cross / sum_sq : ftype(1.0);
+    // Place |Fc| on the |Fo| scale with the same anisotropic-Gaussian x isotropic-spline
+    // model the map manager (Xtal_mgr_base::calculate_r_factors) and the small-molecule R
+    // use, rather than a single least-squares scalar k = Σ(|Fo||Fc|)/Σ|Fc|². The linear
+    // scalar minimises the global LS residual, so it lets the strongest scatterer (a heavy
+    // atom) soak up the misfit and reports an optimistically low R; the aniso+spline model
+    // spreads the scale across resolution shells - the same R-factor definition every other
+    // surface in the plugin reports, so the before/after bail-out comparison stays
+    // like-for-like against the manager/GUI value.
+    HKL_data<F_phi<ftype32>> scaled(fobs_.base_hkl_info(), cell_);
+    U_aniso_orth uaniso;
+    std::vector<ftype> aniso_params;
+    scale_fcalc_to_fobs<ftype32>(fcalc_hkl_, fobs_, scaled, uaniso, aniso_params);
 
-    // Standard R-work / R-free: Σ|k·|Fc| − |Fo|| / Σ|Fo|.
+    // Standard R-work / R-free: Σ||Fc_scaled| − |Fo|| / Σ|Fo|.
     // Convention: flag != 0 → working; flag == 0 → free.
     double rw_num = 0.0, rw_den = 0.0;
     double rf_num = 0.0, rf_den = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()) continue;
-        ftype fc  = k * fcalc_hkl_[ih].f();
+        if (fobs_[ih].missing() || usage_[ih].missing() || scaled[ih].missing()) continue;
+        ftype fc  = scaled[ih].f();
         ftype fo  = fobs_[ih].f();
         ftype res = std::abs(fc - fo);
         if (usage_[ih].flag() != 0) { rw_num += res; rw_den += fo; }
