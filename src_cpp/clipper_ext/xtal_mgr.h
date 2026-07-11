@@ -210,18 +210,24 @@ public:
     inline void set_occupancy_weighted_solvent_mask(bool b) { bulk_solvent_calculator_.set_occupancy_weighted(b); }
     inline bool occupancy_weighted_solvent_mask() const { return bulk_solvent_calculator_.occupancy_weighted(); }
 
-    // Deterministic scaling: when true, the scale/bulk fit AND the one-time outlier
-    // rejection use ALL reflections rather than a random per-bin subset --
-    // reproducible and unbiased (default false: the fast stochastic subset for live
-    // maps). The setter re-derives the outlier-cleaned working set, so it is not inline.
-    void set_deterministic_scaling(bool b);
-    inline bool deterministic_scaling() const { return deterministic_scaling_; }
-    // Size of the random subset used by the (non-deterministic) scale fit: reflections
-    // per resolution bin x number of bins. Ignored when deterministic_scaling is true.
+    // All-reflections scaling: when true, the scale/bulk fit AND the one-time outlier
+    // rejection use ALL reflections rather than a seeded per-bin subset -- exact and
+    // unbiased (default false: the fast, reproducible seeded subset for live maps).
+    // The setter re-derives the outlier-cleaned working set, so it is not inline.
+    void set_all_reflections(bool b);
+    inline bool all_reflections() const { return use_all_reflections_; }
+    // Size of the reflection subset used by the (non-all-reflections) scale fit:
+    // reflections per resolution bin x number of bins. Ignored when all_reflections
+    // is true.
     inline void set_scaling_reflections_per_bin(size_t n) { bulk_solvent_calculator_.set_scaling_reflections_per_bin(n); }
     inline size_t scaling_reflections_per_bin() const { return bulk_solvent_calculator_.scaling_reflections_per_bin(); }
     inline void set_scaling_num_bins(size_t n) { bulk_solvent_calculator_.set_scaling_num_bins(n); }
     inline size_t scaling_num_bins() const { return bulk_solvent_calculator_.scaling_num_bins(); }
+    // Seed for the fixed (cached) scale-fit reflection subset. Governs ONLY the
+    // scaling subset -- outlier rejection uses a fixed internal seed -- so the seed
+    // can be varied to probe scaling sensitivity without perturbing the working set.
+    inline void set_scaling_seed(size_t s) { bulk_solvent_calculator_.set_scaling_seed(s); }
+    inline size_t scaling_seed() const { return bulk_solvent_calculator_.scaling_seed(); }
 
     const Xmap_details& map_details(const std::string& name) const { return maps_.at(name); }
 
@@ -494,8 +500,8 @@ private:
 
     const ftype OUTLIER_REJECTION_LIMIT = 1e-6;
     // When true, the scale/bulk fit and outlier rejection use all reflections
-    // (deterministic) rather than a random subset. Read by remove_outliers.
-    bool deterministic_scaling_ = false;
+    // rather than a seeded subset. Read by remove_outliers.
+    bool use_all_reflections_ = false;
     const ftype NONLINEAR_DAMP = 1.0;
 
 }; // class Xmap_mgr
@@ -602,12 +608,14 @@ public:
     inline void set_radiation(AtomShapeFn::RADIATION r) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_radiation(r); }
     inline bool occupancy_weighted_solvent_mask() const { deletion_guard(); return mgr_->occupancy_weighted_solvent_mask(); }
     inline void set_occupancy_weighted_solvent_mask(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_occupancy_weighted_solvent_mask(b); }
-    inline bool deterministic_scaling() const { deletion_guard(); return mgr_->deterministic_scaling(); }
-    inline void set_deterministic_scaling(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_deterministic_scaling(b); }
+    inline bool all_reflections() const { deletion_guard(); return mgr_->all_reflections(); }
+    inline void set_all_reflections(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_all_reflections(b); }
     inline size_t scaling_reflections_per_bin() const { deletion_guard(); return mgr_->scaling_reflections_per_bin(); }
     inline void set_scaling_reflections_per_bin(size_t n) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_reflections_per_bin(n); }
     inline size_t scaling_num_bins() const { deletion_guard(); return mgr_->scaling_num_bins(); }
     inline void set_scaling_num_bins(size_t n) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_num_bins(n); }
+    inline size_t scaling_seed() const { deletion_guard(); return mgr_->scaling_seed(); }
+    inline void set_scaling_seed(size_t s) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_seed(s); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();

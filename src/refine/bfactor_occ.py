@@ -737,13 +737,12 @@ class BFactorOccRefineManager:
         (phi_fom.fom()) and bulk-solvent model are current.
 
         The live map fits its Fcalc->Fobs scale (and hence f_bulk AND the sigma_A
-        weights, since both derive from the scaled Fcalc) on a small random
-        reflection subset for speed, so those inputs jitter by ~1% run-to-run --
-        which propagates into the refined B-factors.  Refinement should be
-        reproducible, so if the map is not already deterministic we run ONE
-        fully-deterministic recalculation (scale fit over all reflections), pull
-        the resulting f_bulk / weights / fobs, then restore the map's original
-        (fast, stochastic) setting.  The pulled values are copies, so the restore
+        weights, since both derive from the scaled Fcalc) on a fixed seeded subset
+        of reflections for speed.  That is reproducible, but carries a tiny bias vs
+        the full fit; for refinement we want the exact scale, so if the map is not
+        already in all-reflections mode we run ONE all-reflections recalculation,
+        pull the resulting f_bulk / weights / fobs, then restore the map's original
+        (fast, seeded-subset) setting.  The pulled values are copies, so the restore
         does not disturb them.
 
         Raises NotImplementedError for NXmapSet (no crystallographic data).
@@ -761,23 +760,23 @@ class BFactorOccRefineManager:
                 'No live map manager is available on the XmapSet. '
                 'B-factor refinement requires a live (Xtal_thread_mgr) map set.')
 
-        was_deterministic = xm.deterministic_scaling
-        if not was_deterministic:
-            xm.deterministic_scaling = True
+        was_all_reflections = xm.all_reflections
+        if not was_all_reflections:
+            xm.all_reflections = True
         try:
             # The live map fits the bulk scale only when flagged (a change to
             # B-factors/occupancies/coords does so via XmapSet._model_changed_cb);
             # force a fresh fit here so f_bulk matches the current model, and run one
             # blocking recalc so it (and the sigma_A weights) are ready to read. In
-            # deterministic mode this fit uses all reflections, cutting the ~1% run-to-
-            # run scale jitter (a residual warm-start dependence of ~0.01% remains).
+            # all-reflections mode this fit uses every reflection, giving the exact
+            # scale (a residual warm-start dependence of ~0.01% remains).
             xm.bulk_solvent_optimization_needed()
             self._recompute_maps_blocking(xm)
             return xm.f_obs, xm.weights, xm.usage_flags, xm.f_bulk
         finally:
-            if not was_deterministic:
-                # Restore the fast stochastic scaling for interactive live maps.
-                xm.deterministic_scaling = False
+            if not was_all_reflections:
+                # Restore the fast seeded-subset scaling for interactive live maps.
+                xm.all_reflections = False
 
     def _recompute_maps_blocking(self, xm):
         '''Drive the live manager's recalc/ready/apply cycle synchronously (the

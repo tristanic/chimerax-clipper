@@ -94,14 +94,16 @@ void declare_xtal_mgr(py::module& m)
         // restores the original binary mask, for A/B comparison.
         .def_property("occupancy_weighted_solvent_mask",
             &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
-        // Deterministic scaling (fit over all reflections) + the random-subset size
-        // knobs used when it is off. Parity with Xtal_thread_mgr.
-        .def_property("deterministic_scaling",
-            &Class::deterministic_scaling, &Class::set_deterministic_scaling)
+        // Scaling: all_reflections (exact, fit over all reflections) + the seeded-
+        // subset size/seed knobs used when it is off. Parity with Xtal_thread_mgr.
+        .def_property("all_reflections",
+            &Class::all_reflections, &Class::set_all_reflections)
         .def_property("scaling_reflections_per_bin",
             &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
         .def_property("scaling_num_bins",
             &Class::scaling_num_bins, &Class::set_scaling_num_bins)
+        .def_property("scaling_seed",
+            &Class::scaling_seed, &Class::set_scaling_seed)
         .def("delete_xmap", &Class::delete_xmap)
         ;
 } // declare_xal_mgr
@@ -194,12 +196,14 @@ void declare_xtal_thread_mgr(py::module& m)
         .def_property("radiation", &Class::radiation, &Class::set_radiation)
         .def_property("occupancy_weighted_solvent_mask",
             &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
-        .def_property("deterministic_scaling",
-            &Class::deterministic_scaling, &Class::set_deterministic_scaling)
+        .def_property("all_reflections",
+            &Class::all_reflections, &Class::set_all_reflections)
         .def_property("scaling_reflections_per_bin",
             &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
         .def_property("scaling_num_bins",
             &Class::scaling_num_bins, &Class::set_scaling_num_bins)
+        .def_property("scaling_seed",
+            &Class::scaling_seed, &Class::set_scaling_seed)
         .def("delete", &Class::delete_all)
         ;
 }

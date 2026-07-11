@@ -9,6 +9,7 @@
  */
 #pragma once
 #include <algorithm>
+#include <random>
 #include <clipper/clipper.h>
 #include <clipper/core/resol_basisfn.h>
 
@@ -20,14 +21,15 @@ namespace clipper_cx
 
 
 template<template<class> class dtype, typename T>
-HKL_info select_random_reflections(const HKL_data<dtype<T>>& data, size_t num_reflections)
+HKL_info select_random_reflections(const HKL_data<dtype<T>>& data, size_t num_reflections, size_t seed)
 {
     std::vector<HKL> valid_hkls;
     for (auto ih=data.first_data(); !ih.last(); ih=data.next_data(ih))
     {
         valid_hkls.push_back(ih.hkl());
     }
-    std::random_shuffle(valid_hkls.begin(), valid_hkls.end());
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
+    std::shuffle(valid_hkls.begin(), valid_hkls.end(), rng);
     if (valid_hkls.size() > num_reflections)
     {
         valid_hkls.erase(valid_hkls.begin()+num_reflections, valid_hkls.end());
@@ -39,7 +41,7 @@ HKL_info select_random_reflections(const HKL_data<dtype<T>>& data, size_t num_re
 }
 
 template<template<class> class dtype, typename T>
-HKL_info select_random_reflections_in_bins(const HKL_data<dtype<T>>& data, size_t reflections_per_bin, size_t num_bins)
+HKL_info select_random_reflections_in_bins(const HKL_data<dtype<T>>& data, size_t reflections_per_bin, size_t num_bins, size_t seed)
 {
     if (data.hkl_info().num_reflections() <= reflections_per_bin*num_bins) return data.hkl_info();
     std::map< int, std::vector<HKL> > bins;
@@ -54,12 +56,15 @@ HKL_info select_random_reflections_in_bins(const HKL_data<dtype<T>>& data, size_
         int bin = Util::bound( 0, Util::intf( ftype(num_bins) * s_ord.ordinal( ih.invresolsq() ) ), (int)num_bins-1 );
         bins[bin].push_back(ih.hkl());
     }
+    // A single seeded engine shuffled sequentially over the (resolution-ordered,
+    // deterministic) bins makes the selection fully reproducible for a given seed.
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(seed));
     std::vector<HKL> selected_hkls_;
     for (auto& pair: bins)
     {
         auto& hkls = pair.second;
         auto count = std::min(reflections_per_bin, hkls.size());
-        std::random_shuffle(hkls.begin(), hkls.end());
+        std::shuffle(hkls.begin(), hkls.end(), rng);
         for (size_t i=0; i<count; ++i)
         {
             selected_hkls_.push_back(hkls[i]);

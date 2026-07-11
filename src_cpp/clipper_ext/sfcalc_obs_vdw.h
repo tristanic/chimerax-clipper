@@ -74,25 +74,33 @@ public:
     //! so toggling it invalidates the mask cache on the next call.
     void set_occupancy_weighted(bool b) { occupancy_weighted_ = b; }
     bool occupancy_weighted() const { return occupancy_weighted_; }
-    //! Deterministic scaling: when true, the bulk-solvent/scale fit uses ALL
-    //! reflections instead of the random per-bin subset -- reproducible and
-    //! unbiased, at the cost of a larger (one-off) fit. Default false (the fast,
-    //! stochastic subset used for live maps). The bin knobs below are ignored when
-    //! this is true.
-    void set_deterministic(bool b) { deterministic_ = b; }
-    bool deterministic() const { return deterministic_; }
-    //! Size of the random reflection subset used for the (non-deterministic) scale
-    //! fit: reflections per resolution bin x number of bins. Defaults 500 x 20.
-    void set_scaling_reflections_per_bin(size_t n) { scaling_refls_per_bin_ = n; }
+    //! All-reflections scaling: when true, the bulk-solvent/scale fit uses ALL
+    //! reflections instead of the seeded per-bin subset -- exact and unbiased, at
+    //! the cost of a larger (one-off) fit. Default false: the fast, reproducible
+    //! seeded subset used for live maps. The bin/seed knobs below are ignored when
+    //! this is true. Invalidates the cached subset (the observed subset differs).
+    void set_all_reflections(bool b) { all_reflections_ = b; scaling_subset_valid_ = false; }
+    bool all_reflections() const { return all_reflections_; }
+    //! Size of the reflection subset used for the (non-all-reflections) scale fit:
+    //! reflections per resolution bin x number of bins. Defaults 500 x 20. Changing
+    //! either invalidates the cached subset.
+    void set_scaling_reflections_per_bin(size_t n) { scaling_refls_per_bin_ = n; scaling_subset_valid_ = false; }
     size_t scaling_reflections_per_bin() const { return scaling_refls_per_bin_; }
-    void set_scaling_num_bins(size_t n) { scaling_num_bins_ = n; }
+    void set_scaling_num_bins(size_t n) { scaling_num_bins_ = n; scaling_subset_valid_ = false; }
     size_t scaling_num_bins() const { return scaling_num_bins_; }
+    //! Seed for the fixed reflection subset. The subset is drawn ONCE (seeded) and
+    //! cached across recalculations, so the scale fit is reproducible; vary the seed
+    //! to probe sensitivity to which reflections were chosen. Changing it invalidates
+    //! the cached subset. Default 10061865.
+    void set_scaling_seed(size_t s) { scaling_seed_ = s; scaling_subset_valid_ = false; }
+    size_t scaling_seed() const { return scaling_seed_; }
 private:
     AtomShapeFn::RADIATION radiation_ = AtomShapeFn::XRAY;
     bool occupancy_weighted_ = true;
-    bool deterministic_ = false;
+    bool all_reflections_ = false;
     size_t scaling_refls_per_bin_ = 500;
     size_t scaling_num_bins_ = 20;
+    size_t scaling_seed_ = 10061865;
     bool bulk_solvent_optimization_needed_ = true;
     //! True once a bulk-solvent solve has run, so subsequent solves can warm-start
     //! from the stored (bulkscl, bulk_u) rather than cold-starting.
@@ -122,6 +130,18 @@ private:
     //! std::string) so the member is trivially destructible and safe across the
     //! DLL boundary of this CLIPPER_CX_IMEX-exported class.
     uint64_t mask_signature_ = 0;
+    //! Cache for the seeded reflection subset used by the (non-all-reflections)
+    //! scale fit.  The selection depends only on the HKL set, the bin knobs, and
+    //! scaling_seed_ -- none of which change during a refinement -- so the chosen
+    //! HKL_info and the observed-F subset (fsig is invariant across recalcs) are
+    //! built once and reused, sparing the HKL_info rebuild + obs-subset copy every
+    //! fit.  Only the fcalc-dependent subsets are refreshed per call.  Any knob/seed
+    //! setter, and the all_reflections toggle, clears scaling_subset_valid_; a
+    //! change to the observed data re-derives via the manager, which drops the cache
+    //! through set_all_reflections.
+    bool scaling_subset_valid_ = false;
+    HKL_info scaling_subset_hkls_;
+    HKL_data<F_sigF<T>> scaling_subset_fsig_;
     //! Compute the mask-determining fingerprint for `atoms`.
     uint64_t mask_signature(const Atom_list& atoms) const;
 }; // class SFcalc_obs_bulk_vdw

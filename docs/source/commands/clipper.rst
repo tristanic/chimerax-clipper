@@ -330,20 +330,25 @@ not saved in sessions; re-run this command to recreate them.
 clipper scaling
 ---------------
 
-Syntax: clipper scaling [*structures*] [*deterministic* *true/false*] [*reflectionsPerBin* *N*] [*numBins* *N*]
+Syntax: clipper scaling [*structures*] [*allReflections* *true/false*] [*reflectionsPerBin* *N*] [*numBins* *N*] [*seed* *N*]
 
 Control how the live crystallographic maps fit the Fcalc-to-Fobs bulk-solvent scale
-for the given model(s). By default the scale is fit on a small *random subset* of
-reflections (500 per bin across 20 resolution bins) - fast, and the resulting Rwork
-jitter between recalculations is tiny (~1e-3), a good trade for interactive maps.
+for the given model(s). By default the scale is fit on a fixed, *seeded subset* of
+reflections (500 per bin across 20 resolution bins) - fast, and *reproducible*: the
+subset is drawn once and reused across recalculations, so the R-factor and maps no
+longer jitter between recalculations. It carries a tiny fixed bias versus the full
+fit, which is negligible for interactive maps.
 
-* **deterministic true** fits the scale over *all* reflections instead: fully
-  reproducible and unbiased, at a small (one-off) extra cost. Recommended when the
-  R-factor or map must be deterministic - e.g. quantitative comparison, or a
-  differentiable target for force-field training.
-* **reflectionsPerBin** / **numBins** set the size of the random subset used when
-  *deterministic* is false (defaults 500 and 20). Exposed for tuning and
-  characterisation; ignored when *deterministic* is true.
+* **allReflections true** fits the scale over *all* reflections instead: exact and
+  unbiased, at a larger (one-off) cost. Used internally where the exact scale matters
+  (e.g. the B-factor/occupancy refiner); rarely needed interactively now that the
+  default is already reproducible.
+* **reflectionsPerBin** / **numBins** set the size of the seeded subset (defaults 500
+  and 20). Exposed for tuning and characterisation.
+* **seed** sets which subset is drawn (default 10061865). Vary it to check that the
+  R-factor and maps are insensitive to *which* reflections were chosen.
+* The subset knobs (reflectionsPerBin, numBins, seed) are ignored when
+  *allReflections* is true.
 
 With no options, reports the current settings. Applies to live maps only.
 
