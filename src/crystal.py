@@ -821,7 +821,7 @@ class CrystalStructure(Model):
                 m.display = True
                 m.atoms.displays = False
                 m.residues.ribbon_displays = False
-        self.master_model.atoms[numpy.in1d(
+        self.master_model.atoms[numpy.isin(
             self.master_model.atoms.names, numpy.array(
                 ['N','C','CA']))].displays = True
         if not self.show_nonpolar_H:
