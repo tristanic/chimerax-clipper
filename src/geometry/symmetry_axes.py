@@ -142,7 +142,7 @@ def crystallographic_symmetry_axis_and_screw_translation(place, unit_cell, fract
     if angle==0:
         # Pure translation
         return None
-    if angle not in (60, 80, 120, 180):
+    if angle not in (60, 90, 120, 180):
         err_str = ('This transform has a rotation angle of {} degrees, '
             'which is not compatible with crystallographic symmetry. '
             'In real crystals, only rotations yielding 2, 3, 4 or 6-fold '
