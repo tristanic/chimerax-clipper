@@ -45,11 +45,6 @@ def require_torch():
     so it may be absent. It is only needed for the :mod:`~chimerax.clipper.diff`
     autograd adapter (:mod:`~chimerax.clipper.diff.targets`); the numeric core
     in :mod:`~chimerax.clipper.diff.state` works without it.
-
-    Note (see the module scoping doc): when installing torch into ChimeraX's own
-    Python, avoid letting it upgrade numpy past the ~1.26.x that Clipper's
-    C-extensions were built against — a numpy-2 user-tree install is tolerated at
-    runtime but will block a *rebuild* of Clipper from source.
     '''
     try:
         import torch
@@ -57,9 +52,7 @@ def require_torch():
         raise ImportError(
             'PyTorch is required for chimerax.clipper.diff.targets but is not '
             'installed in this Python environment. Install a torch build '
-            'compatible with numpy ~1.26 (the version Clipper is built '
-            'against); e.g. into ChimeraX\'s Python:\n'
-            '    ChimeraX -m pip install "numpy~=1.26.4" torch\n'
+            ' into ChimeraX\'s Python with "pip install torch"\n'
             'The numeric core (chimerax.clipper.diff.state) does not need torch.'
         ) from e
     return torch
