@@ -307,8 +307,21 @@ def _crystal_symmetry_from_cif(path):
             raise TypeError('Could not determine space group from CIF!')
         spacegroup = Spacegroup(Spgr_descr(sym))
 
-    res = _resolution_from_cif(diffrn_t, cell_t)
+    # Grid sampling for the real-space (display) map and the special-position
+    # multiplicity lookup. Prefer the resolution the DEPOSITED REFLECTIONS actually
+    # reach, so the display map is gridded to match the data (not an arbitrary
+    # clamp); fall back to the CIF collection limits, then the default. Clamp to a
+    # sane range, then cap the total grid size as a final backstop against an
+    # adversarial cell x resolution product (COD is machine-aggregated - see
+    # _resolution_from_cif).
+    res = _resolution_from_reflections(path, cell)
+    if res is None:
+        res = _resolution_from_cif(diffrn_t, cell_t)
+    res = min(max(res, 0.3), 5.0)
     grid = Grid_sampling(spacegroup, cell, Resolution(res))
+    while grid.nu * grid.nv * grid.nw > 64000000 and res < 5.0:
+        res = min(res * 1.5, 5.0)
+        grid = Grid_sampling(spacegroup, cell, Resolution(res))
     return cell, spacegroup, grid, res
 
 
@@ -344,6 +357,48 @@ def _resolution_from_cif(diffrn_t, cell_t):
     if not isfinite(res) or res <= 0:
         res = default
     return min(max(res, 0.5), 5.0)
+
+
+def _resolution_from_reflections(path, cell, min_refl=10):
+    '''Highest-resolution limit (d_min, Angstrom) implied by the DEPOSITED reflections -
+    a sibling .hkl reflection CIF or an embedded _refln_ loop - as 1/sqrt(max invresolsq).
+    This is the true experimental resolution, so the display-map grid can be sized to
+    match the data. Returns None when no usable reflection list is present (no _refln_
+    loop, or fewer than min_refl indexed reflections), so the caller falls back to the
+    CIF collection limits.'''
+    import os, numpy
+    from math import cos
+    from chimerax.mmcif import get_cif_tables
+    for cand in (os.path.splitext(path)[0] + '.hkl', path):
+        if not os.path.exists(cand):
+            continue
+        tables = get_cif_tables(cand, ['refln'])
+        refln = tables[0] if tables else None
+        if refln is None or not (refln.has_field('index_h')
+                                 and refln.has_field('F_squared_meas')):
+            continue
+        hkl = []
+        for r in refln.fields(('index_h', 'index_k', 'index_l'), allow_missing_fields=True):
+            try:
+                hkl.append((int(r[0]), int(r[1]), int(r[2])))
+            except (ValueError, IndexError):
+                pass
+        if len(hkl) < min_refl:
+            continue
+        hkl = numpy.array(hkl, float)
+        # invresolsq = h . G* . h via the reciprocal-cell parameters; matches Clipper
+        # HKL.invresolsq to machine precision, vectorized over every reflection.
+        asx, bsx, csx = cell.a_star, cell.b_star, cell.c_star
+        ca, cb, cg = cos(cell.alpha_star), cos(cell.beta_star), cos(cell.gamma_star)
+        H, K, L = hkl[:, 0], hkl[:, 1], hkl[:, 2]
+        invresolsq = ((H * asx) ** 2 + (K * bsx) ** 2 + (L * csx) ** 2
+                      + 2 * K * L * bsx * csx * ca + 2 * H * L * asx * csx * cb
+                      + 2 * H * K * asx * bsx * cg)
+        smax = float(invresolsq.max())
+        if smax > 0:
+            return 1.0 / numpy.sqrt(smax)
+    return None
+
 
 def simple_p1_box(model, resolution=3):
     '''
