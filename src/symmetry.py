@@ -713,9 +713,17 @@ class SymmetryManager(Model):
             # Replaced the atomic model with a new one. All structure change
             # handlers will need to be reapplied
             'model replaced',
-            # Shifted some subset of atoms into a different ASU. Firing data 
+            # Shifted some subset of atoms into a different ASU. Firing data
             # should contain the shifted atoms and the transform applied
             'sym shifted atoms',
+            # Fires whenever the displayed set of symmetry ghosts is (re)drawn -
+            # i.e. at the end of AtomicSymmetryModel.update_graphics (spotlight
+            # move, focal-set display, coordinate change, ...). Firing data is the
+            # AtomicSymmetryModel. Lets dependent bundles (e.g. ISOLDE, which
+            # draws its own validation/restraint markup on the ghosts) refresh in
+            # lockstep without polling. Registered on the manager (not the lazily-
+            # recreated AtomicSymmetryModel) so subscriptions are durable.
+            'symmetry display changed',
         )
         for t in trigger_names:
             self.triggers.add_trigger(t)
@@ -1623,6 +1631,34 @@ class AtomicSymmetryModel(Model):
             return []
         return self._places_from_matrices(tfs, ribbon_syms, include_identity)
 
+    def drawn_ghosts_by_operator(self, include_identity=False):
+        '''
+        Return the symmetry ghosts currently drawn, grouped by operator, as a list
+        of ``(Place, Atoms)`` tuples: for each operator with at least one ghost on
+        screen, the operator (as a :class:`Place` in the master model's coordinate
+        frame) and the master :class:`Atoms` whose ghost copies are drawn under it.
+        The identity/ASU operator (the real atoms) is excluded unless
+        ``include_identity`` is True. Returns an empty list if nothing is drawn.
+
+        This is the public accessor for "what symmetry is on screen right now",
+        intended for dependent bundles that draw their own decorations on the
+        ghosts. It reflects exactly what :meth:`update_graphics` last drew; pair it
+        with the manager's ``'symmetry display changed'`` trigger to stay in sync.
+        '''
+        sym_atoms = getattr(self, '_current_sym_atoms', None)
+        atom_syms = getattr(self, '_current_atom_syms', None)
+        tfs = getattr(self, '_current_tfs', None)
+        if sym_atoms is None or atom_syms is None or tfs is None or not len(sym_atoms):
+            return []
+        from chimerax.geometry import Place
+        out = []
+        for idx in numpy.unique(atom_syms):
+            idx = int(idx)
+            if idx == 0 and not include_identity:
+                continue
+            out.append((Place(matrix=tfs[idx]), sym_atoms[atom_syms == idx]))
+        return out
+
     def sym_transforms_near(self, atoms, cutoff, include_identity=True):
         '''
         Return the symmetry operators (as a list of ChimeraX Place objects, in the
@@ -1660,7 +1696,9 @@ class AtomicSymmetryModel(Model):
         else:
             raise TypeError('Unrecognised mode! Should be one of "ribbon" or "CA trace"')
         if old_mode != mode:
-            self.triggers.activate_trigger('backbone mode changed', mode)
+            # 'backbone mode changed' is registered on the manager, not on this
+            # model's own (Model-default) TriggerSet, so fire it there.
+            self.manager.triggers.activate_trigger('backbone mode changed', mode)
 
     def unhide_all_atoms(self):
         self.structure.atoms.hides &= ~HIDE_ISOLDE
@@ -1978,6 +2016,11 @@ class AtomicSymmetryModel(Model):
         self._update_atom_graphics(lod)
         self._update_bond_graphics(lod)
         self._update_ribbon_graphics()
+        # Every path that changes the displayed ghost set converges here, and all
+        # _current_* state is fresh at this point. Notify dependent bundles (e.g.
+        # ISOLDE) so they can redraw markup on the ghosts. Fired on the durable
+        # manager so subscriptions survive AtomicSymmetryModel recreation.
+        self.manager.triggers.activate_trigger('symmetry display changed', self)
 
     def _update_atom_graphics(self, lod):
         ad = self._atoms_drawing
@@ -2113,12 +2156,42 @@ class PickedSymAtom(Pick):
 #from chimerax.core.atomic.structure import BondsDrawing
 class SymBondsDrawing(structure.BondsDrawing):
     def first_intercept(self, mxyz1, mxyz2, exclude=None):
-        return None #too-hard basket for now.
-
         if not self.display or (exclude and exclude(self)):
             return None
-        #from chimerax.core.atomic.structure import _bond_intercept
-        b, f = structure._bond_intercept(bonds, mxyz1, mxyz2)
+        asm = self.parent
+        bonds = getattr(asm, '_current_bonds', None)
+        if bonds is None or not len(bonds):
+            return None
+        tfs = asm._current_tfs
+        symops = asm._current_symops
+        # _current_bond_syms has one entry per half-bond (2 x len(bonds)), laid out
+        # blocked as [half0 for each bond, half1 for each bond]; both halves of a
+        # bond share an operator, so the per-bond operator index is the first half.
+        nb = len(bonds)
+        bond_syms = numpy.asarray(asm._current_bond_syms)[:nb]
+        from chimerax.geometry import Place, closest_cylinder_intercept
+        best_bond = best_f = best_k = None
+        # A ghost bond under operator k is the master bond transformed by the
+        # operator, so intercepting the ray with the ghost is the same as
+        # intercepting the *inverse-transformed* ray with the master bond (the ray
+        # fraction is preserved by the rigid transform). We hit-test against the
+        # master bond geometry directly (closest_cylinder_intercept, not
+        # _bond_intercept) so a ghost stays pickable even when its master bond is
+        # hidden by the spotlight - matching how SymAtomsDrawing picks.
+        for k in numpy.unique(bond_syms):
+            k = int(k)
+            bset = bonds[bond_syms == k]
+            if not len(bset):
+                continue
+            lxyz1, lxyz2 = Place(matrix=tfs[k]).inverse() * (mxyz1, mxyz2)
+            a1, a2 = bset.atoms
+            f, bnum = closest_cylinder_intercept(a1.coords, a2.coords, bset.radii,
+                                                 lxyz1, lxyz2)
+            if f is not None and (best_f is None or f < best_f):
+                best_bond, best_f, best_k = bset[bnum], f, k
+        if best_bond is None:
+            return None
+        return PickedSymBond(best_bond, best_f, symops[best_k])
 
     def planes_pick(self, mxyz1, mxyz2, exclude=None):
         return []
