@@ -362,11 +362,13 @@ def _propagate_clipper_attrs(copies, combined):
 # ---------------------------------------------------------------------------
 # TODO(ChimeraX aniso_u6 copy bug): AtomicStructure.copy() AND combine() both
 # silently drop aniso_u6 (verified 2026-07-09; bfactor/occupancy survive, custom
-# attrs survive copy() but not combine()). Reported upstream to the ChimeraX team.
-# Because the ADPs never reach the copied/combined atoms, we re-stamp them from the
-# SOURCE structure (rotated by each operator; see _propagate_aniso and the
-# collapse_to_asu re-stamp). If/when copy() and combine() preserve aniso_u6, this
-# whole source-based re-stamp can be replaced by a straight per-copy rotate
+# attrs survive copy() but not combine()). Reported upstream, and the ChimeraX team
+# have PROMISED a fix (per TC, 2026-07-13) -- so REVISIT and REMOVE this workaround
+# once that lands (check whether copy()/combine() preserve aniso_u6, then delete the
+# source-based re-stamp). Because the ADPs never reach the copied/combined atoms, we
+# re-stamp them from the SOURCE structure (rotated by each operator; see
+# _propagate_aniso and the collapse_to_asu re-stamp). When the upstream fix lands,
+# this whole source-based re-stamp can be replaced by a straight per-copy rotate
 # (rotate the copy's own aniso_u6 in place, no surv_masks / source lookup needed).
 # ---------------------------------------------------------------------------
 def _rotate_aniso_array(u6, place):
