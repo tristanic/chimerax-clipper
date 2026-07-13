@@ -50,12 +50,13 @@ def _demo_dir():
     return os.path.join(os.path.dirname(chimerax.clipper.__file__), 'demo')
 
 
-def _check_entry(session, entry):
+def _check_entry(session, entry, min_box_size=None):
     '''Build the target for one demo entry and return the gradient result dict.'''
     from chimerax.core.commands import run
     from chimerax.clipper.diff.crystal import small_molecule_ensemble_target
     cif = os.path.join(_demo_dir(), entry + '.cif')
-    state, box = small_molecule_ensemble_target(session, cif, param_names=('X', 'Y', 'Z'))
+    state, box = small_molecule_ensemble_target(
+        session, cif, param_names=('X', 'Y', 'Z'), min_box_size=min_box_size)
     coords = box.atoms.coords
     n_atoms = box.num_atoms                       # capture BEFORE close (box is deleted)
     state.refresh_scaling(coords)
@@ -86,6 +87,21 @@ def main(session):
             ok = False
         print('%-14s n_atoms=%3d L=%.6g finite=%s |grad|max=%.4g -> %s'
               % (r['entry'], r['n_atoms'], r['L'], r['finite'], r['grad_max'], status))
+
+    # min_box_size must grow the box (supercell) and keep the gradient finite.
+    base = _check_entry(session, 'cod_2213867')
+    big = _check_entry(session, 'cod_2213867', min_box_size=25.0)
+    try:
+        _assert_result(big)
+        assert big['n_atoms'] > base['n_atoms'], \
+            'min_box_size=25 did not enlarge the box (%d !> %d)' % (big['n_atoms'], base['n_atoms'])
+        status = 'PASS'
+    except AssertionError as e:
+        status = 'FAIL (%s)' % e
+        ok = False
+    print('%-14s n_atoms=%3d (base %d) finite=%s -> %s  [min_box_size=25]'
+          % (big['entry'], big['n_atoms'], base['n_atoms'], big['finite'], status))
+
     print('OVERALL: %s' % ('PASS' if ok else 'FAIL'))
     return ok
 

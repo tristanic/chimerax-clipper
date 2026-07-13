@@ -97,10 +97,34 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
         occupancy=1.0 / exp.n_asu, n_threads=n_threads)
 
 
+def _supercell_multiples(cell, n_cells, min_box_size):
+    '''
+    Resolve the ``(na, nb, nc)`` integer unit-cell repeats for the expansion box.
+
+    ``min_box_size`` (Angstroms), when given, is the minimum **perpendicular width**
+    (face-to-face distance) the box must have along each axis — the quantity a
+    periodic-MD minimum-image / non-bonded cutoff constrains. The one-cell width
+    along an axis is ``1 / cell.<x>_star`` (the (h00)/(0k0)/(00l) d-spacing), so the
+    repeat count is ``ceil(min_box_size * cell.<x>_star)``. When both are given the
+    element-wise max is used, so the result satisfies both. Every repeat is >= 1
+    (the expansion needs at least one whole cell — a complete set of orbits).
+    '''
+    import math
+    na, nb, nc = (n_cells if n_cells is not None else (1, 1, 1))
+    na, nb, nc = int(na), int(nb), int(nc)
+    if min_box_size is not None:
+        if min_box_size <= 0:
+            raise ValueError('min_box_size must be positive (got %r)' % (min_box_size,))
+        na = max(na, int(math.ceil(min_box_size * cell.a_star)))
+        nb = max(nb, int(math.ceil(min_box_size * cell.b_star)))
+        nc = max(nc, int(math.ceil(min_box_size * cell.c_star)))
+    return max(na, 1), max(nb, 1), max(nc, 1)
+
+
 def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                                    param_names=('X', 'Y', 'Z'), kind='amplitude',
                                    radiation='auto', complete_fragments=True,
-                                   n_cells=(1, 1, 1), n_threads=1):
+                                   n_cells=None, min_box_size=None, n_threads=1):
     '''
     One-call, GUI-free builder: a small-molecule (COD) CIF plus its reflections ->
     a ready :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for
@@ -139,7 +163,14 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
           CIF's ``_diffrn_radiation_probe``).
         * complete_fragments: complete special-position-straddling molecules before
           expansion (default True).
-        * n_cells: ``(na, nb, nc)`` supercell size (default one unit cell).
+        * min_box_size: minimum box **perpendicular width** (Angstroms, face-to-face)
+          required along each cell axis — the periodic-MD minimum-image / non-bonded
+          cutoff constraint. The unit cell is repeated ``ceil(min_box_size /
+          perp_width)`` times per axis to meet it. This is the usual real-world knob;
+          leave ``n_cells`` unset and pass this.
+        * n_cells: explicit ``(na, nb, nc)`` unit-cell repeats. Default (both unset):
+          a single unit cell. If both ``n_cells`` and ``min_box_size`` are given, the
+          per-axis maximum of the two is used.
         * n_threads: SF / gradient worker threads.
 
     The returned ``box_model`` defines the atom order the target expects
@@ -176,8 +207,13 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     hkl_info, fobs, phi_fom, usage = read_small_molecule_fobs(
         hkl_path or cif_path, cell, spacegroup)
 
+    na, nb, nc = _supercell_multiples(cell, n_cells, min_box_size)
+    if (na, nb, nc) != (1, 1, 1):
+        session.logger.info('(CLIPPER) expanding to a %dx%dx%d supercell '
+            '(perp. widths %.1f/%.1f/%.1f A)' % (na, nb, nc,
+            na / cell.a_star, nb / cell.b_star, nc / cell.c_star))
     mult = site_multiplicities(model.atoms.coords, cell, spacegroup, grid)
-    places = unit_cell_places(cell, spacegroup, *n_cells)
+    places = unit_cell_places(cell, spacegroup, na, nb, nc)
     box = realize_symmetry_copies(session, model, places, multiplicities=mult)
     if box is None:
         raise UserError('Symmetry expansion of %r produced no copies.' % cif_path)
