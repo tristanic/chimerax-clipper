@@ -95,3 +95,98 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
         elements, param_names=param_names, fobs=fobs, phi_fom=phi_fom,
         usage=usage, kind=kind, u_iso=u_iso, u_aniso=u_aniso, is_aniso=is_aniso,
         occupancy=1.0 / exp.n_asu, n_threads=n_threads)
+
+
+def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
+                                   param_names=('X', 'Y', 'Z'), kind='amplitude',
+                                   radiation='auto', complete_fragments=True,
+                                   n_cells=(1, 1, 1), n_threads=1):
+    '''
+    One-call, GUI-free builder: a small-molecule (COD) CIF plus its reflections ->
+    a ready :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for
+    differentiable structure-factor training. Returns ``(state, box_model)``.
+
+    This performs the SAME crystallographic setup the turnkey ``clipper cod`` /
+    ``clipper smallmol`` commands do — minus the live map manager, which is what
+    makes those commands GUI-only — so it runs headless (``--nogui``). Feeding the
+    pieces by hand is error-prone because several corecif corrections are easy to
+    miss; this bakes them in, in the right order:
+
+      1. open the CIF (corecif parser);
+      2. rebuild coordinates in Clipper's frame — corrects corecif's oblique-cell
+         coordinate error (a NO-OP for orthorhombic cells but essential for
+         monoclinic/triclinic, where skipping it silently corrupts the structure
+         factors, not merely NaNs them);
+      3. **hydrate** the crystallographic per-atom data corecif omits — isotropic B,
+         orthogonal-frame anisotropic U, and the ionic scattering species. Skipping
+         this leaves ``Atom.bfactor == 0`` -> U = 0 -> infinitely sharp atoms ->
+         **NaN gradients** (with a deceptively finite loss value);
+      4. optionally complete molecules split across a special position
+         (``complete_fragments``; required for correct SFs on such entries);
+      5. read the reflections into fobs/phi_fom/usage (small-molecule convention:
+         Fo = sqrt(I), fom = 1, all-working);
+      6. expand the ASU to a full unit cell (with special-position de-duplication);
+      7. build the ensemble target.
+
+    Args:
+        * cif_path: the model CIF.
+        * hkl_path: reflections (COD ``.hkl`` / CIF ``_refln_`` loop). Default None
+          -> the sibling ``.hkl`` of ``cif_path``.
+        * param_names: gradient terms to return (default coords only; include
+          ``U11..U23`` for anisotropic-ADP gradients, etc.).
+        * kind: ``'amplitude'`` (default) or ``'intensity'``.
+        * radiation: ``'xray'`` | ``'electron'`` | ``'auto'`` (default; read from the
+          CIF's ``_diffrn_radiation_probe``).
+        * complete_fragments: complete special-position-straddling molecules before
+          expansion (default True).
+        * n_cells: ``(na, nb, nc)`` supercell size (default one unit cell).
+        * n_threads: SF / gradient worker threads.
+
+    The returned ``box_model`` defines the atom order the target expects
+    coordinates in: feed ``box_model.atoms.coords`` (or a torch tensor of them) to
+    ``state.value_and_gradient`` or to
+    :func:`chimerax.clipper.diff.targets.xray_loss` /
+    :func:`~chimerax.clipper.diff.targets.crystallographic_loss`. Both ``box_model``
+    and the source model are added to the session; close them when done. The state
+    keeps the reflection ``HKL_info`` alive (Clipper HKL_data holds a non-owning
+    pointer to it).
+    '''
+    from chimerax.core.errors import UserError
+    from ..symmetry import crystal_symmetry_from_cif_file
+    from ..io.small_molecule import (open_small_molecule_cif,
+        hydrate_small_molecule_model, _clipper_frame_coords, _resolve_radiation,
+        read_small_molecule_fobs)
+    from ..sym_realize import unit_cell_places, realize_symmetry_copies
+    from ..clipper_util import site_multiplicities
+
+    radiation = _resolve_radiation(radiation, cif_path)
+    model = open_small_molecule_cif(session, cif_path)
+    cell, spacegroup, grid = crystal_symmetry_from_cif_file(cif_path)
+    if spacegroup.num_symops <= 1:
+        raise ValueError('%r is P1 (no crystallographic symmetry); the ensemble '
+                         'target needs a symmetry-expanded cell.' % cif_path)
+    # corecif oblique-cell coordinate fix, then fill B / aniso U / ionic species.
+    model.atoms.coords = _clipper_frame_coords(model, cif_path, cell)
+    hydrate_small_molecule_model(session, model, cif_path, cell, radiation)
+    if complete_fragments:
+        from ..io.fragments import split_fragments
+        split_fragments(session, model, cell, spacegroup, grid, mode='complete',
+                        path=cif_path, log=session.logger)
+
+    hkl_info, fobs, phi_fom, usage = read_small_molecule_fobs(
+        hkl_path or cif_path, cell, spacegroup)
+
+    mult = site_multiplicities(model.atoms.coords, cell, spacegroup, grid)
+    places = unit_cell_places(cell, spacegroup, *n_cells)
+    box = realize_symmetry_copies(session, model, places, multiplicities=mult)
+    if box is None:
+        raise UserError('Symmetry expansion of %r produced no copies.' % cif_path)
+
+    state = ensemble_target_from_box(box, fobs, phi_fom, usage,
+                                     param_names=param_names, kind=kind,
+                                     radiation=radiation, n_threads=n_threads)
+    # Keep the HKL_info alive for the lifetime of the state: Clipper HKL_data holds a
+    # non-owning pointer to it, and the state's own refs cover fobs/phi_fom/usage but
+    # not the HKL_info that owns their reflection list.
+    state._hkl_info_keepalive = hkl_info
+    return state, box

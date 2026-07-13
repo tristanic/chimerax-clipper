@@ -348,6 +348,72 @@ def _resolve_radiation(radiation, path):
     return str(radiation).lower()
 
 
+def read_small_molecule_fobs(path, cell, spacegroup):
+    '''
+    Read a small-molecule reflection file (a COD ``.hkl`` / CIF ``_refln_`` loop of
+    ``F_squared_meas``) into the observed-data HKL_data objects a reciprocal
+    differentiable target needs, in the small-molecule convention:
+
+      * ``fobs`` (``HKL_data<F_sigF>``): observed amplitude ``Fo = sqrt(I)`` for
+        ``I > 0`` (else 0), ``sigF = sigma(I) / (2 sqrt(I))`` where ``sigma(I)`` is
+        present, else 1;
+      * ``phi_fom`` (``HKL_data<Phi_fom>``) with ``fom() == 1`` — small-molecule data
+        carry no sigma-A weighting, so the target reduces to a pure 1/sig^2 fit;
+      * ``usage`` (``HKL_data<Flag>``) all-working — small-molecule datasets have no
+        free set.
+
+    Returns ``(hkl_info, fobs, phi_fom, usage)``. The resolution limit of the
+    generated reflection list is taken from the measured reflections. NOTE: Clipper
+    ``HKL_data`` holds a *non-owning* pointer to ``hkl_info``, so the caller MUST keep
+    the returned ``hkl_info`` alive for as long as any of the HKL_data objects (or a
+    target built from them) is in use — otherwise it dangles.
+
+    This is the headless reflection half of the COD -> structure-factors ->
+    differentiable-target pipeline; see
+    :func:`chimerax.clipper.diff.crystal.small_molecule_ensemble_target`.
+    '''
+    import numpy
+    from chimerax.core.errors import UserError
+    from .. import HKL_info, HKL_data_F_sigF, HKL_data_Phi_fom, HKL_data_Flag
+    from ..clipper_python import HKL, Resolution
+
+    refln = _find_reflection_table(path)
+    if refln is None:
+        raise UserError('No reflections (F_squared_meas) found for %r' % path)
+
+    rows = refln.fields(('index_h', 'index_k', 'index_l',
+                         'F_squared_meas', 'F_squared_sigma'),
+                        allow_missing_fields=True)
+    hkls = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
+    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
+    sig = numpy.array([float(_strip_su(r[4]))
+                       if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
+                       for r in rows], numpy.double)
+    n = len(hkls)
+    if n == 0:
+        raise UserError('Reflection loop for %r is empty' % path)
+
+    valid = fsq > 0.0
+    fo = numpy.zeros(n, numpy.double)
+    sigf = numpy.ones(n, numpy.double)
+    fo[valid] = numpy.sqrt(fsq[valid])
+    sigf[valid] = sig[valid] / (2.0 * numpy.sqrt(fsq[valid]))
+
+    # Resolution from the measured reflections, so the generated ASU covers them all.
+    invresolsq = numpy.array([HKL(hkls[i].tolist()).invresolsq(cell) for i in range(n)])
+    res = 1.0 / numpy.sqrt(invresolsq.max())
+    hkl_info = HKL_info(spacegroup, cell, Resolution(res), True)
+
+    fobs = HKL_data_F_sigF(hkl_info)
+    fobs.set_data(hkls, numpy.stack([fo, sigf], axis=1).astype(numpy.float32))
+    phi_fom = HKL_data_Phi_fom(hkl_info)
+    phi_fom.set_data(hkls, numpy.stack(
+        [numpy.zeros(n, numpy.float32), numpy.ones(n, numpy.float32)], axis=1))
+    usage = HKL_data_Flag(hkl_info)
+    usage.set_data(hkls, numpy.ones((n, 1), numpy.int32))
+    return hkl_info, fobs, phi_fom, usage
+
+
 def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radiation='xray'):
     '''
     If experimental structure factors are available (sibling .hkl reflection CIF,
