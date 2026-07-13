@@ -57,14 +57,22 @@ _MIN_SCALING_REFLECTIONS = 50
 
 def open_small_molecule_cif(session, path, file_name=None):
     '''Open a small-molecule CIF via ChimeraX's corecif parser. Returns the
-    (single) AtomicStructure model, added to the session.'''
+    (single) AtomicStructure model, added to the session.
+
+    The returned model has already had the corecif workarounds applied (see
+    :func:`_prepare_corecif_model`): coordinates rebuilt in Clipper's orthogonal
+    frame, and covalent connectivity repaired where corecif drops it on
+    metal-coordinated atoms. Callers therefore never need to correct the frame or
+    re-perceive bonds themselves.'''
     from chimerax.mmcif.corecif import open_corecif
     models, status = open_corecif(session, path, file_name=file_name)
     if not models:
         from chimerax.core.errors import UserError
         raise UserError('No small-molecule structure found in %r' % path)
     session.models.add(models)
-    return models[0]
+    model = models[0]
+    _prepare_corecif_model(session, model, path)
+    return model
 
 
 def extract_cod_structure(session, path, file_name=None, keep_model=False,
@@ -98,7 +106,9 @@ def _build_payload(session, model, path, radiation='auto'):
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
 
     atoms = model.atoms
-    coords = _clipper_frame_coords(model, path, cell)
+    # Coordinates were rebuilt into Clipper's frame at open (see
+    # open_small_molecule_cif / _prepare_corecif_model); read them straight off.
+    coords = atoms.coords
     elements = atoms.element_names.tolist()
     occupancies = atoms.occupancies
 
@@ -165,6 +175,148 @@ def _clipper_frame_coords(model, path, cell):
             co = Coord_frac(*uvw).coord_orth(cell)
             coords[i] = (co.x, co.y, co.z)
     return coords
+
+
+# Generous per-element covalent-degree ceilings for the connectivity repair's
+# valence cap. Kept in step with the downstream valence-sanity check
+# (garnet-isolde categorize._MAX_DEGREE) so a repaired atom is never then flagged
+# over-valent. Metals are omitted: their connectivity stays as coordination
+# pseudobonds (see repair_connectivity), so they get no covalent cap here.
+_MAX_COVALENT_DEGREE = {
+    'C': 4, 'N': 4, 'O': 3, 'H': 1, 'F': 1, 'B': 4, 'Si': 6, 'P': 6,
+    'S': 6, 'Se': 6, 'Cl': 4, 'Br': 4, 'I': 7, 'Te': 6, 'As': 5,
+}
+_DEFAULT_MAX_COVALENT_DEGREE = 8
+
+
+def _neighbour_pairs(coords, radius):
+    '''Indices (i, j), i < j, of atom pairs within ``radius`` Angstroms.'''
+    import numpy
+    try:
+        from scipy.spatial import cKDTree
+        return cKDTree(coords).query_pairs(radius, output_type='ndarray')
+    except Exception:
+        n = len(coords)
+        out = []
+        for i in range(n):
+            d = numpy.linalg.norm(coords[i + 1:] - coords[i], axis=1)
+            for k in numpy.nonzero(d <= radius)[0]:
+                out.append((i, i + 1 + int(k)))
+        return out
+
+
+def repair_connectivity(session, model, tolerance=0.4):
+    '''
+    Repair covalent connectivity that ChimeraX's corecif parser drops on
+    metal-coordinated atoms, and re-perceive covalent bonds corecif skipped.
+
+    corecif's ``finished_parse`` runs distance-based bond perception ONLY on atoms
+    that do not already carry a bond, then demotes metal bonds to coordination
+    pseudobonds. When a CIF's ``_geom_bond`` loop tabulates only the metal
+    coordination sphere - a common organometallic convention - each ligand atom
+    receives its single bond to the metal from ``_geom_bond``, is therefore skipped
+    by distance perception, and then loses that bond to the pseudobond conversion:
+    it ends up with NO covalent bond at all (e.g. a cyclopentadienyl ring is left
+    completely unconnected). See the ChimeraX corecif ``finished_parse`` /
+    ``connect_residue_by_distance`` interaction (reported upstream 2026-07).
+
+    This re-perceives covalent bonds among NON-METAL atoms using ChimeraX's own
+    criterion (``Element.bond_length(e1, e2) + tolerance``), adding any missing
+    bond, with an H-bonds-once rule and a per-element valence cap
+    (``_MAX_COVALENT_DEGREE``) so disordered/overlapping structures cannot be
+    over-bonded. Metal-ligand connectivity is intentionally left as coordination
+    pseudobonds (not forced into covalent bonds). Coordinates should already be in
+    Clipper's frame (see :func:`_prepare_corecif_model`). Returns the number of
+    bonds added.
+    '''
+    import numpy
+    from chimerax.atomic import Element
+    from chimerax.atomic.struct_edit import add_bond
+
+    atoms = model.atoms
+    n = len(atoms)
+    if n < 2:
+        return 0
+    coords = numpy.asarray(atoms.coords, numpy.double)
+    elements = [a.element for a in atoms]
+    enames = [e.name for e in elements]
+    is_metal = numpy.array([e.is_metal for e in elements], bool)
+    znum = numpy.array([e.number for e in elements])
+
+    idx = {a: i for i, a in enumerate(atoms)}
+    existing = set()
+    degree = numpy.zeros(n, int)
+    for b in model.bonds:
+        i, j = idx[b.atoms[0]], idx[b.atoms[1]]
+        existing.add((min(i, j), max(i, j)))
+        degree[i] += 1
+        degree[j] += 1
+
+    # Candidate non-metal pairs within a generous global cutoff, filtered per pair
+    # by the element-specific bond length; shortest first so that under a valence
+    # cap the most credible (shortest) bonds win.
+    candidates = []
+    for i, j in _neighbour_pairs(coords, 3.2):
+        i, j = int(i), int(j)
+        if is_metal[i] or is_metal[j]:
+            continue
+        if (i, j) in existing:
+            continue
+        bl = Element.bond_length(elements[i], elements[j])
+        if bl == 0.0:
+            continue
+        d = float(numpy.linalg.norm(coords[i] - coords[j]))
+        if d > bl + tolerance:
+            continue
+        candidates.append((d, i, j))
+    candidates.sort()
+
+    def cap(i):
+        return _MAX_COVALENT_DEGREE.get(enames[i], _DEFAULT_MAX_COVALENT_DEGREE)
+
+    added = 0
+    for d, i, j in candidates:
+        if znum[i] <= 1 and degree[i] >= 1:      # H (or lighter) bonds only once
+            continue
+        if znum[j] <= 1 and degree[j] >= 1:
+            continue
+        if degree[i] >= cap(i) or degree[j] >= cap(j):
+            continue
+        add_bond(atoms[i], atoms[j])
+        degree[i] += 1
+        degree[j] += 1
+        added += 1
+    return added
+
+
+def _prepare_corecif_model(session, model, path, cell=None):
+    '''
+    Apply the corecif workarounds every freshly-opened small-molecule model needs,
+    so outside callers get a corrected model straight from
+    :func:`open_small_molecule_cif` and never touch the workarounds themselves:
+
+      1. rebuild coordinates in Clipper's orthogonal frame (corecif
+         mis-orthogonalises oblique cells - see :func:`_clipper_frame_coords`);
+      2. repair covalent connectivity corecif drops on metal-coordinated atoms
+         (see :func:`repair_connectivity`).
+
+    Both steps are idempotent. A no-op when the CIF carries no crystal symmetry.
+    '''
+    if cell is None:
+        try:
+            cell, _sg, _grid = crystal_symmetry_from_cif_file(path)
+        except Exception:
+            return
+    try:
+        model.atoms.coords = _clipper_frame_coords(model, path, cell)
+    except Exception as e:
+        session.logger.warning('(CLIPPER) coordinate-frame correction failed for '
+                               '%r: %s' % (path, e))
+    try:
+        repair_connectivity(session, model)
+    except Exception as e:
+        session.logger.warning('(CLIPPER) connectivity repair failed for %r: %s'
+                               % (path, e))
 
 
 def _connectivity(model):
@@ -767,7 +919,8 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
     radiation = _resolve_radiation(radiation, path)
     model = open_small_molecule_cif(session, path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
-    model.atoms.coords = _clipper_frame_coords(model, path, cell)
+    # Coordinates are already in Clipper's frame (corrected at open); the corecif
+    # oblique-cell distortion the old inline fix here handled is now internal.
     # Put the crystallographic per-atom data corecif omits (isotropic B, orthogonal
     # aniso U, ionic species) onto the model, so the live map reads it from the model.
     hydrate_small_molecule_model(session, model, path, cell, radiation)

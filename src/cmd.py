@@ -606,7 +606,7 @@ def split_fragments_cmd(session, structures, mode='rename'):
     from chimerax.core.errors import UserError
     from .symmetry import crystal_symmetry_from_cif_file
     from .io.fragments import split_fragments
-    from .io.small_molecule import _clipper_frame_coords
+    from .io.small_molecule import _prepare_corecif_model
     if structures is None or not len(structures):
         raise UserError('No structures specified.')
     if mode == 'off':
@@ -627,10 +627,12 @@ def split_fragments_cmd(session, structures, mode='rename'):
                 'crystal symmetry for fragment split; skipping.' % m)
             continue
         cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
-        # Ensure Clipper-frame coordinates (as the `clipper smallmol` open path does):
-        # corecif mis-orthogonalises oblique cells, which would misplace completed
-        # symmetry atoms and defeat the special-position test. Idempotent.
-        m.atoms.coords = _clipper_frame_coords(m, path, cell)
+        # Apply the corecif workarounds to this (generically-opened) model: rebuild
+        # Clipper-frame coordinates - corecif mis-orthogonalises oblique cells, which
+        # would misplace completed symmetry atoms and defeat the special-position test -
+        # and repair covalent connectivity corecif drops on metal-coordinated atoms.
+        # Both idempotent, so this is safe on a model opened via `clipper smallmol` too.
+        _prepare_corecif_model(session, m, path, cell)
         results.append(split_fragments(session, m, cell, spacegroup, grid, mode=mode,
                                        path=path))
     return results

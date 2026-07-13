@@ -136,11 +136,12 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     pieces by hand is error-prone because several corecif corrections are easy to
     miss; this bakes them in, in the right order:
 
-      1. open the CIF (corecif parser);
-      2. rebuild coordinates in Clipper's frame — corrects corecif's oblique-cell
+      1. open the CIF (corecif parser). ``open_small_molecule_cif`` internally
+         rebuilds coordinates in Clipper's frame — correcting corecif's oblique-cell
          coordinate error (a NO-OP for orthorhombic cells but essential for
          monoclinic/triclinic, where skipping it silently corrupts the structure
-         factors, not merely NaNs them);
+         factors, not merely NaNs them) — and repairs covalent connectivity corecif
+         drops on metal-coordinated atoms;
       3. **hydrate** the crystallographic per-atom data corecif omits — isotropic B,
          orthogonal-frame anisotropic U, and the ionic scattering species. Skipping
          this leaves ``Atom.bfactor == 0`` -> U = 0 -> infinitely sharp atoms ->
@@ -185,19 +186,19 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     from chimerax.core.errors import UserError
     from ..symmetry import crystal_symmetry_from_cif_file
     from ..io.small_molecule import (open_small_molecule_cif,
-        hydrate_small_molecule_model, _clipper_frame_coords, _resolve_radiation,
+        hydrate_small_molecule_model, _resolve_radiation,
         read_small_molecule_fobs)
     from ..sym_realize import unit_cell_places, realize_symmetry_copies
     from ..clipper_util import site_multiplicities
 
     radiation = _resolve_radiation(radiation, cif_path)
+    # open corrects the oblique-cell coordinate frame + repairs connectivity internally.
     model = open_small_molecule_cif(session, cif_path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(cif_path)
     if spacegroup.num_symops <= 1:
         raise ValueError('%r is P1 (no crystallographic symmetry); the ensemble '
                          'target needs a symmetry-expanded cell.' % cif_path)
-    # corecif oblique-cell coordinate fix, then fill B / aniso U / ionic species.
-    model.atoms.coords = _clipper_frame_coords(model, cif_path, cell)
+    # fill the crystallographic per-atom data corecif omits (B / aniso U / ionic species).
     hydrate_small_molecule_model(session, model, cif_path, cell, radiation)
     if complete_fragments:
         from ..io.fragments import split_fragments
