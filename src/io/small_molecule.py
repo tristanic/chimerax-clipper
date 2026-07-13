@@ -289,6 +289,89 @@ def repair_connectivity(session, model, tolerance=0.4):
     return added
 
 
+def reassemble_symmetry_scattered_hydrogens(session, model, cell, spacegroup,
+                                            search_cells=1, tolerance=0.45):
+    '''
+    Relocate hydrogens that corecif left orphaned because their bond to a heavy atom is
+    symmetry-coded in the CIF's ``_geom_bond`` loop. corecif does not create
+    symmetry-coded bonds, so such an H is placed at its deposited (asymmetric-unit)
+    coordinate - which lies in a different ASU / unit cell from the heavy atom it
+    actually bonds - and comes out with no covalent bond (a "scattered" hydrogen).
+
+    For each still-unbonded H, this searches every space-group symop combined with
+    lattice translations over a ``(2*search_cells+1)**3`` block of cells for the image
+    that lands within X-H bonding distance (``Element.bond_length(H, X) + tolerance``)
+    of a heavy atom. If EXACTLY ONE heavy partner is found (an unambiguous match), the H
+    is moved onto that image and bonded to the partner; hydrogens with no match or an
+    ambiguous (multi-partner) match are left untouched. The recovered operator matches
+    the CIF's own ``_geom_bond`` symmetry code where one is present, and the search also
+    handles entries with no ``_geom_bond`` loop.
+
+    OPT-IN and MUTATING: unlike :func:`repair_connectivity` (which only adds bonds and
+    runs at open), this MOVES atoms, so call it deliberately - e.g. when assembling clean
+    covalent fragments for a small-molecule entry - not on every open. Restricted to
+    hydrogen on purpose: a symmetry-related bond between heavy atoms is usually genuine
+    extended structure (a coordination polymer), not a placement error. Run it AFTER
+    :func:`repair_connectivity` so only genuinely scattered H remain. Returns the number
+    of hydrogens relocated.
+    '''
+    import numpy
+    from chimerax.atomic import Element
+    from chimerax.atomic.struct_edit import add_bond
+    from ..sym_realize import unit_cell_places
+
+    atoms = model.atoms
+    coords = numpy.asarray(atoms.coords, numpy.double)
+    elements = [a.element for a in atoms]
+    znum = numpy.array([e.number for e in elements])
+    degree = numpy.zeros(len(atoms), int)
+    idx = {a: i for i, a in enumerate(atoms)}
+    for b in model.bonds:
+        degree[idx[b.atoms[0]]] += 1
+        degree[idx[b.atoms[1]]] += 1
+
+    # Candidate parents are NON-METAL heavy atoms only: a hydride (H bonded solely to a
+    # metal) must stay a metal-coordination interaction, not be forged into a covalent
+    # H-metal bond, so it finds no partner here and is left untouched.
+    is_metal = numpy.array([e.is_metal for e in elements])
+    heavy = numpy.nonzero((znum > 1) & ~is_metal)[0]
+    if len(heavy) == 0:
+        return 0
+    heavy_xyz = coords[heavy]
+    Hn = Element.get_element('H')
+    cut = numpy.array([Element.bond_length(Hn, elements[int(k)]) + tolerance for k in heavy])
+    float_h = [i for i in range(len(atoms)) if znum[i] == 1 and degree[i] == 0]
+    if not float_h:
+        return 0
+
+    n = 2 * int(search_cells) + 1
+    places = unit_cell_places(cell, spacegroup, n, n, n,
+                              origin=(-search_cells, -search_cells, -search_cells))
+
+    relocated = 0
+    for hi in float_h:
+        h_xyz = coords[hi:hi + 1]
+        best = None                     # (dist, target_xyz, heavy_local_index)
+        partners = set()
+        for P in places:
+            t = P.transform_points(h_xyz)[0]
+            d = numpy.linalg.norm(heavy_xyz - t, axis=1)
+            k = int(numpy.argmin(d))
+            if d[k] <= cut[k]:
+                partners.add(k)
+                if best is None or d[k] < best[0]:
+                    best = (float(d[k]), t, k)
+        if best is None or len(partners) != 1:
+            continue                    # no match, or ambiguous -> leave it alone
+        # clash guard: don't drop the H onto an existing atom (a duplicate)
+        if numpy.min(numpy.linalg.norm(coords - best[1], axis=1)) < 0.3:
+            continue
+        atoms[hi].coord = best[1]
+        add_bond(atoms[hi], atoms[int(heavy[best[2]])])
+        relocated += 1
+    return relocated
+
+
 def _prepare_corecif_model(session, model, path, cell=None):
     '''
     Apply the corecif workarounds every freshly-opened small-molecule model needs,
