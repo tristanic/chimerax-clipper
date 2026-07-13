@@ -45,6 +45,15 @@ _NUCLEAR_XH_LENGTHS = {
 }
 _DEFAULT_XH_LENGTH = 1.06
 
+# Minimum number of measured reflections required to attempt the anisotropic-Gaussian +
+# 20-term isotropic-spline scaling of Fcalc onto Fobs (scale_fcalc_to_fobs). That fit has
+# ~27 parameters; with far fewer reflections it is singular and the degenerate Clipper
+# ResolutionFn solve reads past its (empty) resolution bins - harmless garbage on Windows,
+# a hard segfault on Linux. Some COD reflection files are truncated to a handful of rows
+# (e.g. 2219385's _refln_ loop stops after a single line), so guard both consumers - the
+# recomputed R-factor and the live map - and skip scaling below this floor.
+_MIN_SCALING_REFLECTIONS = 50
+
 
 def open_small_molecule_cif(session, path, file_name=None):
     '''Open a small-molecule CIF via ChimeraX's corecif parser. Returns the
@@ -371,6 +380,14 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
     sig = numpy.array([float(_strip_su(r[4]))
                        if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
                        for r in rows], numpy.double)
+
+    # Too few measured reflections to support the aniso+spline scale (a truncated /
+    # malformed COD _refln_ loop): skip it rather than feed a singular fit to Clipper's
+    # ResolutionFn (see _MIN_SCALING_REFLECTIONS). Reflections exist, so has_sf is True.
+    n_measured = int((fsq > 0).sum())
+    if n_measured < _MIN_SCALING_REFLECTIONS:
+        return {'has_structure_factors': True, 'recomputed_r_factor': None,
+                'n_reflections_used': 0, 'n_reflections_measured': n_measured}
 
     from .. import HKL_info
     from ..clipper_python import HKL, Resolution, SFcalc_aniso_sum_float
@@ -744,6 +761,12 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radi
                         allow_missing_fields=True)
     h = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
     fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
+    # Too few measured reflections to support the aniso+spline scale the live map runs
+    # each recompute (see _MIN_SCALING_REFLECTIONS): treat as "no usable reflections" so
+    # no live map is built, rather than let SmallMoleculeXmapMgr feed a singular fit to
+    # Clipper (a hard crash on Linux). Also guards the max() below against an empty list.
+    if int((fsq > 0).sum()) < _MIN_SCALING_REFLECTIONS:
+        return None
     res = 1.0 / numpy.sqrt(max(HKL(h[i].tolist()).invresolsq(cell) for i in range(len(h))))
     hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
     fobs = HKL_data_F_sigF(hklinfo)
