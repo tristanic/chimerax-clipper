@@ -314,17 +314,36 @@ def _crystal_symmetry_from_cif(path):
 
 def _resolution_from_cif(diffrn_t, cell_t):
     # High-resolution limit d_min = lambda / (2 sin(theta_max)); theta in degrees.
-    from math import sin, radians
+    #
+    # This resolution only sizes the Grid_sampling for the real-space map and the
+    # special-position multiplicity lookup - it is NOT the resolution of the
+    # structure-factor calculation (that comes from the reflections themselves). It
+    # must nonetheless be a sane positive number: COD is machine-aggregated, so the
+    # CIF fields are adversarial. A non-positive wavelength (the '-1'/'0' "not
+    # recorded" sentinels) yields a non-positive d_min -> Grid_sampling returns a
+    # negative/overflowed grid -> the Xmap allocation SEGFAULTS; an electron-
+    # diffraction wavelength (~0.02 A) fed to the X-ray Bragg relation yields an
+    # absurd ~0.016 A d_min -> a multi-billion-point grid -> OUT-OF-MEMORY crash.
+    # Reject non-positive inputs to the default and clamp to a physical small-molecule
+    # range so neither can happen.
+    from math import sin, radians, isfinite
+    default = 0.84  # sensible small-molecule default when collection limits are absent
     wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
     theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
     if theta is None:
         theta = _first_cif_field(cell_t, 'measurement_theta_max')
+    res = default
     try:
         if wl is not None and theta is not None:
-            return float(_strip_su(wl)) / (2.0 * sin(radians(float(_strip_su(theta)))))
+            wl = float(_strip_su(wl))
+            sin_theta = sin(radians(float(_strip_su(theta))))
+            if wl > 0 and sin_theta > 0:
+                res = wl / (2.0 * sin_theta)
     except (ValueError, ZeroDivisionError):
-        pass
-    return 0.84  # sensible small-molecule default when collection limits are absent
+        res = default
+    if not isfinite(res) or res <= 0:
+        res = default
+    return min(max(res, 0.5), 5.0)
 
 def simple_p1_box(model, resolution=3):
     '''

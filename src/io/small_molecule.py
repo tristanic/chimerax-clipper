@@ -246,11 +246,17 @@ def _temperature(diffrn_t, cell_t):
 
 
 def _resolution(diffrn_t, cell_t, reflns_t):
+    # Reported resolution for the payload metadata. Only physically meaningful
+    # (positive) values are returned; a non-positive wavelength/theta (COD's
+    # '-1'/'0' sentinels) or a garbage d_min is reported as None ("unknown")
+    # rather than a negative number poisoning downstream consumers.
     from math import sin, radians
     v = _first_cif_field(reflns_t, 'd_resolution_high')
     if v is not None:
         try:
-            return float(_strip_su(v))
+            d = float(_strip_su(v))
+            if d > 0:
+                return d
         except ValueError:
             pass
     wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
@@ -259,7 +265,10 @@ def _resolution(diffrn_t, cell_t, reflns_t):
         theta = _first_cif_field(cell_t, 'measurement_theta_max')
     try:
         if wl is not None and theta is not None:
-            return float(_strip_su(wl)) / (2.0 * sin(radians(float(_strip_su(theta)))))
+            wl = float(_strip_su(wl))
+            sin_theta = sin(radians(float(_strip_su(theta))))
+            if wl > 0 and sin_theta > 0:
+                return wl / (2.0 * sin_theta)
     except (ValueError, ZeroDivisionError):
         pass
     return None
