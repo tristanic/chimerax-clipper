@@ -123,7 +123,8 @@ def _supercell_multiples(cell, n_cells, min_box_size):
 
 def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                                    param_names=('X', 'Y', 'Z'), kind='amplitude',
-                                   radiation='auto', complete_fragments=True,
+                                   radiation='auto', recover_scattered_hydrogens=True,
+                                   complete_fragments=True,
                                    n_cells=None, min_box_size=None, n_threads=1):
     '''
     One-call, GUI-free builder: a small-molecule (COD) CIF plus its reflections ->
@@ -142,10 +143,14 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
          monoclinic/triclinic, where skipping it silently corrupts the structure
          factors, not merely NaNs them) — and repairs covalent connectivity corecif
          drops on metal-coordinated atoms;
-      3. **hydrate** the crystallographic per-atom data corecif omits — isotropic B,
+      2. **hydrate** the crystallographic per-atom data corecif omits — isotropic B,
          orthogonal-frame anisotropic U, and the ionic scattering species. Skipping
          this leaves ``Atom.bfactor == 0`` -> U = 0 -> infinitely sharp atoms ->
          **NaN gradients** (with a deceptively finite loss value);
+      3. optionally recover hydrogens corecif scattered into the wrong ASU because
+         their X-H bond was symmetry-coded in ``_geom_bond`` (``recover_scattered_
+         hydrogens``; moves each orphaned H onto the correct symmetry image so it is
+         present in the right cell for the SF sum);
       4. optionally complete molecules split across a special position
          (``complete_fragments``; required for correct SFs on such entries);
       5. read the reflections into fobs/phi_fom/usage (small-molecule convention:
@@ -162,6 +167,9 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
         * kind: ``'amplitude'`` (default) or ``'intensity'``.
         * radiation: ``'xray'`` | ``'electron'`` | ``'auto'`` (default; read from the
           CIF's ``_diffrn_radiation_probe``).
+        * recover_scattered_hydrogens: relocate symmetry-scattered hydrogens (orphaned
+          by a symmetry-coded X-H bond) onto the correct image before expansion
+          (default True). Mutating but restricted to unambiguously-matched H.
         * complete_fragments: complete special-position-straddling molecules before
           expansion (default True).
         * min_box_size: minimum box **perpendicular width** (Angstroms, face-to-face)
@@ -187,7 +195,7 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     from ..symmetry import crystal_symmetry_from_cif_file
     from ..io.small_molecule import (open_small_molecule_cif,
         hydrate_small_molecule_model, _resolve_radiation,
-        read_small_molecule_fobs)
+        read_small_molecule_fobs, reassemble_symmetry_scattered_hydrogens)
     from ..sym_realize import unit_cell_places, realize_symmetry_copies
     from ..clipper_util import site_multiplicities
 
@@ -200,6 +208,16 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                          'target needs a symmetry-expanded cell.' % cif_path)
     # fill the crystallographic per-atom data corecif omits (B / aniso U / ionic species).
     hydrate_small_molecule_model(session, model, cif_path, cell, radiation)
+    # Bring home hydrogens corecif scattered into the wrong ASU (their bond to a heavy
+    # atom was symmetry-coded in _geom_bond). Mutating, so opt-in; runs after open's
+    # repair_connectivity (only genuinely orphaned H remain) and BEFORE fragment
+    # completion / expansion, so the covalent fragments are assembled from correctly
+    # placed atoms.
+    if recover_scattered_hydrogens:
+        n_h = reassemble_symmetry_scattered_hydrogens(session, model, cell, spacegroup)
+        if n_h:
+            session.logger.info('(CLIPPER) relocated %d symmetry-scattered '
+                                'hydrogen(s) in %s' % (n_h, cif_path))
     if complete_fragments:
         from ..io.fragments import split_fragments
         split_fragments(session, model, cell, spacegroup, grid, mode='complete',
