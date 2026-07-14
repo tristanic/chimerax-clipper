@@ -605,12 +605,30 @@ def read_small_molecule_fobs(path, cell, spacegroup):
 
     This is the headless reflection half of the COD -> structure-factors ->
     differentiable-target pipeline; see
-    :func:`chimerax.clipper.diff.crystal.small_molecule_ensemble_target`.
+    :func:`chimerax.clipper.diff.crystal.small_molecule_ensemble_target`. It is a thin
+    composition of :func:`_parse_reflection_file` (the file read) and
+    :func:`fobs_from_arrays` (the pure numpy->Clipper transform); a caller that has
+    cached the raw ``(hkl, fsq, sig)`` arrays can skip the file and call
+    :func:`fobs_from_arrays` directly.
+    '''
+    hkl, fsq, sig = _parse_reflection_file(path)
+    return fobs_from_arrays(hkl, fsq, sig, cell, spacegroup)
+
+
+def _parse_reflection_file(path):
+    '''
+    Parse a small-molecule reflection file (COD ``.hkl`` / CIF ``_refln_`` loop) into
+    the raw post-parse columns ``(hkl, fsq, sig)``: Miller indices ``int32[N,3]``,
+    ``F_squared_meas`` (intensity I) ``float64[N]``, and ``sigma(F_squared)``
+    ``float64[N]`` (1.0 where absent). No transform is applied — this is the
+    file-reading half of :func:`read_small_molecule_fobs`, split out so a caller that
+    has cached these arrays (e.g. the COD structure-factor cache) can rebuild the
+    observed data via :func:`fobs_from_arrays` with no file access. The
+    corrupt/short-loop guards live here, so cached arrays inherit the vetted output.
+    Raises ``UserError`` when no reflections are present.
     '''
     import numpy
     from chimerax.core.errors import UserError
-    from .. import HKL_info, HKL_data_F_sigF, HKL_data_Phi_fom, HKL_data_Flag
-    from ..clipper_python import HKL, Resolution
 
     refln = _find_reflection_table(path)
     if refln is None:
@@ -619,14 +637,53 @@ def read_small_molecule_fobs(path, cell, spacegroup):
     rows = refln.fields(('index_h', 'index_k', 'index_l',
                          'F_squared_meas', 'F_squared_sigma'),
                         allow_missing_fields=True)
-    hkls = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
+    hkl = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
     fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
     sig = numpy.array([float(_strip_su(r[4]))
                        if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
                        for r in rows], numpy.double)
-    n = len(hkls)
-    if n == 0:
+    if len(hkl) == 0:
         raise UserError('Reflection loop for %r is empty' % path)
+    return hkl, fsq, sig
+
+
+def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup):
+    '''
+    Build the observed-data HKL_data objects a reciprocal differentiable target needs
+    from raw reflection arrays (the pure numpy->Clipper half of
+    :func:`read_small_molecule_fobs`), in the small-molecule convention. Usable on
+    cached arrays with no file access — the intended entry point for the COD
+    structure-factor cache loader.
+
+    Args:
+        * hkl: Miller indices, integer array shaped ``(N, 3)``.
+        * fsq: ``F_squared_meas`` (intensity I), ``(N,)``.
+        * sig: ``sigma(F_squared)``, ``(N,)`` (use 1.0 where unknown).
+        * cell / spacegroup: the crystal ``Cell`` / ``Spacegroup``.
+
+    Returns ``(hkl_info, fobs, phi_fom, usage)``:
+      * ``fobs`` (``HKL_data<F_sigF>``): ``Fo = sqrt(I)`` for ``I > 0`` (else 0),
+        ``sigF = sigma(I) / (2 sqrt(I))``;
+      * ``phi_fom`` (``HKL_data<Phi_fom>``) with ``fom() == 1`` (no sigma-A weighting);
+      * ``usage`` (``HKL_data<Flag>``) all-working (small-molecule data have no free set).
+
+    The resolution limit is taken from the highest-resolution supplied reflection.
+    NOTE: Clipper ``HKL_data`` holds a *non-owning* pointer to ``hkl_info``, so the
+    caller MUST keep the returned ``hkl_info`` alive for as long as any of the HKL_data
+    objects (or a target built from them) is in use — otherwise it dangles (segfault).
+    '''
+    import numpy
+    from chimerax.core.errors import UserError
+    from .. import HKL_info, HKL_data_F_sigF, HKL_data_Phi_fom, HKL_data_Flag
+    from ..clipper_python import HKL, Resolution
+
+    hkls = numpy.ascontiguousarray(hkl, numpy.int32).reshape(-1, 3)
+    fsq = numpy.ascontiguousarray(fsq, numpy.double).reshape(-1)
+    sig = numpy.ascontiguousarray(sig, numpy.double).reshape(-1)
+    n = len(hkls)
+    if n == 0 or len(fsq) != n or len(sig) != n:
+        raise UserError('fobs_from_arrays: hkl/fsq/sig length mismatch or empty '
+                        '(%d/%d/%d)' % (n, len(fsq), len(sig)))
 
     valid = fsq > 0.0
     fo = numpy.zeros(n, numpy.double)
