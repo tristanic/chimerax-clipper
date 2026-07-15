@@ -1055,8 +1055,16 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
     the experiment type from the CIF (_diffrn_radiation_probe), defaulting to X-ray.
 
     fragments: 'off' (leave the ASU as one UNL residue), 'rename' (default; split into
-    named covalent-fragment residues) or 'complete' (also add symmetry-generated atoms
-    to finish molecules split across a special position). See io.fragments.
+    named covalent-fragment residues) or 'complete' (finish molecules via symmetry - see
+    below). See io.fragments.
+
+    Under 'complete', molecules are reassembled through crystallographic symmetry in two
+    complementary ways: hydrogens whose bond to a heavy atom is symmetry-coded in the CIF
+    (so corecif deposits them in a neighbouring ASU, leaving them orphaned) are relocated
+    back onto their parent (:func:`reassemble_symmetry_scattered_hydrogens`), and atoms
+    completing a molecule split across a special position are symmetry-generated
+    (split_fragments 'complete'). Both move/add atoms, so they run only in 'complete'
+    mode, not the light-touch 'rename' default.
     '''
     import os
     from ..symmetry import get_map_mgr
@@ -1072,6 +1080,13 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
     # 'complete' extends, model.atoms - and the live map reads atoms in model order).
     if fragments and fragments != 'off':
         from .fragments import split_fragments
+        # Rewrap symmetry-scattered H onto their parents BEFORE splitting, so recovered
+        # H land in the right fragment and completion sees the correct connectivity.
+        if fragments == 'complete':
+            n = reassemble_symmetry_scattered_hydrogens(session, model, cell, spacegroup)
+            if n:
+                session.logger.info('(CLIPPER) %s: reassembled %d symmetry-scattered '
+                    'hydrogen(s) onto their parent atoms.' % (os.path.basename(path), n))
         split_fragments(session, model, cell, spacegroup, grid, mode=fragments,
                          path=path, log=session.logger)
     mmgr = get_map_mgr(model, create=True)

@@ -561,6 +561,9 @@ def open_small_molecule(session, path, hkl=None, radiation='auto', fragments='re
 
     fragments: 'off', 'rename' (default) or 'complete' - split the asymmetric unit
     into named covalent-fragment residues (see the `clipper fragments` command).
+    'complete' additionally reassembles whole molecules via crystallographic symmetry:
+    it rewraps symmetry-scattered hydrogens onto their parents and adds the atoms that
+    finish molecules split across a special position.
     '''
     from .io.small_molecule import show_cod_crystal
     return show_cod_crystal(session, path, hkl_path=hkl, radiation=radiation,
@@ -600,8 +603,9 @@ def split_fragments_cmd(session, structures, mode='rename'):
     monatomic ions, small inorganic ions) and LIG01, LIG02, ... otherwise.
 
     mode 'off' leaves the model unchanged; 'rename' (default) splits and names;
-    'complete' also adds the symmetry-generated atoms that finish molecules split
-    across a special position.
+    'complete' reassembles whole molecules via crystallographic symmetry - it rewraps
+    symmetry-scattered hydrogens onto their parents and adds the symmetry-generated
+    atoms that finish molecules split across a special position.
     '''
     from chimerax.core.errors import UserError
     from .symmetry import crystal_symmetry_from_cif_file
@@ -633,6 +637,14 @@ def split_fragments_cmd(session, structures, mode='rename'):
         # and repair covalent connectivity corecif drops on metal-coordinated atoms.
         # Both idempotent, so this is safe on a model opened via `clipper smallmol` too.
         _prepare_corecif_model(session, m, path, cell)
+        # 'complete' reassembles molecules via symmetry; rewrap symmetry-scattered H onto
+        # their parents first (matches the `clipper cod`/`smallmol` complete path).
+        if mode == 'complete':
+            from .io.small_molecule import reassemble_symmetry_scattered_hydrogens
+            n = reassemble_symmetry_scattered_hydrogens(session, m, cell, spacegroup)
+            if n:
+                session.logger.info('(CLIPPER) %s: reassembled %d symmetry-scattered '
+                    'hydrogen(s).' % (m, n))
         results.append(split_fragments(session, m, cell, spacegroup, grid, mode=mode,
                                        path=path))
     return results
@@ -912,8 +924,9 @@ def register_clipper_cmd(logger):
             ('mode', FragmentsArg),
         ],
         synopsis='Split a small-molecule asymmetric unit into named covalent-fragment '
-                 'residues (mode off|rename|complete; complete adds symmetry-generated '
-                 'atoms to finish molecules split across a special position)'
+                 'residues (mode off|rename|complete; complete reassembles molecules via '
+                 'symmetry - rewraps scattered hydrogens + adds atoms finishing molecules '
+                 'split across a special position)'
     )
     register('clipper fragments', fragments_desc, split_fragments_cmd, logger=logger)
 

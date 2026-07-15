@@ -217,11 +217,17 @@ The **mode** keyword selects:
   unchanged. A symmetry-split molecule is named for what it really is (the
   special-position water becomes ``HOH``, not hydroxide) but its missing
   symmetry-equivalent atoms are not added.
-* ``complete`` - additionally add the symmetry-generated atoms that finish the
-  split molecules (e.g. the second hydrogen of the special-position water),
-  correcting occupancies (atoms lying on a special position are given unit
-  occupancy). The added atoms are excluded from the live structure-factor
-  calculation and do not follow live edits of their source atoms.
+* ``complete`` - reassemble whole molecules through crystallographic symmetry, in
+  two complementary ways. First, **rewrap symmetry-scattered hydrogens**: a hydrogen
+  whose bond to its parent is symmetry-coded in the CIF (``_geom_bond``) is deposited
+  in a neighbouring asymmetric unit and comes out unbonded; it is moved back onto its
+  parent (each such H maps unambiguously under one symmetry operator). Second, **add
+  the symmetry-generated atoms that finish split molecules** (e.g. the second hydrogen
+  of a special-position water), correcting occupancies (atoms on a special position
+  are given unit occupancy). Both move or add atoms - hence ``complete`` only, not the
+  light-touch ``rename`` default. The *added* atoms (not the rewrapped hydrogens, which
+  are real ASU atoms) are excluded from the live structure-factor calculation and do
+  not follow live edits of their source atoms.
 
 The command may be run whether or not the model already has a live small-molecule
 map: the map rebuilds its structure factors from ``model.atoms`` on each recompute,
