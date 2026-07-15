@@ -347,6 +347,11 @@ def _apply_ops(res, comp, ops, fracs, cell, existing_names):
     from chimerax.atomic import struct_edit
     from ..clipper_python import Coord_frac
     added = []   # atoms generated for this fragment (dedup across ops)
+    # Partial-occupancy atoms are disorder components; snapshot the set up front (before any
+    # occupancy is promoted below) so the skip below is driven by the ORIGINAL occupancy and
+    # cannot re-duplicate the atom under a later operator.
+    disorder = {a for a in comp if a.occupancy < 0.99}
+    promote = set()   # disorder atoms whose symmetry image would have been a distinct copy
 
     def occupied(xyz):
         for a in comp:
@@ -375,10 +380,14 @@ def _apply_ops(res, comp, ops, fracs, cell, existing_names):
             # charge/valence. The canonical case is a short-strong H-bond across a
             # symmetry element - e.g. a 0.5-occupancy bridging carboxyl H on a 2-fold
             # (cod_2215867): copying it gives two clashing protons and a spurious +1 in
-            # the ASU, when physically there is one time-averaged proton. The heavy-atom
-            # framework (full occupancy) still completes; only the disorder atom is left
-            # as the single deposited copy.
-            if a.occupancy < 0.99:
+            # the ASU, when physically there is one time-averaged proton. Reaching here (a
+            # NEW, unoccupied image position) means the copy would be distinct: keep the
+            # single deposited atom and promote it to full occupancy (below), so the
+            # completed molecule is a physical snapshot - one whole shared proton, integer
+            # net charge - not two half-atoms. The full-occupancy heavy framework still
+            # completes normally.
+            if a in disorder:
+                promote.add(a)
                 continue
             name = _unique_atom_name(a.name, existing_names)
             existing_names.add(name)
@@ -409,6 +418,11 @@ def _apply_ops(res, comp, ops, fracs, cell, existing_names):
             isrc = img.get(src, [None])[0]
             if isrc is not None and isrc is not orig and isrc not in orig.neighbors:
                 struct_edit.add_bond(orig, isrc)
+    # Promote the retained single copy of each symmetric-disorder atom to full occupancy,
+    # so the completed molecule carries one whole shared atom (e.g. one bridging proton ->
+    # integer/neutral ASU charge) instead of an unphysical fractional one.
+    for a in promote:
+        a.occupancy = 1.0
     return len(added)
 
 
