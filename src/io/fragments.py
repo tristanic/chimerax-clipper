@@ -325,6 +325,14 @@ def _complete(model, made, special, fracs, cell, cif_symop_strings, xbonds, by_n
                     continue
                 if a1 not in comp_set and a2 not in comp_set:
                     continue
+                # Terminal hydrogen whose bond is symmetry-coded (deposited in a
+                # neighbouring ASU): reassemble_symmetry_scattered_hydrogens (run before
+                # this, under `fragments complete`) relocates the real H onto its parent.
+                # Do NOT also generate a symmetry image of it here - that duplicates the H
+                # and, because reassemble put the real atom at exactly the image position,
+                # over-bonds it. Special-position water H are handled by branch (a) above.
+                if a2.element.number == 1 or a1.element.number == 1:
+                    continue
                 if not (1 <= n <= len(ops_rt)):
                     continue
                 # bond is a1 -- S(a2): applying S to the fragment places S(a2) bonded to a1.
