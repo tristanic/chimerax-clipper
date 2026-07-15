@@ -205,7 +205,7 @@ def _neighbour_pairs(coords, radius):
         return out
 
 
-def repair_connectivity(session, model, tolerance=0.4):
+def repair_connectivity(session, model, tolerance=0.4, min_bond=0.6):
     '''
     Repair covalent connectivity that ChimeraX's corecif parser drops on
     metal-coordinated atoms, and re-perceive covalent bonds corecif skipped.
@@ -224,7 +224,11 @@ def repair_connectivity(session, model, tolerance=0.4):
     criterion (``Element.bond_length(e1, e2) + tolerance``), adding any missing
     bond, with an H-bonds-once rule and a per-element valence cap
     (``_MAX_COVALENT_DEGREE``) so disordered/overlapping structures cannot be
-    over-bonded. Metal-ligand connectivity is intentionally left as coordination
+    over-bonded. Pairs closer than ``min_bond`` Angstroms are skipped: no real
+    covalent bond is that short (shortest is H2 at 0.74 A, and H-H is never perceived
+    here), so a near-zero separation means coincident atoms - substitutional/occupancy
+    disorder or duplicate sites - which must not be bonded (doing so manufactures
+    zero-length bonds). Metal-ligand connectivity is intentionally left as coordination
     pseudobonds (not forced into covalent bonds). Coordinates should already be in
     Clipper's frame (see :func:`_prepare_corecif_model`). Returns the number of
     bonds added.
@@ -266,7 +270,7 @@ def repair_connectivity(session, model, tolerance=0.4):
         if bl == 0.0:
             continue
         d = float(numpy.linalg.norm(coords[i] - coords[j]))
-        if d > bl + tolerance:
+        if d < min_bond or d > bl + tolerance:   # too short = coincident atoms, not a bond
             continue
         candidates.append((d, i, j))
     candidates.sort()
