@@ -369,6 +369,17 @@ def _apply_ops(res, comp, ops, fracs, cell, existing_names):
             target, xyz = img[a]
             if target is not None:
                 continue
+            # Do not instantiate a symmetry image of a partial-occupancy (disorder)
+            # atom: it is one component of an averaged/shared site, so a full-atom copy
+            # would clash with its own disorder partner and break the fragment's
+            # charge/valence. The canonical case is a short-strong H-bond across a
+            # symmetry element - e.g. a 0.5-occupancy bridging carboxyl H on a 2-fold
+            # (cod_2215867): copying it gives two clashing protons and a spurious +1 in
+            # the ASU, when physically there is one time-averaged proton. The heavy-atom
+            # framework (full occupancy) still completes; only the disorder atom is left
+            # as the single deposited copy.
+            if a.occupancy < 0.99:
+                continue
             name = _unique_atom_name(a.name, existing_names)
             existing_names.add(name)
             na = struct_edit.add_atom(name, a.element, res, xyz,
