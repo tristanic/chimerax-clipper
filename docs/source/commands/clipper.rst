@@ -234,6 +234,12 @@ map: the map rebuilds its structure factors from ``model.atoms`` on each recompu
 so it simply reflects the renamed (and, in ``complete`` mode, added) atoms on its
 next update.
 
+Opening a small-molecule CIF (this command, ``clipper smallmol`` and ``clipper cod``)
+also logs a warning for any covalent bond far longer than physically possible - almost
+always a spurious ``_geom_bond`` entry in the deposited CIF (e.g. a 1,3 distance listed
+as a bond) that the corecif parser copies verbatim. Such bonds are **flagged, not
+removed** (a long contact can be intentional); review the connectivity yourself.
+
 .. _`smallmol_examples`:
 
 Example data

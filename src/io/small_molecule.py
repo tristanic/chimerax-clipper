@@ -376,6 +376,42 @@ def reassemble_symmetry_scattered_hydrogens(session, model, cell, spacegroup,
     return relocated
 
 
+def warn_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
+    '''
+    Log a warning for covalent bonds far longer than physically possible (length >
+    ``Element.bond_length(e1, e2) + tolerance`` Angstroms, non-metal atoms only). These are
+    almost always spurious entries in the CIF's ``_geom_bond`` loop - most often a 1,3
+    distance listed as a bond (e.g. cod_2203005 lists ``Br3 C40 2.838`` - the Br...C 1,3
+    contact through C41, vs the real 1.9 A Br-C bond) - which ChimeraX's corecif parser
+    copies verbatim, applying no distance sanity-check to ``_geom_bond``. This is NOT
+    auto-corrected: removing a deposited bond is risky (some long contacts are intentional),
+    so the model is flagged for the user to review rather than silently altered.
+    '''
+    import numpy
+    from chimerax.atomic import Element
+    offenders = []
+    for b in model.bonds:
+        a1, a2 = b.atoms
+        if a1.element.is_metal or a2.element.is_metal:
+            continue
+        bl = Element.bond_length(a1.element, a2.element)
+        if bl == 0.0:
+            continue
+        d = float(numpy.linalg.norm(a1.coord - a2.coord))
+        if d > bl + tolerance:
+            offenders.append((a1.name, a2.name, d, bl))
+    if offenders:
+        offenders.sort(key=lambda o: o[3] - o[2])   # most egregious first
+        ex = '; '.join('%s-%s %.2f A (expected ~%.2f)' % (n1, n2, d, bl)
+                       for n1, n2, d, bl in offenders[:3])
+        session.logger.warning(
+            '(CLIPPER) %s: %d implausibly long covalent bond(s) - likely spurious '
+            '_geom_bond entries in the CIF (e.g. a 1,3 distance listed as a bond), copied '
+            'as-is by the corecif parser. Connectivity may need review: %s%s'
+            % (source_name, len(offenders), ex, ' ...' if len(offenders) > 3 else ''))
+    return len(offenders)
+
+
 def _prepare_corecif_model(session, model, path, cell=None):
     '''
     Apply the corecif workarounds every freshly-opened small-molecule model needs,
@@ -1089,6 +1125,9 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
                     'hydrogen(s) onto their parent atoms.' % (os.path.basename(path), n))
         split_fragments(session, model, cell, spacegroup, grid, mode=fragments,
                          path=path, log=session.logger)
+    # Flag (do not auto-fix) implausibly long bonds corecif copied from the CIF _geom_bond
+    # loop (e.g. a 1,3 distance listed as a bond); the user should review connectivity.
+    warn_implausibly_long_bonds(session, model, os.path.basename(path))
     mmgr = get_map_mgr(model, create=True)
     smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radiation)
     if smd is not None:
