@@ -139,6 +139,14 @@ def unit_cell_places(cell, spacegroup, na, nb, nc, origin=(0, 0, 0)):
     lattice translation in [0,na) x [0,nb) x [0,nc), offset by the integer
     ``origin`` cell. The identity operator (the untranslated ASU) comes first, so
     the result can be passed straight to :func:`realize_symmetry_copies`.
+
+    Each copy is placed at ``symop(x)`` plus the whole-cell offset WITHOUT wrapping the
+    symop's own translation, so a glide/inversion/screw copy can land outside [0,1) and
+    the realised block is spatially scattered across roughly +/-1 cell. This is harmless
+    (and intentional) for structure-factor use - Clipper applies the full space group to
+    every atom regardless of position, so the SF is placement-invariant. For a compact
+    packed block (e.g. a `clipper unitcells` display), pass the realised model through
+    :func:`pack_copies_into_block`.
     '''
     from .clipper_python import RTop_fracs, Coord_frac
     oi, oj, ok = origin
@@ -153,6 +161,64 @@ def unit_cell_places(cell, spacegroup, na, nb, nc, origin=(0, 0, 0)):
     matrices = ops.all_matrices_orth(cell, '3x4')
     from chimerax.geometry import Place
     return [Place(matrix=m) for m in matrices]
+
+
+def pack_copies_into_block(box, cell, na, nb, nc, origin=(0, 0, 0)):
+    '''
+    Rigid-translate each symmetry copy of a realised box (from
+    :func:`realize_symmetry_copies` on :func:`unit_cell_places`) by the integer
+    lattice vector that brings its centroid into the ``na`` x ``nb`` x ``nc``
+    unit-cell block at ``origin`` - turning the raw-symop placement (which scatters
+    glide/inversion/screw copies across roughly +/-1 cell) into a compact "packed"
+    periodic block for display.
+
+    The shift is the SMALLEST integer lattice vector per axis that lands the copy's
+    centroid in ``[origin, origin+dims)`` (so a single cell packs to ``[0,1)`` and a
+    larger block keeps its tiling). Because every copy moves by a whole lattice
+    vector this is structure-factor-invariant, and because it runs AFTER
+    ``realize_symmetry_copies`` (special-position dedup already done) it cannot
+    disturb connectivity or the dedup. The same shift is folded into the
+    expansion's ``operators`` so ``operators``/``inverse_operators`` stay consistent
+    with the packed coordinates. No-op if the box carries no per-atom provenance
+    (older expansions). Returns the number of copies moved.
+    '''
+    import numpy
+    from .clipper_python import Coord_orth, Coord_frac
+    from chimerax.geometry import translation
+    exp = getattr(box, 'clipper_sym_expansion', None)
+    if exp is None or exp.operator_index is None:
+        return 0
+    opi = numpy.asarray(exp.operator_index)
+    atoms = box.atoms
+    coords = numpy.asarray(atoms.coords, numpy.double)
+    frac = numpy.array([Coord_orth(float(x), float(y), float(z)).coord_frac(cell).uvw
+                        for x, y, z in coords])
+    org = numpy.asarray(origin, float)
+    dims = numpy.asarray((na, nb, nc), float)
+    o0 = Coord_orth(0., 0., 0.)
+    moved = 0
+    new_coords = coords.copy()
+    for m in range(exp.n_asu):
+        sel = (opi == m)
+        if not sel.any():
+            continue
+        c = frac[sel].mean(axis=0)
+        n = numpy.zeros(3, int)
+        for a in range(3):
+            lo, hi = org[a] - c[a], org[a] + dims[a] - c[a]   # valid shift n in [lo, hi)
+            if lo <= 0 < hi:
+                continue                                       # already in the block
+            n[a] = int(numpy.ceil(lo)) if lo > 0 else int(numpy.floor(hi - 1e-9))
+        if not n.any():
+            continue
+        on = Coord_frac(float(n[0]), float(n[1]), float(n[2])).coord_orth(cell)
+        dv = numpy.array([on.x - o0.x, on.y - o0.y, on.z - o0.z])
+        new_coords[sel] += dv
+        exp.operators[m] = translation(dv) * exp.operators[m]
+        moved += 1
+    if moved:
+        atoms.coords = new_coords
+    return moved
 
 
 class CrystalSymmetry:

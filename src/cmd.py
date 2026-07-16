@@ -777,7 +777,8 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
     '''
     from math import ceil
     from .symmetry import get_all_symmetry_handlers
-    from .sym_realize import crystal_symmetry_for, realize_symmetry_copies, unit_cell_places
+    from .sym_realize import (crystal_symmetry_for, realize_symmetry_copies,
+        unit_cell_places, pack_copies_into_block)
 
     if cells is not None and box is not None:
         raise UserError('Specify only one of "cells" or "box", not both.')
@@ -824,6 +825,11 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
             session.logger.warning('No atoms survived generating unit cells for '
                 '{}.'.format(s.id_string))
             continue
+        # unit_cell_places places each copy at symop(x)+cell-offset without wrapping the
+        # symop's own translation, so the raw block scatters across ~+/-1 cell. Pack each
+        # copy's centroid into the block for a tidy periodic display (SF-invariant integer
+        # lattice shift, applied after special-position dedup).
+        pack_copies_into_block(combined, sym.cell, na, nb, nc)
         session.logger.info('Created model {} containing a {}x{}x{} block of unit '
             'cells for {}.'.format(combined.id_string, na, nb, nc, s.id_string))
         results.append(combined)
