@@ -238,7 +238,8 @@ class SymmetryExpansion:
     P1 box and then fold the result back to a single ASU (at occupancy 1/n_asu)
     for a structure-factor calculation.
     '''
-    def __init__(self, operators, chains_by_operator, deduplicated, source_name):
+    def __init__(self, operators, chains_by_operator, deduplicated, source_name,
+                 source_atom_index=None, operator_index=None):
         # operators[i] is the Place (structure-frame) applied to make copy i, with
         # the identity/ASU operator at index 0. chains_by_operator[i] is the list
         # of chain IDs that copy i contributed to the combined model.
@@ -248,11 +249,37 @@ class SymmetryExpansion:
         # time, each a dict {operator, chain_id, residue, multiplicity}.
         self.deduplicated = list(deduplicated)
         self.source_name = source_name
+        # Flat per-box-atom provenance, aligned 1:1 with combined.atoms (same order):
+        #   source_atom_index[a] = index of the SOURCE (ASU) atom that box atom a is a
+        #       copy of - i.e. its unique-site id (0..n_src-1).
+        #   operator_index[a]    = index into self.operators of the symmetry copy that
+        #       produced box atom a.
+        # Lets a caller count, per unique site, how many box copies exist (and how many
+        # are "mobile") to build an occupancy-weighted overlay - see
+        # n_copies_per_source_site. None on expansions built before this was recorded.
+        self.source_atom_index = (None if source_atom_index is None
+                                  else numpy.asarray(source_atom_index, dtype=int))
+        self.operator_index = (None if operator_index is None
+                               else numpy.asarray(operator_index, dtype=int))
 
     @property
     def n_asu(self):
         '''Number of ASU copies (symmetry operators) in the expansion.'''
         return len(self.operators)
+
+    @property
+    def n_copies_per_source_site(self):
+        '''``(n_src,)`` count of box copies of each source (ASU) atom, from
+        ``source_atom_index``. To make a site's box copies overlay to a target
+        occupancy ``q``, give each copy ``q / n_copies_per_source_site[site]``; the
+        uniform ``1/n_asu`` overlay is the special case where every site has ``n_asu``
+        copies. For a soft/hard split, restrict the count to the mobile operators:
+        ``numpy.bincount(source_atom_index[numpy.isin(operator_index, mobile_ops)])``
+        gives the per-site mobile-copy count (the ``n_mobile`` divisor). ``None`` if
+        provenance was not recorded.'''
+        if self.source_atom_index is None:
+            return None
+        return numpy.bincount(self.source_atom_index)
 
     @property
     def inverse_operators(self):
@@ -579,8 +606,23 @@ def realize_symmetry_copies(session, structure, places, name=None,
     combined.position = structure.scene_position
     session.models.add([combined])
 
+    # Flat per-box-atom provenance, in combined.atoms order (= surviving source atoms of
+    # each kept copy, concatenated in kept_places order - the same invariant
+    # _propagate_aniso relies on). source_atom_index = which source ASU atom each box
+    # atom copies; operator_index = which kept copy produced it.
+    src_index_parts, op_index_parts = [], []
+    for op_idx, mask in enumerate(surv_masks):
+        surviving = numpy.nonzero(mask)[0]
+        src_index_parts.append(surviving)
+        op_index_parts.append(numpy.full(len(surviving), op_idx, dtype=int))
+    source_atom_index = (numpy.concatenate(src_index_parts) if src_index_parts
+                         else numpy.empty(0, int))
+    operator_index = (numpy.concatenate(op_index_parts) if op_index_parts
+                      else numpy.empty(0, int))
+
     combined.clipper_sym_expansion = SymmetryExpansion(
-        kept_places, chains_by_copy, dedup_records, structure.name)
+        kept_places, chains_by_copy, dedup_records, structure.name,
+        source_atom_index=source_atom_index, operator_index=operator_index)
 
     if dedup_records:
         session.logger.info('De-duplicated {} special-position residue '
