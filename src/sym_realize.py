@@ -644,8 +644,14 @@ def realize_symmetry_copies(session, structure, places, name=None,
                         # c.atoms is still 1:1 with the source here (pre-deletion).
                         surv[c.atoms.indices(to_delete)] = False
                         to_delete.delete()
-                if not c.num_atoms:
-                    c.delete()
+                if c.deleted or not c.num_atoms:
+                    # A fully-redundant copy has ALL its atoms in `to_delete`;
+                    # removing them makes ChimeraX auto-delete the now-empty
+                    # structure, freeing its C++ object. Read `c.deleted` (a safe
+                    # hasattr check) BEFORE `c.num_atoms` (dereferences the freed
+                    # pointer), and don't re-delete an already-reaped copy.
+                    if not c.deleted:
+                        c.delete()
                     continue
                 ref_coords = numpy.concatenate([ref_coords,
                     place.transform_points(c.atoms.coords).astype(numpy.float32)])
