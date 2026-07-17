@@ -257,7 +257,20 @@ class XmapSet(MapSetBase):
         # positive/negative colours stay correct) and pin them: clearing
         # _contour_sigma stops XmapHandler_Live._map_recalc_cb from rescaling the
         # levels by the sigma ratio on each recalculation.
+        #
+        # `level` is a FLOOR, not a fixed value: a well-fit light-atom structure
+        # leaves a near-flat residual whose sigma is tiny, so a +/-3 sigma default
+        # would sit in the noise (blobs over every atom) - hence the 0.3 e/A^3 floor.
+        # But a heavy-atom / atomic-resolution structure has genuinely larger
+        # residuals (hard-to-model heavy atoms plus bonding density), where 0.3 is
+        # far below the noise floor and the map fills with a mess (COD 2020656). Use
+        # max(floor, 3 * robust sigma): the floor wins for clean light-atom maps, the
+        # robust 3-sigma wins for busy ones. Robust (MAD) sigma, so a couple of large
+        # heavy-atom difference lobes don't themselves inflate the level.
         import numpy
+        robust = getattr(handler, 'robust_sigma', None)
+        if robust:
+            level = max(level, 3.0 * robust)
         signs = [s.level for s in handler.surfaces] if handler.surfaces else [level, -level]
         handler.set_parameters(
             surface_levels=[numpy.sign(c) * level if c else level for c in signs])
@@ -721,7 +734,10 @@ class XmapSet(MapSetBase):
                 contour = self.STANDARD_HIGH_CONTOUR
 
 
-        levels = numpy.array(contour) * xmap_handler.sigma
+        # For small-molecule maps this is a winsorized sigma (robust to heavy-atom
+        # peaks); for macromolecular/static maps it is just the raw sigma.
+        sigma_basis = getattr(xmap_handler, 'contour_sigma_basis', xmap_handler.sigma)
+        levels = numpy.array(contour) * sigma_basis
 
         xmap_handler.set_parameters(**{'cap_faces': False,
                                   'surface_levels': levels,
@@ -735,7 +751,7 @@ class XmapSet(MapSetBase):
         # Record the sigma value these (absolute) levels were set against, so the
         # contours can be kept fixed in sigma units if the map is later rescaled
         # (see XmapHandler_Live._map_recalc_cb).
-        xmap_handler._contour_sigma = xmap_handler.sigma
+        xmap_handler._contour_sigma = sigma_basis
 
     def add_live_xmap(self, name,
         b_sharp=0,
@@ -1433,6 +1449,66 @@ class XmapHandler_Live(XmapHandlerBase):
         all = self.xmap_mgr.get_map_stats(self._map_name)
         return (all.mean, all.std_dev, all.std_dev)
 
+    # Winsorization clip factor (in robust sigmas) for small-molecule contour levels.
+    # See contour_sigma_basis.
+    SMALL_MOLECULE_WINSORIZE_C = 8.0
+
+    @property
+    def _is_small_molecule_map(self):
+        from .small_molecule_map import SmallMoleculeXmapMgr
+        return isinstance(self.xmap_mgr, SmallMoleculeXmapMgr)
+
+    def _whole_cell_values(self):
+        '''The whole periodic unit-cell grid as a flat float64 array, or None. Read
+        losslessly over [0, n) in each axis (matching self.sigma, which is the
+        whole-cell Clipper std_dev).'''
+        xmap = self.xmap
+        if xmap is None:
+            return None
+        from .. import Coord_grid
+        gs = xmap.grid_sampling
+        return numpy.asarray(xmap.export_section_numpy(
+            Coord_grid(0, 0, 0),
+            Coord_grid(int(gs.nu), int(gs.nv), int(gs.nw))), numpy.float64).ravel()
+
+    @property
+    def robust_sigma(self):
+        '''A MAD-based standard-deviation estimate of the whole-cell map, robust to a
+        few extreme (heavy-atom) density peaks. Falls back to the raw sigma when the
+        grid is unavailable or degenerate.'''
+        rho = self._whole_cell_values()
+        if rho is None:
+            return self.sigma
+        med = numpy.median(rho)
+        mad = float(numpy.median(numpy.abs(rho - med)) * 1.4826)
+        return mad if mad > 0 else self.sigma
+
+    @property
+    def contour_sigma_basis(self):
+        '''The sigma the default contour levels are pinned to and rescaled by (see
+        XmapSet.set_xmap_display_style and _do_recalc_refill).
+
+        For small-molecule maps this is a WINSORIZED sigma, not the raw whole-cell
+        sigma. A crystal with heavy atoms produces a handful of enormous density
+        peaks - a 53-electron iodine reaches ~200 e/A^3 in 2mFo-DFc versus ~12 for
+        carbon - which inflate the raw sigma several-fold; the standard 2.5-sigma
+        level then lands above every light-atom peak and the framework contours to
+        nothing (COD 2020656 was the reported case). Clipping the map at
+        median +/- c*MAD before taking the standard deviation removes the heavy-atom
+        tail so the level tracks the light-atom density scale. Macromolecular maps
+        are near-Gaussian (no dominant scatterer) and keep the raw sigma unchanged.'''
+        if not self._is_small_molecule_map:
+            return self.sigma
+        rho = self._whole_cell_values()
+        if rho is None:
+            return self.sigma
+        med = numpy.median(rho)
+        mad = numpy.median(numpy.abs(rho - med)) * 1.4826
+        if not mad > 0:
+            return self.sigma
+        c = self.SMALL_MOLECULE_WINSORIZE_C
+        return float(numpy.clip(rho, med - c * mad, med + c * mad).std())
+
     @property
     def b_sharp(self):
         '''
@@ -1490,7 +1566,7 @@ class XmapHandler_Live(XmapHandlerBase):
         # mean B-factor shifts the map's overall scale (sigma) changes, so rescale
         # the levels by the sigma ratio rather than reusing the stale absolutes.
         old_sigma = getattr(self, '_contour_sigma', None)
-        new_sigma = self.sigma
+        new_sigma = self.contour_sigma_basis
         if old_sigma and new_sigma and old_sigma > 0 and self.surfaces:
             scale = new_sigma / old_sigma
             if scale != 1.0:
