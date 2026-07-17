@@ -242,8 +242,11 @@ class XmapSet(MapSetBase):
             smd['fobs'], smd['structure'],
             radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
-        self.add_live_xmap('2mFo-DFc', is_difference_map=False)
-        diff = self.add_live_xmap('mFo-DFc', is_difference_map=True)
+        # Plain 2Fo-Fc / Fo-Fc, NOT the macromolecular 2mFo-DFc / mFo-DFc: these
+        # coefficients carry Fcalc phases with no sigma-A figure-of-merit (m) or
+        # weighting (D) and no R-free set (see SmallMoleculeXmapMgr).
+        self.add_live_xmap('2Fo-Fc', is_difference_map=False)
+        diff = self.add_live_xmap('Fo-Fc', is_difference_map=True)
         # Small-molecule difference maps are contoured at a fixed ABSOLUTE level
         # (electrons/A^3), not sigma. The map is on the e/A^3 scale (see
         # SmallMoleculeXmapMgr), and a well-fit model leaves a near-flat residual
@@ -1490,7 +1493,7 @@ class XmapHandler_Live(XmapHandlerBase):
 
         For small-molecule maps this is a WINSORIZED sigma, not the raw whole-cell
         sigma. A crystal with heavy atoms produces a handful of enormous density
-        peaks - a 53-electron iodine reaches ~200 e/A^3 in 2mFo-DFc versus ~12 for
+        peaks - a 53-electron iodine reaches ~200 e/A^3 in 2Fo-Fc versus ~12 for
         carbon - which inflate the raw sigma several-fold; the standard 2.5-sigma
         level then lands above every light-atom peak and the framework contours to
         nothing (COD 2020656 was the reported case). Clipping the map at

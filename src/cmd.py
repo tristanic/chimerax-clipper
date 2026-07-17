@@ -553,7 +553,7 @@ def open_small_molecule(session, path, hkl=None, radiation='auto', fragments='re
     '''
     Open a small-molecule (e.g. COD) CIF as a live crystal structure: the model in
     its unit cell, crystallographic symmetry, and - when reflections are available
-    (an `hkl` file, or a sibling .hkl) - live 2mFo-DFc / mFo-DFc electron-density
+    (an `hkl` file, or a sibling .hkl) - live 2Fo-Fc / Fo-Fc electron-density
     maps that update as the model changes.
 
     radiation: 'xray', 'electron' (micro-ED / 3D-ED), or 'auto' (default; read from

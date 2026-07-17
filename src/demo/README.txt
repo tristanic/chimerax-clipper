@@ -12,7 +12,7 @@ loop of F_squared_meas):
   cod_2213867  P b c a   (#61)  - an orthorhombic organic structure with
                                   glide planes.
 
-Open one in ChimeraX (model + structure factors + live 2mFo-DFc / mFo-DFc maps)
+Open one in ChimeraX (model + structure factors + live 2Fo-Fc / Fo-Fc maps)
 with, e.g.:
 
   clipper smallmol <this-folder>/cod_1100908.cif hkl <this-folder>/cod_1100908.hkl

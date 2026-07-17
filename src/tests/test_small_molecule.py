@@ -88,7 +88,7 @@ def test_clipper_frame_geometry(session):
 
 
 def test_live_map_engine(session):
-    '''The live-map compute engine (SmallMoleculeXmapMgr): the 2mFo-DFc map must
+    '''The live-map compute engine (SmallMoleculeXmapMgr): the 2Fo-Fc map must
     place atoms on positive density, and the anisotropic+spline scaling must give an
     R-work close to the published value (which a crude overall scale would not - it
     left a large heavy-atom residual). Exercised headlessly; the GUI display itself
@@ -108,12 +108,12 @@ def test_live_map_engine(session):
         smd = _small_molecule_map_data(model, cif, None, cell, sg, grid)
         mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
             smd['grid'], smd['fobs'], smd['structure'])
-        mgr.add_xmap('2mFo-DFc', is_difference_map=False)
-        mgr.add_xmap('mFo-DFc', is_difference_map=True)
+        mgr.add_xmap('2Fo-Fc', is_difference_map=False)
+        mgr.add_xmap('Fo-Fc', is_difference_map=True)
         # R-work close to the published 0.041 (aniso+spline scaling).
         assert abs(mgr.rwork - 0.041) < 0.02, mgr.rwork
-        # 2mFo-DFc places atoms on positive density.
-        xm = mgr.get_xmap_ref('2mFo-DFc')
+        # 2Fo-Fc places atoms on positive density.
+        xm = mgr.get_xmap_ref('2Fo-Fc')
         st = Map_stats(xm)
         vals = numpy.array([xm.get_data(
             Coord_orth(float(x[0]), float(x[1]), float(x[2])).coord_frac(cell).coord_grid(
@@ -168,7 +168,7 @@ def test_electron_map_engine(session):
             smd = _small_molecule_map_data(model, cif, None, cell, sg, grid, radiation)
             mgr = SmallMoleculeXmapMgr(smd['hklinfo'], smd['cell'], smd['spacegroup'],
                 smd['grid'], smd['fobs'], smd['structure'], radiation=smd['radiation'])
-            mgr.add_xmap('2mFo-DFc', is_difference_map=False)
+            mgr.add_xmap('2Fo-Fc', is_difference_map=False)
             return mgr.rwork
         rx, re = rwork('xray'), rwork('electron')
         assert rx > 0 and re > 0 and abs(rx - re) > 1e-2, (rx, re)
