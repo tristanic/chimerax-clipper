@@ -70,13 +70,23 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
     from ..scattering import ionic_scattering_names
     from .state import EnsembleXrayTargetState
 
+    # Only n_asu is needed here (for the 1/n_asu occupancy overlay). A freshly-expanded
+    # box carries the full SymmetryExpansion; a box restored from a session (see
+    # diff.assembled_cache) has only the persisted scalar `clipper_n_asu` attribute (the
+    # Python expansion object does not survive .cxs), so fall back to that.
     exp = getattr(box_model, 'clipper_sym_expansion', None)
-    if exp is None:
-        raise ValueError(
-            'box_model #{} has no clipper_sym_expansion; build the box with '
-            'clipper unitcells / symcopies (or realize_symmetry_copies) so the '
-            'invertible expansion record is attached.'.format(
-                getattr(box_model, 'id_string', '?')))
+    if exp is not None:
+        n_asu = int(exp.n_asu)
+    else:
+        n_asu = getattr(box_model, 'clipper_n_asu', None)
+        if n_asu is None:
+            raise ValueError(
+                'box_model #{} has neither a clipper_sym_expansion nor a clipper_n_asu '
+                'attribute; build the box with clipper unitcells / symcopies (or '
+                'realize_symmetry_copies), or restore one saved via '
+                'chimerax.clipper.diff.assembled_cache.'.format(
+                    getattr(box_model, 'id_string', '?')))
+        n_asu = int(n_asu)
 
     atoms = box_model.atoms
     M = len(atoms)
@@ -94,7 +104,7 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
     return EnsembleXrayTargetState(
         elements, param_names=param_names, fobs=fobs, phi_fom=phi_fom,
         usage=usage, kind=kind, u_iso=u_iso, u_aniso=u_aniso, is_aniso=is_aniso,
-        occupancy=1.0 / exp.n_asu, n_threads=n_threads)
+        occupancy=1.0 / n_asu, n_threads=n_threads)
 
 
 def _supercell_multiples(cell, n_cells, min_box_size):
