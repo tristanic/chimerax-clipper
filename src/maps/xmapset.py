@@ -222,16 +222,16 @@ class XmapSet(MapSetBase):
     def base_name(self):
         return self._name
 
-    def _init_small_molecule_maps(self):
-        '''Set up live small-molecule maps from self._small_molecule_data (cell,
-        spacegroup, grid, hklinfo, resolution, fobs amplitudes and the live structure).
-        Uses SmallMoleculeXmapMgr (FFT structure factors, no bulk solvent) in place of
-        the C++ Xtal_thread_mgr, and reuses the standard box/spotlight + live-recalc
-        machinery. The manager reads per-atom SF inputs live from the structure.'''
-        smd = self._small_molecule_data
+    def _launch_small_molecule_xmap_mgr(self, smd):
+        '''Build the unit-cell/box scaffold and the SmallMoleculeXmapMgr for a
+        small-molecule crystal, WITHOUT adding any maps. Shared by
+        _init_small_molecule_maps (fresh open, which then adds the 2Fo-Fc / Fo-Fc maps)
+        and _end_restore_session_cb (session restore, where the maps are themselves
+        restored as child models and only re-registered with the manager).'''
+        self._small_molecule_data = smd
         from .. import Unit_Cell, atom_list_from_sel
         alist = atom_list_from_sel(self.structure.atoms)
-        self._unit_cell = Unit_Cell(alist, self.cell, self.spacegroup, self.grid, 5)
+        self._unit_cell = Unit_Cell(alist, smd['cell'], smd['spacegroup'], smd['grid'], 5)
         if self.spotlight_mode:
             self._box_changed_cb('init', (self.spotlight_center, self.display_radius))
         else:
@@ -242,6 +242,14 @@ class XmapSet(MapSetBase):
             smd['fobs'], smd['structure'],
             radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
+
+    def _init_small_molecule_maps(self):
+        '''Set up live small-molecule maps from self._small_molecule_data (cell,
+        spacegroup, grid, hklinfo, resolution, fobs amplitudes and the live structure).
+        Uses SmallMoleculeXmapMgr (FFT structure factors, no bulk solvent) in place of
+        the C++ Xtal_thread_mgr, and reuses the standard box/spotlight + live-recalc
+        machinery. The manager reads per-atom SF inputs live from the structure.'''
+        self._launch_small_molecule_xmap_mgr(self._small_molecule_data)
         # Plain 2Fo-Fc / Fo-Fc, NOT the macromolecular 2mFo-DFc / mFo-DFc: these
         # coefficients carry Fcalc phases with no sigma-A figure-of-merit (m) or
         # weighting (D) and no R-free set (see SmallMoleculeXmapMgr).
@@ -1217,6 +1225,26 @@ class XmapSet(MapSetBase):
             'live update': self.live_update,
             'radiation': getattr(self, '_radiation', 'xray'),
         }
+        # Small-molecule crystals carry no ReflectionDataContainer / MTZ (the live maps
+        # come from SmallMoleculeXmapMgr, fed by a raw Fobs HKL_data + crystal definition
+        # held on self._small_molecule_data). None of that is a child model, so persist it
+        # here so a session can rebuild the manager on restore without the source CIF. The
+        # expensive symmetry expansion is NOT redone: the maps recompute cheaply by FFT.
+        smd = self._small_molecule_data
+        if smd is not None:
+            fh, fv = smd['fobs'].data
+            grid = smd['grid']
+            data['small molecule'] = {
+                'hall symbol': smd['spacegroup'].symbol_hall,
+                'cell dim': smd['cell'].dim,
+                'cell angles': smd['cell'].angles_deg,
+                'resolution': smd['resolution'],
+                'grid': (int(grid.nu), int(grid.nv), int(grid.nw)),
+                'fobs hkls': fh,
+                'fobs values': fv,
+                'radiation': smd.get('radiation', 'xray'),
+                'path': smd.get('path'),
+            }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
         return data
@@ -1235,11 +1263,63 @@ class XmapSet(MapSetBase):
         # manager, which reads _radiation to pick the scattering-factor table.
         xmapset._radiation = data.get('radiation', 'xray')
         xmapset._session_restore_live_update = data['live update']
+        # Small-molecule crystal data (absent in macromolecular / older sessions). The
+        # crystal definition (cell/spacegroup/grid/hklinfo + Fobs) must be reconstructed
+        # NOW, before the child XmapHandler_Live models restore: their data-array
+        # generation reads self.cell/self.grid (voxel_size), which resolve from
+        # _small_molecule_data. The live manager (needs the atomic structure) is launched
+        # later in _end_restore_session_cb, once the SymmetryManager has reconnected it.
+        sm = data.get('small molecule')
+        if sm is not None:
+            xmapset._reconstruct_small_molecule_crystal(sm)
         session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
         return xmapset
 
+    def _reconstruct_small_molecule_crystal(self, sm):
+        '''Rebuild the crystal definition + Fobs (no structure yet) from the persisted
+        'small molecule' snapshot block and install it as self._small_molecule_data, so the
+        cell/spacegroup/grid/hklinfo accessors work while the child maps restore.'''
+        import numpy
+        from .. import (Cell, Cell_descr, Spacegroup, Spgr_descr, Resolution,
+                        Grid_sampling, HKL_info, HKL_data_F_sigF)
+        cell = Cell(Cell_descr(*sm['cell dim'], *sm['cell angles']))
+        spacegroup = Spacegroup(Spgr_descr(sm['hall symbol'], Spgr_descr.Hall))
+        grid = Grid_sampling(*sm['grid'])
+        res = sm['resolution']
+        hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
+        fobs = HKL_data_F_sigF(hklinfo)
+        fobs.set_data(numpy.asarray(sm['fobs hkls']), numpy.asarray(sm['fobs values']))
+        self._radiation = sm.get('radiation', 'xray')
+        # structure is filled in _end_restore_session_cb (reconnected by then).
+        self._small_molecule_data = {
+            'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
+            'resolution': res, 'fobs': fobs, 'structure': None,
+            'path': sm.get('path'), 'radiation': self._radiation}
+
+    def _relaunch_small_molecule_maps(self):
+        '''Launch the SmallMoleculeXmapMgr and re-register the restored 2Fo-Fc / Fo-Fc
+        handlers so they recompute (cheap FFT, NO symmetry re-expansion). Deferred to
+        end-of-restore because it needs the atomic structure, reconnected by the
+        SymmetryManager's own end-restore handler (which runs first, parent before child).'''
+        smd = self._small_molecule_data
+        smd['structure'] = self.structure
+        from ..io.small_molecule import register_clipper_atom_attributes
+        register_clipper_atom_attributes(self.session)
+        self._launch_small_molecule_xmap_mgr(smd)
+        for m in self.child_models():
+            if isinstance(m, XmapHandler_Live):
+                self._live_xmap_mgr.add_xmap(m._map_name, **m._rebuild_args)
+                # Reconnect the contour basis the recalc callback rescales against:
+                # the difference map uses an absolute level (pin _contour_sigma None so
+                # it is not rescaled); the 2Fo-Fc map tracks its winsorized sigma.
+                m._contour_sigma = None if m.is_difference_map else m.contour_sigma_basis
+                m._session_restore = False
+        self.live_update = self._session_restore_live_update
+
     def _end_restore_session_cb(self, *_):
-        if self.crystal_data is not None and self._f_sigf_data_name is not None:
+        if self._small_molecule_data is not None:
+            self._relaunch_small_molecule_maps()
+        elif self.crystal_data is not None and self._f_sigf_data_name is not None:
             for fsigf in self.all_models():
                 if fsigf.name == self._f_sigf_data_name:
                     break

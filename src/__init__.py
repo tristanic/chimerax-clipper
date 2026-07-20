@@ -32,7 +32,11 @@ __version__ = "0.28.dev0"
 # v3: XmapHandler_Live snapshots gained bsharp_adjustable / bsharp_designated, and
 # XmapSet snapshots gained 'radiation'. Older (<=2) sessions lack these; restore_snapshot
 # falls back (difference-map rule for bsharp; 'xray' for radiation), so they open cleanly.
-CLIPPER_STATE_VERSION = 3
+# v4: XmapSet snapshots gained a 'small molecule' block (crystal definition + Fobs) so
+# small-molecule (COD) crystals with live SmallMoleculeXmapMgr maps round-trip through a
+# session. Older sessions lack it; restore falls back to the macromolecular path (the key
+# is simply absent), so they open unchanged.
+CLIPPER_STATE_VERSION = 4
 
 def get_lib():
     from os import path
