@@ -253,6 +253,39 @@ class XrayTargetState:
             c, ui, ua, oc, ia, self._selected, True)
         return float(L)
 
+    def fobs_scaled_fcalc(self, coords, u_iso=None, u_aniso=None, occ=None,
+                          is_aniso=None, refresh_scale=True):
+        '''
+        Reciprocal (fobs) mode only. Return ``(fo, scaled_fc)`` — aligned 1-D arrays of
+        the observed amplitude and the SCALED calculated amplitude ``s(h)|Fc|`` over the
+        reflection list (NaN off the measured/working set) — using the **same** scaled
+        Fcalc :meth:`value_and_gradient` computes (same forward density + the shared
+        ``scale_fcalc_to_fobs`` scaling). ``refresh_scale`` (default True) re-fits the
+        scale at these parameters first. Feed the pair to
+        :func:`chimerax.clipper.reflection_tools.compute_r_factors`.
+        '''
+        c, ui, ua, oc, ia = self._prepare(coords, u_iso, u_aniso, occ, is_aniso)
+        return self._ev.fobs_scaled_fcalc(c, ui, ua, oc, ia, bool(refresh_scale))
+
+    def r_factors(self, coords, u_iso=None, u_aniso=None, occ=None, is_aniso=None,
+                  refresh_scale=True):
+        '''
+        Crystallographic R at ``coords`` via the shared
+        :func:`~chimerax.clipper.reflection_tools.compute_r_factors` core, run on the
+        exact scaled Fcalc the loss sees. Small-molecule convention (``free_flags=None``,
+        ``epsilon=None`` → unweighted): read ``.r_all``. Consistent by construction with
+        the live small-molecule map and ``io.small_molecule`` ``recomputed_r_factor`` —
+        same scaling (:func:`scale_fcalc_to_fobs`) and same R core, so the numbers cannot
+        drift. Reciprocal (fobs) mode only. Returns an
+        :class:`~chimerax.clipper.reflection_tools.RFactors`.
+        '''
+        import numpy
+        fo, sfc = self.fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso,
+                                         refresh_scale)
+        good_fc = numpy.where(sfc > 0, sfc, numpy.nan)
+        from ..reflection_tools import compute_r_factors
+        return compute_r_factors(fo, good_fc)
+
 
 class SupercellXrayTargetState:
     '''
@@ -518,3 +551,24 @@ class EnsembleXrayTargetState:
         L, _ = self.value_and_gradient(box_coords, u_iso, u_aniso, occ, is_aniso,
                                        refresh_scale=True)
         return L
+
+    def r_factors(self, box_coords, u_iso=None, u_aniso=None, occ=None,
+                  is_aniso=None, refresh_scale=True):
+        '''
+        Crystallographic R for the box at ``box_coords`` (the occupancy-weighted
+        ``1/n_asu`` overlay), via :meth:`XrayTargetState.r_factors` on the underlying
+        single-ASU-equivalent target. ADP/occ args left ``None`` use the builder-supplied
+        box defaults (as :meth:`value_and_gradient` does), so a coords-only caller can pass
+        just ``box_coords`` — the same coordinates handed to
+        :func:`chimerax.clipper.diff.targets.xray_loss`. ``.r_all`` is the small-molecule R,
+        consistent with ``recomputed_r_factor``. Returns an
+        :class:`~chimerax.clipper.reflection_tools.RFactors`.
+        '''
+        n = self._M
+        box = numpy.ascontiguousarray(box_coords, numpy.double).reshape(n, 3)
+        b_uiso = self._def_uiso if u_iso is None else numpy.ascontiguousarray(u_iso, numpy.double).reshape(n)
+        b_uan = self._def_uaniso if u_aniso is None else numpy.ascontiguousarray(u_aniso, numpy.double).reshape(n, 6)
+        b_occ = self._def_occ if occ is None else numpy.ascontiguousarray(occ, numpy.double).reshape(n)
+        b_isan = self._def_isan if is_aniso is None else numpy.ascontiguousarray(is_aniso, numpy.uint8).reshape(n)
+        return self._state.r_factors(box, u_iso=b_uiso, u_aniso=b_uan, occ=b_occ,
+                                     is_aniso=b_isan, refresh_scale=refresh_scale)

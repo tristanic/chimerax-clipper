@@ -27,6 +27,7 @@
 #include "edcalc_ext.h"
 #include "aniso_scale.h"
 #include "vdw.h"
+#include <limits>
 
 #include <algorithm>
 #include <cmath>
@@ -438,6 +439,62 @@ struct XrayGradientEvaluator::Impl {
         return T;
     }
 
+    int n_reflections() const
+    {
+        return realspace ? 0 : fobs.base_hkl_info().num_reflections();
+    }
+
+    // Forward density -> Fcalc -> (optionally refit) scale, then emit (Fo, s·|Fc|)
+    // per reflection in HKL_data index order. Off the measured/working set (or where
+    // Fcalc is missing) the pair is NaN, so the caller masks exactly as the live
+    // small-molecule map does before handing to reflection_tools.compute_r_factors.
+    // Reciprocal (fobs) mode only. Mirrors evaluate()'s forward prefix; no gradient.
+    void fobs_scaled_fcalc(const double* coords, const double* u_iso,
+                           const double* u_aniso, const double* occ,
+                           const uint8_t* is_aniso, bool refresh_scale,
+                           double* out_fo, double* out_sfc)
+    {
+        if (realspace)
+            throw std::runtime_error(
+                "fobs_scaled_fcalc: reciprocal (structure-factor) mode only");
+        std::vector<Coord_orth>           positions;
+        std::vector<double>               u_iso_v, occ_v, radii_v;
+        std::vector<std::array<double,6>> u_aniso_v;
+        std::vector<uint8_t>              is_aniso_v;
+        build_atoms(coords, u_iso, u_aniso, occ, is_aniso, positions,
+                    u_iso_v, u_aniso_v, is_aniso_v, occ_v, radii_v);
+        if (threaded_density) {
+            Atom_list atoms = make_atom_list(positions, u_iso_v, u_aniso_v,
+                                             is_aniso_v, occ_v);
+            density_xmap = ftype32(0);
+            edcalc(density_xmap, atoms);
+        } else {
+            accumulate_model_density(density_xmap, positions, elements, u_iso_v,
+                                     u_aniso_v, is_aniso_v, occ_v, radii_v);
+        }
+        density_xmap.fft_to(fcalc_hkl, n_threads);
+        if (has_bulk) {
+            for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
+                if (fcalc_hkl[ih].missing() || fbulk[ih].missing()) continue;
+                std::complex<ftype32> ft =
+                    (std::complex<ftype32>)fcalc_hkl[ih] + (std::complex<ftype32>)fbulk[ih];
+                fcalc_hkl.set_data(ih.hkl(), F_phi<ftype32>(ft));
+            }
+        }
+        if (refresh_scale || !has_scale) refit_scale_reciprocal();
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
+            const size_t i = (size_t)ih.index();
+            const bool measured = !fobs[ih].missing() && working(usage, ih)
+                                  && fobs[ih].sigf() > 0.0;
+            if (!measured || fcalc_hkl[ih].missing()) {
+                out_fo[i] = nan; out_sfc[i] = nan; continue;
+            }
+            out_fo[i]  = fobs[ih].f();
+            out_sfc[i] = refl_scale_[i] * fcalc_hkl[ih].f();
+        }
+    }
+
     double evaluate(const double* coords, const double* u_iso,
                     const double* u_aniso, const double* occ,
                     const uint8_t* is_aniso,
@@ -564,6 +621,17 @@ XrayGradientEvaluator::XrayGradientEvaluator(
 XrayGradientEvaluator::~XrayGradientEvaluator() = default;
 
 int XrayGradientEvaluator::n_atoms() const { return p_->n_atoms(); }
+
+int XrayGradientEvaluator::n_reflections() const { return p_->n_reflections(); }
+
+void XrayGradientEvaluator::fobs_scaled_fcalc(
+    const double* coords, const double* u_iso, const double* u_aniso,
+    const double* occ, const uint8_t* is_aniso, bool refresh_scale,
+    double* out_fo, double* out_scaled_fcalc)
+{
+    p_->fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, refresh_scale,
+                          out_fo, out_scaled_fcalc);
+}
 
 double XrayGradientEvaluator::value_and_gradient(
     const double*                         coords,

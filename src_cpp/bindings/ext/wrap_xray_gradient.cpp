@@ -127,5 +127,45 @@ void init_xray_gradient(py::module& m)
             py::arg("occ"),
             py::arg("is_aniso"),
             py::arg("selected"),
-            py::arg("refresh_scale") = false);
+            py::arg("refresh_scale") = false)
+
+        .def_property_readonly("n_reflections", &cx::XrayGradientEvaluator::n_reflections)
+
+        // Forward density -> Fcalc -> (optionally refit) scale, returning the observed
+        // amplitude Fo and the SCALED calculated amplitude s(h)*|Fc| per reflection
+        // (HKL_data index order, length n_reflections); NaN off the measured set. The
+        // caller computes an R-factor via reflection_tools.compute_r_factors, using the
+        // exact scaled Fcalc the loss sees. Returns (fo, scaled_fcalc).
+        .def("fobs_scaled_fcalc",
+            [](cx::XrayGradientEvaluator& self,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> coords,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> u_iso,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> u_aniso,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> occ,
+               py::array_t<uint8_t, py::array::c_style | py::array::forcecast> is_aniso,
+               bool                                                            refresh_scale) -> py::tuple
+            {
+                const int N = self.n_atoms();
+                const int R = self.n_reflections();
+                if (R == 0)
+                    throw std::invalid_argument("fobs_scaled_fcalc: reciprocal (fobs) mode only");
+                if ((int)coords.size()   != 3*N) throw std::invalid_argument("coords must have shape (N,3)");
+                if ((int)u_iso.size()    != N)   throw std::invalid_argument("u_iso must have length N");
+                if ((int)u_aniso.size()  != 6*N) throw std::invalid_argument("u_aniso must have shape (N,6)");
+                if ((int)occ.size()      != N)   throw std::invalid_argument("occ must have length N");
+                if ((int)is_aniso.size() != N)   throw std::invalid_argument("is_aniso must have length N");
+                py::array_t<double> fo(R), sfc(R);
+                self.fobs_scaled_fcalc(
+                    coords.data(), u_iso.data(), u_aniso.data(), occ.data(),
+                    is_aniso.data(), refresh_scale,
+                    static_cast<double*>(fo.request().ptr),
+                    static_cast<double*>(sfc.request().ptr));
+                return py::make_tuple(fo, sfc);
+            },
+            py::arg("coords"),
+            py::arg("u_iso"),
+            py::arg("u_aniso"),
+            py::arg("occ"),
+            py::arg("is_aniso"),
+            py::arg("refresh_scale") = true);
 }
