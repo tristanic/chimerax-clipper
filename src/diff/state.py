@@ -44,6 +44,18 @@ _CANONICAL_PARAMS = ('X', 'Y', 'Z', 'Uiso', 'Occ',
                      'U11', 'U22', 'U33', 'U12', 'U13', 'U23')
 
 
+def _resolve_r_method(method):
+    '''Map an R-factor ``method`` name to the evaluator's ``use_summation`` flag.
+    ``'fft'`` -> False (the loss / live-map FFT Fcalc); ``'sum'`` -> True (exact direct
+    summation, matching recomputed_r_factor).'''
+    m = str(method).lower()
+    if m in ('fft', 'f'):
+        return False
+    if m in ('sum', 'summation', 's'):
+        return True
+    raise ValueError("r-factor method must be 'fft' or 'sum', got %r" % (method,))
+
+
 class MapTargetState:
     '''
     MDFF-style differentiable target against a fixed experimental map.
@@ -254,34 +266,41 @@ class XrayTargetState:
         return float(L)
 
     def fobs_scaled_fcalc(self, coords, u_iso=None, u_aniso=None, occ=None,
-                          is_aniso=None, refresh_scale=True):
+                          is_aniso=None, method='fft'):
         '''
         Reciprocal (fobs) mode only. Return ``(fo, scaled_fc)`` — aligned 1-D arrays of
         the observed amplitude and the SCALED calculated amplitude ``s(h)|Fc|`` over the
-        reflection list (NaN off the measured/working set) — using the **same** scaled
-        Fcalc :meth:`value_and_gradient` computes (same forward density + the shared
-        ``scale_fcalc_to_fobs`` scaling). ``refresh_scale`` (default True) re-fits the
-        scale at these parameters first. Feed the pair to
+        reflection list (NaN off the measured/working set). Forward-only (no gradient),
+        and side-effect-free (a local scale is fit; the loss's cached scale is untouched).
+
+        ``method``: ``'fft'`` (default) uses the FFT Fcalc the loss / live small-molecule
+        map compute; ``'sum'`` uses EXACT direct summation (no FFT grid approximation),
+        matching ``io.small_molecule`` ``recomputed_r_factor``. Both apply the same
+        ``scale_fcalc_to_fobs``. Feed the pair to
         :func:`chimerax.clipper.reflection_tools.compute_r_factors`.
         '''
+        use_summation = _resolve_r_method(method)
         c, ui, ua, oc, ia = self._prepare(coords, u_iso, u_aniso, occ, is_aniso)
-        return self._ev.fobs_scaled_fcalc(c, ui, ua, oc, ia, bool(refresh_scale))
+        return self._ev.fobs_scaled_fcalc(c, ui, ua, oc, ia, use_summation)
 
     def r_factors(self, coords, u_iso=None, u_aniso=None, occ=None, is_aniso=None,
-                  refresh_scale=True):
+                  method='fft'):
         '''
         Crystallographic R at ``coords`` via the shared
-        :func:`~chimerax.clipper.reflection_tools.compute_r_factors` core, run on the
-        exact scaled Fcalc the loss sees. Small-molecule convention (``free_flags=None``,
-        ``epsilon=None`` → unweighted): read ``.r_all``. Consistent by construction with
-        the live small-molecule map and ``io.small_molecule`` ``recomputed_r_factor`` —
-        same scaling (:func:`scale_fcalc_to_fobs`) and same R core, so the numbers cannot
-        drift. Reciprocal (fobs) mode only. Returns an
+        :func:`~chimerax.clipper.reflection_tools.compute_r_factors` core. Small-molecule
+        convention (``free_flags=None``, ``epsilon=None`` → unweighted): read ``.r_all``.
+        Reciprocal (fobs) mode only. Returns an
         :class:`~chimerax.clipper.reflection_tools.RFactors`.
+
+        ``method='fft'`` (default) reflects the exact scaled Fcalc the loss/gradient sees
+        (matches the live small-molecule map). ``method='sum'`` uses exact direct
+        summation — matching ``recomputed_r_factor`` to scaling+rounding, removing the
+        ~0.01-in-R FFT grid error on heavy-scatterer crystals — for a metric that isn't
+        biased by heavy-atom FFT noise. Both use the same ``scale_fcalc_to_fobs``, so the
+        only difference is FFT vs summation Fcalc.
         '''
         import numpy
-        fo, sfc = self.fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso,
-                                         refresh_scale)
+        fo, sfc = self.fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, method)
         good_fc = numpy.where(sfc > 0, sfc, numpy.nan)
         from ..reflection_tools import compute_r_factors
         return compute_r_factors(fo, good_fc)
@@ -553,16 +572,17 @@ class EnsembleXrayTargetState:
         return L
 
     def r_factors(self, box_coords, u_iso=None, u_aniso=None, occ=None,
-                  is_aniso=None, refresh_scale=True):
+                  is_aniso=None, method='fft'):
         '''
         Crystallographic R for the box at ``box_coords`` (the occupancy-weighted
         ``1/n_asu`` overlay), via :meth:`XrayTargetState.r_factors` on the underlying
         single-ASU-equivalent target. ADP/occ args left ``None`` use the builder-supplied
         box defaults (as :meth:`value_and_gradient` does), so a coords-only caller can pass
         just ``box_coords`` — the same coordinates handed to
-        :func:`chimerax.clipper.diff.targets.xray_loss`. ``.r_all`` is the small-molecule R,
-        consistent with ``recomputed_r_factor``. Returns an
-        :class:`~chimerax.clipper.reflection_tools.RFactors`.
+        :func:`chimerax.clipper.diff.targets.xray_loss`. ``.r_all`` is the small-molecule R.
+        ``method`` ``'fft'`` (default, loss-consistent) or ``'sum'`` (exact summation,
+        matches ``recomputed_r_factor``; recommended for a heavy-scatterer-robust metric).
+        Returns an :class:`~chimerax.clipper.reflection_tools.RFactors`.
         '''
         n = self._M
         box = numpy.ascontiguousarray(box_coords, numpy.double).reshape(n, 3)
@@ -571,4 +591,4 @@ class EnsembleXrayTargetState:
         b_occ = self._def_occ if occ is None else numpy.ascontiguousarray(occ, numpy.double).reshape(n)
         b_isan = self._def_isan if is_aniso is None else numpy.ascontiguousarray(is_aniso, numpy.uint8).reshape(n)
         return self._state.r_factors(box, u_iso=b_uiso, u_aniso=b_uan, occ=b_occ,
-                                     is_aniso=b_isan, refresh_scale=refresh_scale)
+                                     is_aniso=b_isan, method=method)

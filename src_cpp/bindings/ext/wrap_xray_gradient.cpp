@@ -131,11 +131,12 @@ void init_xray_gradient(py::module& m)
 
         .def_property_readonly("n_reflections", &cx::XrayGradientEvaluator::n_reflections)
 
-        // Forward density -> Fcalc -> (optionally refit) scale, returning the observed
-        // amplitude Fo and the SCALED calculated amplitude s(h)*|Fc| per reflection
-        // (HKL_data index order, length n_reflections); NaN off the measured set. The
-        // caller computes an R-factor via reflection_tools.compute_r_factors, using the
-        // exact scaled Fcalc the loss sees. Returns (fo, scaled_fcalc).
+        // Forward Fcalc -> scale, returning the observed amplitude Fo and the SCALED
+        // calculated amplitude s(h)*|Fc| per reflection (HKL_data index order, length
+        // n_reflections); NaN off the measured set. Forward-only (no gradient). The
+        // caller computes an R-factor via reflection_tools.compute_r_factors. Returns
+        // (fo, scaled_fcalc). use_summation: False -> FFT (loss / live-map); True ->
+        // exact direct summation (matches recomputed_r_factor; no FFT grid error).
         .def("fobs_scaled_fcalc",
             [](cx::XrayGradientEvaluator& self,
                py::array_t<double,  py::array::c_style | py::array::forcecast> coords,
@@ -143,7 +144,7 @@ void init_xray_gradient(py::module& m)
                py::array_t<double,  py::array::c_style | py::array::forcecast> u_aniso,
                py::array_t<double,  py::array::c_style | py::array::forcecast> occ,
                py::array_t<uint8_t, py::array::c_style | py::array::forcecast> is_aniso,
-               bool                                                            refresh_scale) -> py::tuple
+               bool                                                            use_summation) -> py::tuple
             {
                 const int N = self.n_atoms();
                 const int R = self.n_reflections();
@@ -157,7 +158,7 @@ void init_xray_gradient(py::module& m)
                 py::array_t<double> fo(R), sfc(R);
                 self.fobs_scaled_fcalc(
                     coords.data(), u_iso.data(), u_aniso.data(), occ.data(),
-                    is_aniso.data(), refresh_scale,
+                    is_aniso.data(), use_summation,
                     static_cast<double*>(fo.request().ptr),
                     static_cast<double*>(sfc.request().ptr));
                 return py::make_tuple(fo, sfc);
@@ -167,5 +168,5 @@ void init_xray_gradient(py::module& m)
             py::arg("u_aniso"),
             py::arg("occ"),
             py::arg("is_aniso"),
-            py::arg("refresh_scale") = true);
+            py::arg("use_summation") = false);
 }

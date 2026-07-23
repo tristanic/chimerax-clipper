@@ -184,18 +184,22 @@ public:
     //! Number of atoms fixed at construction.
     int n_atoms() const;
 
-    //! Reciprocal (structure-factor) mode only. Runs the SAME forward density ->
-    //! Fcalc -> scale as value_and_gradient (optionally re-fitting the scale via the
-    //! shared scale_fcalc_to_fobs), then writes, per reflection in HKL_data index
-    //! order (length n_reflections()), the observed amplitude Fo and the SCALED
-    //! calculated amplitude s(h)*|Fc| into the two caller-allocated arrays. Off the
-    //! measured/working set (or where Fcalc is missing) both entries are NaN. This
-    //! lets the caller compute an R-factor through the shared
-    //! reflection_tools.compute_r_factors, using the exact scaled Fcalc the loss sees
-    //! (so the R is consistent with the live small-molecule map / recomputed_r_factor).
+    //! Reciprocal (structure-factor) mode only. FORWARD-ONLY (no gradient; the
+    //! gradient path value_and_gradient is untouched and always FFT). Computes Fcalc
+    //! from the given parameters, applies the shared scale_fcalc_to_fobs (aniso-Gaussian
+    //! x iso-spline), and writes, per reflection in HKL_data index order (length
+    //! n_reflections()), the observed amplitude Fo and the SCALED calculated amplitude
+    //! s(h)*|Fc| into the two caller-allocated arrays. Off the measured/working set (or
+    //! where Fcalc is missing) both entries are NaN. Lets the caller compute an R-factor
+    //! through the shared reflection_tools.compute_r_factors.
+    //! \param use_summation  false -> FFT Fcalc (the loss / live-map path); true ->
+    //!        EXACT direct summation (SFcalc_aniso_sum), matching recomputed_r_factor and
+    //!        removing the FFT grid approximation (~0.01 in R on heavy-scatterer crystals).
+    //! Side-effect-free: fits a LOCAL scale, so it does not perturb the cached scale the
+    //! value_and_gradient loss reuses between steps.
     void fobs_scaled_fcalc(
         const double* coords, const double* u_iso, const double* u_aniso,
-        const double* occ, const uint8_t* is_aniso, bool refresh_scale,
+        const double* occ, const uint8_t* is_aniso, bool use_summation,
         double* out_fo, double* out_scaled_fcalc);
 
     //! Number of reflections in the observed list (reciprocal mode; 0 in real-space

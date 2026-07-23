@@ -27,6 +27,7 @@
 #include "edcalc_ext.h"
 #include "aniso_scale.h"
 #include "vdw.h"
+#include <clipper/contrib/sfcalc.h>   // SFcalc_aniso_sum (exact direct-summation Fcalc)
 #include <limits>
 
 #include <algorithm>
@@ -444,14 +445,25 @@ struct XrayGradientEvaluator::Impl {
         return realspace ? 0 : fobs.base_hkl_info().num_reflections();
     }
 
-    // Forward density -> Fcalc -> (optionally refit) scale, then emit (Fo, s·|Fc|)
-    // per reflection in HKL_data index order. Off the measured/working set (or where
-    // Fcalc is missing) the pair is NaN, so the caller masks exactly as the live
-    // small-molecule map does before handing to reflection_tools.compute_r_factors.
-    // Reciprocal (fobs) mode only. Mirrors evaluate()'s forward prefix; no gradient.
+    // Forward Fcalc -> scale, then emit (Fo, s·|Fc|) per reflection in HKL_data index
+    // order. Off the measured/working set (or where Fcalc is missing) the pair is NaN,
+    // so the caller masks exactly as the live small-molecule map does before handing to
+    // reflection_tools.compute_r_factors. Reciprocal (fobs) mode only. FORWARD-ONLY (no
+    // gradient) — the gradient path (evaluate()) is untouched and always FFT.
+    //
+    // `use_summation`: false -> the FFT Fcalc the loss/live map use (EDcalc density ->
+    // fft_to); true -> EXACT direct summation (SFcalc_aniso_sum), which matches
+    // io/small_molecule recomputed_r_factor and removes the FFT grid approximation that
+    // costs ~0.01 in R on heavy-scatterer crystals. Both branches feed the SAME atoms
+    // (build_atoms) through the SAME scale_fcalc_to_fobs, so they differ by ONE thing:
+    // how Fcalc is computed. XRAY throughout, matching the evaluator's density model.
+    //
+    // SIDE-EFFECT-FREE: fits a LOCAL scale (does NOT touch refl_scale_/has_scale, which
+    // the value_and_gradient loss path caches and reuses between frozen-scale steps), so
+    // a metric call can be interleaved with training without repointing the loss scale.
     void fobs_scaled_fcalc(const double* coords, const double* u_iso,
                            const double* u_aniso, const double* occ,
-                           const uint8_t* is_aniso, bool refresh_scale,
+                           const uint8_t* is_aniso, bool use_summation,
                            double* out_fo, double* out_sfc)
     {
         if (realspace)
@@ -463,16 +475,15 @@ struct XrayGradientEvaluator::Impl {
         std::vector<uint8_t>              is_aniso_v;
         build_atoms(coords, u_iso, u_aniso, occ, is_aniso, positions,
                     u_iso_v, u_aniso_v, is_aniso_v, occ_v, radii_v);
-        if (threaded_density) {
-            Atom_list atoms = make_atom_list(positions, u_iso_v, u_aniso_v,
-                                             is_aniso_v, occ_v);
+        Atom_list atoms = make_atom_list(positions, u_iso_v, u_aniso_v, is_aniso_v, occ_v);
+        if (use_summation) {
+            SFcalc_aniso_sum<ftype32> sfc;   // XRAY (matches the density path's AtomShapeFn)
+            sfc(fcalc_hkl, atoms);
+        } else {
             density_xmap = ftype32(0);
             edcalc(density_xmap, atoms);
-        } else {
-            accumulate_model_density(density_xmap, positions, elements, u_iso_v,
-                                     u_aniso_v, is_aniso_v, occ_v, radii_v);
+            density_xmap.fft_to(fcalc_hkl, n_threads);
         }
-        density_xmap.fft_to(fcalc_hkl, n_threads);
         if (has_bulk) {
             for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
                 if (fcalc_hkl[ih].missing() || fbulk[ih].missing()) continue;
@@ -481,17 +492,22 @@ struct XrayGradientEvaluator::Impl {
                 fcalc_hkl.set_data(ih.hkl(), F_phi<ftype32>(ft));
             }
         }
-        if (refresh_scale || !has_scale) refit_scale_reciprocal();
+        // Local aniso-Gaussian x iso-spline scale (the SAME scale_fcalc_to_fobs that
+        // recomputed_r_factor and the live map use); scaled[ih].f() == s(h)·|Fc|.
+        HKL_data<F_phi<ftype32>> scaled(fobs.base_hkl_info(), cell);
+        U_aniso_orth      scale_u;
+        std::vector<ftype> scale_params;
+        scale_fcalc_to_fobs<ftype32>(fcalc_hkl, fobs, scaled, scale_u, scale_params);
         const double nan = std::numeric_limits<double>::quiet_NaN();
         for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
             const size_t i = (size_t)ih.index();
             const bool measured = !fobs[ih].missing() && working(usage, ih)
                                   && fobs[ih].sigf() > 0.0;
-            if (!measured || fcalc_hkl[ih].missing()) {
+            if (!measured || scaled[ih].missing()) {
                 out_fo[i] = nan; out_sfc[i] = nan; continue;
             }
             out_fo[i]  = fobs[ih].f();
-            out_sfc[i] = refl_scale_[i] * fcalc_hkl[ih].f();
+            out_sfc[i] = scaled[ih].f();
         }
     }
 
@@ -626,10 +642,10 @@ int XrayGradientEvaluator::n_reflections() const { return p_->n_reflections(); }
 
 void XrayGradientEvaluator::fobs_scaled_fcalc(
     const double* coords, const double* u_iso, const double* u_aniso,
-    const double* occ, const uint8_t* is_aniso, bool refresh_scale,
+    const double* occ, const uint8_t* is_aniso, bool use_summation,
     double* out_fo, double* out_scaled_fcalc)
 {
-    p_->fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, refresh_scale,
+    p_->fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, use_summation,
                           out_fo, out_scaled_fcalc);
 }
 
