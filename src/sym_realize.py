@@ -519,7 +519,39 @@ def _propagate_aniso(structure, kept_places, surv_masks, combined):
     catoms[has_all].aniso_u6 = u6_all[has_all].astype(numpy.float32)
 
 
-def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index):
+def _orth_frac_matrices(cell):
+    '''(M, M_inv) where M maps fractional -> orthogonal coordinates (its columns are
+    the cell edge vectors in the orthogonal frame) and M_inv the inverse. Lets a
+    minimum-image coincidence test convert a wrapped fractional delta back to an
+    orthogonal distance for any cell (including oblique).'''
+    from .clipper_python import Coord_frac
+    M = numpy.column_stack([
+        numpy.array(Coord_frac(1., 0., 0.).coord_orth(cell).xyz),
+        numpy.array(Coord_frac(0., 1., 0.).coord_orth(cell).xyz),
+        numpy.array(Coord_frac(0., 0., 1.).coord_orth(cell).xyz)])
+    return M, numpy.linalg.inv(M)
+
+
+def _mic_close_indices(world, ref_coords, M, Minv, tol):
+    '''Indices into `world` (orthogonal coords, (nw,3)) whose position coincides, under
+    the periodic MINIMUM-IMAGE convention of the unit cell, with some atom of
+    `ref_coords` ((nr,3)) within `tol` Angstroms. Unlike a raw-Cartesian test this sees
+    a duplicate that sits an exact lattice vector away (a full cell edge apart in
+    Cartesian, 0 apart under min-image) - the coincident symmetry copy that a periodic
+    (PME) force field folds to distance 0. The fractional delta is wrapped to the nearest
+    image per axis, then re-expanded to an orthogonal distance so oblique cells are
+    handled correctly.'''
+    fw = numpy.asarray(world, float) @ Minv.T          # (nw,3) fractional
+    fr = numpy.asarray(ref_coords, float) @ Minv.T     # (nr,3) fractional
+    D = fw[:, None, :] - fr[None, :, :]                # (nw,nr,3)
+    D -= numpy.round(D)                                # wrap to [-0.5, 0.5) per axis
+    dcart = D @ M.T                                    # (nw,nr,3) orthogonal
+    dist = numpy.sqrt((dcart * dcart).sum(axis=2))     # (nw,nr)
+    return numpy.nonzero(dist.min(axis=1) < tol)[0] if len(fr) else numpy.empty(0, int)
+
+
+def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index,
+                         require_special=True):
     '''
     Among the connected molecules of a realised symmetry copy, find those that are
     special-position duplicates: every atom coincides with an atom already realised
@@ -550,13 +582,19 @@ def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index
         mol_mult = multiplicities[idx]
         special = mol_mult > 1
         if n_match == len(mol):
-            if not special.any():
-                # Fully coincident but no atom on a special position: an exact
-                # overlap we cannot explain crystallographically - keep it rather
-                # than silently deleting real atoms.
+            if not special.any() and require_special:
+                # Raw-Cartesian caller: a full overlap with no atom on a special
+                # position is one we cannot explain crystallographically (the
+                # coincidence test can only fire at zero lattice offset) - keep it
+                # rather than silently deleting real atoms. Under a minimum-image
+                # test (require_special False) a whole-fragment coincidence IS
+                # crystallographically explicable - the molecule sits on a special
+                # position (its site-symmetry maps it onto itself, whether through
+                # an atom or, as for a ring on an inversion centre, its centroid) -
+                # so the redundant copy is dropped even with no on-special atom.
                 continue
             to_delete.append(mol)
-            mult = int(mol_mult.max())
+            mult = int(mol_mult.max()) if special.any() else 1
             for r in mol.unique_residues:
                 records.append({'operator': op_index, 'chain_id': r.chain_id,
                     'residue': '{} {}'.format(r.name, r.number),
@@ -573,7 +611,8 @@ def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index
 
 
 def realize_symmetry_copies(session, structure, places, name=None,
-        prune_special_positions=True, tolerance=0.5, multiplicities=None):
+        prune_special_positions=True, tolerance=0.5, multiplicities=None,
+        cell=None, tile_size=None):
     '''
     Build real, whole-model copies of `structure` under each of `places` (a list
     of ChimeraX Place objects in the structure's own coordinate frame, with the
@@ -599,6 +638,23 @@ def realize_symmetry_copies(session, structure, places, name=None,
     a later collapse to the ASU reconstitutes the correct 1/m occupancy.
     Coincidence is tested within `tolerance` Angstroms, cumulatively.
 
+    `cell` and `tile_size` control HOW coincidence is tested, and fix a duplication
+    bug in the supercell path:
+      - With `cell` given, coincidence is tested under the periodic MINIMUM-IMAGE
+        convention of the unit cell, so a redundant copy that lands an exact lattice
+        vector away (a full cell edge apart in raw Cartesian - invisible to the plain
+        distance test, but folded to distance 0 by a periodic force field, causing an
+        MD `1/r` blow-up) is detected and dropped. It also drops a whole molecule that
+        sits on a special position through its centroid (a ring on an inversion centre),
+        which has no atom exactly on the special position.
+      - With `tile_size` given (the number of space-group symops, so that
+        `unit_cell_places`' cell-major output groups each lattice tile into a
+        contiguous run of `tile_size` copies), dedup is scoped PER TILE: a copy is only
+        compared with kept copies in its own tile, so genuinely distinct lattice
+        translates (different cells of an na x nb x nc block) are never collapsed.
+    Omitting both (e.g. the "near a selection" `clipper symcopies` path) keeps the
+    original single-group raw-Cartesian behaviour.
+
     Returns the combined model (with `.clipper_sym_expansion` set), or None if no
     genuine symmetry copy survives.
     '''
@@ -615,13 +671,21 @@ def realize_symmetry_copies(session, structure, places, name=None,
 
     copies = []
     kept_places = []
-    ref_coords = None
     dedup_records = []
     straddle_warn = False
     # Per kept copy, a boolean mask over the SOURCE atoms marking which survived
     # dedup - needed to re-stamp aniso_u6 from the source (copy()/combine drop it).
     surv_masks = []
     n_src = structure.num_atoms
+    mic = cell is not None
+    if mic:
+        M, Minv = _orth_frac_matrices(cell)
+    # Reference coordinate sets against which coincidence is tested, keyed by group.
+    # In the supercell path each lattice tile is deduped independently (group =
+    # place_index // tile_size), so a copy is only ever compared with kept copies in its
+    # OWN tile - distinct tiles are genuinely different positions and must not collapse.
+    # Without a tile_size the whole expansion is one group (0).
+    ref_by_group = {}
     for i, place in enumerate(places):
         c = structure.copy()
         # Not yet in the session, so scene_position == position; `combine` reads
@@ -630,14 +694,20 @@ def realize_symmetry_copies(session, structure, places, name=None,
         surv = numpy.ones(n_src, bool)
         if prune_special_positions:
             world = place.transform_points(c.atoms.coords).astype(numpy.float32)
-            if i == 0:
-                # Identity/ASU: kept whole, seeds the coincidence reference set.
-                ref_coords = world
+            g = i // tile_size if tile_size else 0
+            ref = ref_by_group.get(g)
+            if ref is None:
+                # First copy of this tile (the untranslated ASU for the tile): kept
+                # whole, seeds the tile's coincidence reference set.
+                ref_by_group[g] = world
             else:
-                i1, i2 = find_close_points(world, ref_coords, tolerance)
+                if mic:
+                    i1 = _mic_close_indices(world, ref, M, Minv, tolerance)
+                else:
+                    i1, i2 = find_close_points(world, ref, tolerance)
                 if len(i1):
                     to_delete, recs, sw = _redundant_fragments(
-                        c, c.atoms[i1], multiplicities, i)
+                        c, c.atoms[i1], multiplicities, i, require_special=not mic)
                     straddle_warn = straddle_warn or sw
                     dedup_records.extend(recs)
                     if to_delete is not None and len(to_delete):
@@ -653,7 +723,7 @@ def realize_symmetry_copies(session, structure, places, name=None,
                     if not c.deleted:
                         c.delete()
                     continue
-                ref_coords = numpy.concatenate([ref_coords,
+                ref_by_group[g] = numpy.concatenate([ref,
                     place.transform_points(c.atoms.coords).astype(numpy.float32)])
         copies.append(c)
         kept_places.append(place)

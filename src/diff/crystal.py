@@ -243,7 +243,12 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
             na / cell.a_star, nb / cell.b_star, nc / cell.c_star))
     mult = site_multiplicities(model.atoms.coords, cell, spacegroup, grid)
     places = unit_cell_places(cell, spacegroup, na, nb, nc)
-    box = realize_symmetry_copies(session, model, places, multiplicities=mult)
+    # cell + tile_size enable per-tile minimum-image de-duplication, so a molecule on a
+    # special position (e.g. a ring on an inversion centre) does not leave coincident
+    # duplicate atoms in the box - which a periodic force field folds to distance 0
+    # (NaN). tile_size = num_symops matches unit_cell_places' cell-major grouping.
+    box = realize_symmetry_copies(session, model, places, multiplicities=mult,
+                                  cell=cell, tile_size=spacegroup.num_symops)
     if box is None:
         raise UserError('Symmetry expansion of %r produced no copies.' % cif_path)
 

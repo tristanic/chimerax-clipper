@@ -819,8 +819,12 @@ def generate_unit_cells(session, models=None, cells=None, box=None, name=None,
         if cell_name is None:
             cell_name = '{} unit cells ({}x{}x{})'.format(s.name, na, nb, nc)
         mults = _site_multiplicities_for(sym, s) if prune_special_positions else None
+        # cell + tile_size (= num symops, matching unit_cell_places' cell-major order)
+        # switch de-duplication to a per-tile minimum-image test, so a molecule on a
+        # special position doesn't leave coincident duplicate atoms in the block.
         combined = realize_symmetry_copies(session, s, places, name=cell_name,
-            prune_special_positions=prune_special_positions, multiplicities=mults)
+            prune_special_positions=prune_special_positions, multiplicities=mults,
+            cell=sym.cell, tile_size=sym.spacegroup.num_symops)
         if combined is None:
             session.logger.warning('No atoms survived generating unit cells for '
                 '{}.'.format(s.id_string))
