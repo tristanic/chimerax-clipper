@@ -415,9 +415,25 @@ def _apply_ops(res, comp, ops, fracs, cell, existing_names):
                     struct_edit.add_bond(ia, inb)
         # Wire the explicit cross-symmetry bond(s): original atom -> image of its partner.
         for orig, src in links:
-            isrc = img.get(src, [None])[0]
+            isrc = img.get(src, [None])[0]   # image of the partner, S(a2)
             if isrc is not None and isrc is not orig and isrc not in orig.neighbors:
                 struct_edit.add_bond(orig, isrc)
+            # ...and its symmetry mate. When the splitting operator is an involution -
+            # a special position THROUGH a bond (inversion / 2-fold / mirror), the case
+            # that leaves half a molecule in the ASU - the bond a1--S(a2) has an
+            # equal-length partner S(a1)--a2 that also closes the completed molecule
+            # (e.g. a ring on an inversion centre: the CIF lists only C1--S(C3), but the
+            # ring also needs S(C1)--C3, cod_2018032). The CIF _geom_bond loop names each
+            # bond once, so this mate is never in `links`. Wire it, guarded by a
+            # bond-length match against the forward bond so a non-involutive operator
+            # (whose S(a1) lands far from a2) cannot add a spurious bond.
+            iorig = img.get(orig, [None])[0]   # image of a1, S(a1)
+            if (isrc is not None and iorig is not None and iorig is not src
+                    and src not in iorig.neighbors):
+                d_fwd = numpy.linalg.norm(numpy.array(orig.coord) - numpy.array(isrc.coord))
+                d_mate = numpy.linalg.norm(numpy.array(iorig.coord) - numpy.array(src.coord))
+                if abs(d_fwd - d_mate) < _POS_TOL:
+                    struct_edit.add_bond(iorig, src)
     # Promote the retained single copy of each symmetric-disorder atom to full occupancy,
     # so the completed molecule carries one whole shared atom (e.g. one bridging proton ->
     # integer/neutral ASU charge) instead of an unphysical fractional one.
