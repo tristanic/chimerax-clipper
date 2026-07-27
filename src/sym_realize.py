@@ -205,10 +205,18 @@ def pack_copies_into_block(box, cell, na, nb, nc, origin=(0, 0, 0)):
         c = frac[sel].mean(axis=0)
         n = numpy.zeros(3, int)
         for a in range(3):
-            lo, hi = org[a] - c[a], org[a] + dims[a] - c[a]   # valid shift n in [lo, hi)
-            if lo <= 0 < hi:
-                continue                                       # already in the block
-            n[a] = int(numpy.ceil(lo)) if lo > 0 else int(numpy.floor(hi - 1e-9))
+            # Fold the centroid into [origin, origin+dims) by whole BLOCKS of `dims`
+            # cells - a supercell-lattice wrap - NOT the smallest shift into the range.
+            # A minimal shift moves a scattered symop copy (e.g. an inversion image at
+            # -x) by a single cell, which can drop it exactly onto the copy already
+            # filling the neighbouring tile and collapse two distinct lattice tiles
+            # (cod_2022237, cells 2,2,2: every inversion copy of cell i landed on cell
+            # i+1's). Reducing modulo `dims` preserves each copy's position within the
+            # block (tile separations, being < dims, survive), and a whole-supercell
+            # shift is still an integer lattice vector so the structure factors and the
+            # collapse_to_asu inverse stay exact.
+            d = int(dims[a])
+            n[a] = -int(numpy.floor((c[a] - org[a]) / dims[a])) * d
         if not n.any():
             continue
         on = Coord_frac(float(n[0]), float(n[1]), float(n[2])).coord_orth(cell)
