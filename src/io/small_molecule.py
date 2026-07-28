@@ -376,16 +376,23 @@ def reassemble_symmetry_scattered_hydrogens(session, model, cell, spacegroup,
     return relocated
 
 
-def warn_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
+def drop_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
     '''
-    Log a warning for covalent bonds far longer than physically possible (length >
-    ``Element.bond_length(e1, e2) + tolerance`` Angstroms, non-metal atoms only). These are
-    almost always spurious entries in the CIF's ``_geom_bond`` loop - most often a 1,3
-    distance listed as a bond (e.g. cod_2203005 lists ``Br3 C40 2.838`` - the Br...C 1,3
-    contact through C41, vs the real 1.9 A Br-C bond) - which ChimeraX's corecif parser
-    copies verbatim, applying no distance sanity-check to ``_geom_bond``. This is NOT
-    auto-corrected: removing a deposited bond is risky (some long contacts are intentional),
-    so the model is flagged for the user to review rather than silently altered.
+    Delete covalent bonds far longer than physically possible (length >
+    ``Element.bond_length(e1, e2) + tolerance`` Angstroms, non-metal atoms only) and log a
+    warning naming them. These are almost always spurious entries in the CIF's ``_geom_bond``
+    loop, which ChimeraX's corecif parser copies verbatim with no distance sanity-check -
+    most often a 1,3 distance listed as a bond (e.g. cod_2203005 lists ``Br3 C40 2.838`` -
+    the Br...C 1,3 contact through C41, vs the real 1.9 A Br-C bond), or a non-bonding
+    secondary close contact (O...O / O...N in N/O-dense structures). A covalent bond longer
+    than ``bond_length + tolerance`` is never real, so it is dropped rather than left to
+    corrupt fragment perception, valence/charge inference and the display. Metal atoms are
+    skipped: metal-ligand distances are legitimately longer and are carried as coordination
+    pseudobonds, not covalent bonds. Returns the number of bonds deleted.
+
+    (This is the intra-ASU counterpart of io.fragments._reject_implausible_xbonds, which
+    declines to CREATE the same kind of spurious bond from a cross-symmetry ``_geom_bond``
+    entry during completion; both use the same ``bond_length + tolerance`` bar.)
     '''
     import numpy
     from chimerax.atomic import Element
@@ -399,16 +406,19 @@ def warn_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
             continue
         d = float(numpy.linalg.norm(a1.coord - a2.coord))
         if d > bl + tolerance:
-            offenders.append((a1.name, a2.name, d, bl))
+            offenders.append((b, a1.name, a2.name, d, bl))
     if offenders:
-        offenders.sort(key=lambda o: o[3] - o[2])   # most egregious first
-        ex = '; '.join('%s-%s %.2f A (expected ~%.2f)' % (n1, n2, d, bl)
-                       for n1, n2, d, bl in offenders[:3])
+        offenders.sort(key=lambda o: o[4] - o[3])   # most egregious first
+        ex = '; '.join('%s-%s %.2f A (max ~%.2f)' % (n1, n2, d, bl + tolerance)
+                       for _b, n1, n2, d, bl in offenders[:3])
+        for o in offenders:
+            o[0].delete()
         session.logger.warning(
-            '(CLIPPER) %s: %d implausibly long covalent bond(s) - likely spurious '
-            '_geom_bond entries in the CIF (e.g. a 1,3 distance listed as a bond), copied '
-            'as-is by the corecif parser. Connectivity may need review: %s%s'
+            '(CLIPPER) %s: dropped %d implausibly long covalent bond(s) - spurious '
+            '_geom_bond entries the corecif parser copied without a distance check (a 1,3 '
+            'distance or a non-bonding close contact listed as a bond): %s%s'
             % (source_name, len(offenders), ex, ' ...' if len(offenders) > 3 else ''))
+    return len(offenders)
     return len(offenders)
 
 
@@ -421,10 +431,15 @@ def _prepare_corecif_model(session, model, path, cell=None):
       1. rebuild coordinates in Clipper's orthogonal frame (corecif
          mis-orthogonalises oblique cells - see :func:`_clipper_frame_coords`);
       2. repair covalent connectivity corecif drops on metal-coordinated atoms
-         (see :func:`repair_connectivity`).
+         (see :func:`repair_connectivity`);
+      3. drop covalent bonds too long to be real - spurious ``_geom_bond`` entries
+         corecif copies without a distance check (see :func:`drop_implausibly_long_bonds`).
 
-    Both steps are idempotent. A no-op when the CIF carries no crystal symmetry.
+    All steps are idempotent. A no-op when the CIF carries no crystal symmetry. Running the
+    connectivity fixes here, at open time, means every downstream consumer (fragment
+    splitting, symmetry completion, the structure-factor model) sees corrected connectivity.
     '''
+    import os
     if cell is None:
         try:
             cell, _sg, _grid = crystal_symmetry_from_cif_file(path)
@@ -439,6 +454,11 @@ def _prepare_corecif_model(session, model, path, cell=None):
         repair_connectivity(session, model)
     except Exception as e:
         session.logger.warning('(CLIPPER) connectivity repair failed for %r: %s'
+                               % (path, e))
+    try:
+        drop_implausibly_long_bonds(session, model, os.path.basename(path))
+    except Exception as e:
+        session.logger.warning('(CLIPPER) long-bond cleanup failed for %r: %s'
                                % (path, e))
 
 
@@ -1125,9 +1145,8 @@ def show_cod_crystal(session, path, hkl_path=None, radiation='auto', fragments='
                     'hydrogen(s) onto their parent atoms.' % (os.path.basename(path), n))
         split_fragments(session, model, cell, spacegroup, grid, mode=fragments,
                          path=path, log=session.logger)
-    # Flag (do not auto-fix) implausibly long bonds corecif copied from the CIF _geom_bond
-    # loop (e.g. a 1,3 distance listed as a bond); the user should review connectivity.
-    warn_implausibly_long_bonds(session, model, os.path.basename(path))
+    # (Implausibly long corecif _geom_bond bonds were already dropped at open time by
+    # _prepare_corecif_model -> drop_implausibly_long_bonds, before the fragment split.)
     mmgr = get_map_mgr(model, create=True)
     smd = _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radiation)
     if smd is not None:

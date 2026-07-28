@@ -610,7 +610,7 @@ def split_fragments_cmd(session, structures, mode='rename'):
     from chimerax.core.errors import UserError
     from .symmetry import crystal_symmetry_from_cif_file
     from .io.fragments import split_fragments
-    from .io.small_molecule import _prepare_corecif_model, warn_implausibly_long_bonds
+    from .io.small_molecule import _prepare_corecif_model
     if structures is None or not len(structures):
         raise UserError('No structures specified.')
     if mode == 'off':
@@ -647,10 +647,8 @@ def split_fragments_cmd(session, structures, mode='rename'):
                     'hydrogen(s).' % (m, n))
         results.append(split_fragments(session, m, cell, spacegroup, grid, mode=mode,
                                        path=path))
-        # Flag (not auto-fix) implausibly long bonds corecif copied from the CIF
-        # _geom_bond loop (e.g. a 1,3 distance listed as a bond) - connectivity to review.
-        import os
-        warn_implausibly_long_bonds(session, m, os.path.basename(path))
+        # (Implausibly long corecif _geom_bond bonds were dropped by _prepare_corecif_model
+        # above, before the split.)
     return results
 
 

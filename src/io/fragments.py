@@ -79,8 +79,8 @@ _CAT_WATER = 3
 _POS_TOL = 0.2
 
 # A cross-symmetry _geom_bond entry longer than Element.bond_length(e1,e2) + this (A) is
-# rejected as non-covalent (matches io.small_molecule.warn_implausibly_long_bonds so the
-# reject and warn thresholds agree).
+# rejected as non-covalent (matches io.small_molecule.drop_implausibly_long_bonds so the
+# cross-symmetry-reject and intra-ASU-drop thresholds agree).
 _LONG_BOND_TOLERANCE = 0.5
 
 
@@ -531,11 +531,12 @@ def _reject_implausible_xbonds(xbonds, by_name, log, path):
     each such entry at face value and image it, wiring a physically impossible bond and
     generating a shell of spurious symmetry copies. An entry is rejected when its deposited
     distance exceeds ``Element.bond_length(e1, e2) + _LONG_BOND_TOLERANCE`` (the same bar
-    io.small_molecule.warn_implausibly_long_bonds warns at). Entries with no usable distance,
+    io.small_molecule.drop_implausibly_long_bonds uses). Entries with no usable distance,
     or to/from a metal, are kept (no basis to reject). One warning summarises what was
-    ignored. (Only cross-symmetry entries are touched; intra-ASU long bonds remain a
-    warn-only review flag per warn_implausibly_long_bonds - removing a deposited bond that
-    the model already drew is riskier than declining to CREATE one.)'''
+    ignored. This is the cross-symmetry counterpart of
+    io.small_molecule.drop_implausibly_long_bonds (which deletes the same kind of spurious
+    bond among the ASU's own atoms at open time); both use the same bond_length + tolerance
+    bar - here we decline to CREATE the bond, there it deletes one corecif already made.'''
     from chimerax.atomic import Element
     import os
     kept = []
