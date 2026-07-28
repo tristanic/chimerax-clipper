@@ -78,6 +78,11 @@ _CAT_WATER = 3
 # Position tolerance for treating a symmetry image as coincident with an existing atom.
 _POS_TOL = 0.2
 
+# A cross-symmetry _geom_bond entry longer than Element.bond_length(e1,e2) + this (A) is
+# rejected as non-covalent (matches io.small_molecule.warn_implausibly_long_bonds so the
+# reject and warn thresholds agree).
+_LONG_BOND_TOLERANCE = 0.5
+
 
 def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=None,
                     log=None):
@@ -116,6 +121,8 @@ def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=
     # CIF-declared operators and the bonds that cross them (both optional).
     cif_symop_strings = _cif_symop_strings(path) if path else None
     xbonds = _cross_symmetry_bonds(path) if path else None
+    if xbonds:
+        xbonds = _reject_implausible_xbonds(xbonds, by_name, log, path)
 
     comps = _raw_components(model)
     comps = _merge_by_symmetry(comps, xbonds, by_name)
@@ -481,25 +488,78 @@ def _cif_symop_strings(path):
 
 def _cross_symmetry_bonds(path):
     '''Bonds to a symmetry-equivalent atom, from the CIF _geom_bond loop: a list of
-    (label_1, label_2, (n, dk, dl, dm)) where n is the 1-based symmetry-operator index
-    and (dk, dl, dm) the accompanying lattice translation. None if the loop is absent.'''
+    (label_1, label_2, (n, dk, dl, dm), distance) where n is the 1-based symmetry-operator
+    index, (dk, dl, dm) the accompanying lattice translation, and distance the deposited
+    _geom_bond_distance in Angstroms (float, or None if the column is absent/unparseable -
+    used to reject non-covalent close contacts). None if the loop is absent.'''
     from chimerax.mmcif import get_cif_tables
     # get_cif_tables returns [] (not [empty_table]) when the file has no _geom_bond loop.
     tables = get_cif_tables(path, ['geom_bond'])
     gb = tables[0] if tables else None
     if gb is None or not gb.has_field('atom_site_label_1'):
         return None
-    rows = gb.fields(('atom_site_label_1', 'atom_site_label_2', 'site_symmetry_2'),
-                     allow_missing_fields=True)
+    rows = gb.fields(('atom_site_label_1', 'atom_site_label_2', 'site_symmetry_2',
+                      'distance'), allow_missing_fields=True)
     out = []
     for r in rows:
         code = r[2].strip() if len(r) > 2 else '.'
         if not code or code in ('.', '?'):
             continue
         nklm = _parse_symcode(code)
-        if nklm is not None:
-            out.append((r[0], r[1], nklm))
+        if nklm is None:
+            continue
+        dist = None
+        if len(r) > 3:
+            ds = r[3].strip()
+            if ds and ds not in ('.', '?'):
+                try:                        # strip the s.u. suffix, e.g. '2.8898(16)'
+                    dist = float(ds.split('(')[0])
+                except ValueError:
+                    dist = None
+        out.append((r[0], r[1], nklm, dist))
     return out
+
+
+def _reject_implausible_xbonds(xbonds, by_name, log, path):
+    '''Drop cross-symmetry _geom_bond entries too long to be covalent, and return the kept
+    (label_1, label_2, (n,dk,dl,dm)) triples (distance stripped, so the downstream
+    consumers are unchanged).
+
+    Depositors routinely list secondary CLOSE CONTACTS - not bonds - in _geom_bond with a
+    cross-symmetry code, especially in N/O-dense energetic materials (nitro / N-oxide
+    O...O and O...N contacts at ~2.8 A; e.g. cod_2204168). Symmetry completion would take
+    each such entry at face value and image it, wiring a physically impossible bond and
+    generating a shell of spurious symmetry copies. An entry is rejected when its deposited
+    distance exceeds ``Element.bond_length(e1, e2) + _LONG_BOND_TOLERANCE`` (the same bar
+    io.small_molecule.warn_implausibly_long_bonds warns at). Entries with no usable distance,
+    or to/from a metal, are kept (no basis to reject). One warning summarises what was
+    ignored. (Only cross-symmetry entries are touched; intra-ASU long bonds remain a
+    warn-only review flag per warn_implausibly_long_bonds - removing a deposited bond that
+    the model already drew is riskier than declining to CREATE one.)'''
+    from chimerax.atomic import Element
+    import os
+    kept = []
+    dropped = []
+    for l1, l2, nklm, dist in xbonds:
+        a1, a2 = by_name.get(l1), by_name.get(l2)
+        if (dist is not None and a1 is not None and a2 is not None
+                and not a1.element.is_metal and not a2.element.is_metal):
+            bl = Element.bond_length(a1.element, a2.element)
+            if bl and dist > bl + _LONG_BOND_TOLERANCE:
+                dropped.append((l1, l2, dist, bl))
+                continue
+        kept.append((l1, l2, nklm))
+    if dropped and log is not None:
+        dropped.sort(key=lambda o: o[2] - o[3], reverse=True)   # most egregious first
+        ex = '; '.join('%s-%s %.2f A (max ~%.2f)' % (n1, n2, d, bl + _LONG_BOND_TOLERANCE)
+                       for n1, n2, d, bl in dropped[:3])
+        name = os.path.basename(path) if path else '?'
+        log.warning('(CLIPPER) %s: ignored %d cross-symmetry _geom_bond entr%s too long to '
+            'be covalent (deposited non-bonding close contact(s) listed as bonds, e.g. '
+            'O...O / O...N in N/O-dense structures); symmetry completion will not wire '
+            'them: %s%s' % (name, len(dropped), 'y' if len(dropped) == 1 else 'ies', ex,
+            ' ...' if len(dropped) > 3 else ''))
+    return kept
 
 
 def _parse_xyz_op(s):
