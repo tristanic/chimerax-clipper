@@ -213,9 +213,10 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     # open corrects the oblique-cell coordinate frame + repairs connectivity internally.
     model = open_small_molecule_cif(session, cif_path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(cif_path)
-    if spacegroup.num_symops <= 1:
-        raise ValueError('%r is P1 (no crystallographic symmetry); the ensemble '
-                         'target needs a symmetry-expanded cell.' % cif_path)
+    # P1 (num_symops == 1) is fine: with no symmetry to expand the ASU is itself a valid
+    # single-cell box (n_asu == 1, occupancy 1.0), and realize_symmetry_copies returns it
+    # (allow_single_copy, inferred from `cell` below). Tiling still applies if min_box_size
+    # asks for it. So no P1 rejection here.
     # fill the crystallographic per-atom data corecif omits (B / aniso U / ionic species).
     hydrate_small_molecule_model(session, model, cif_path, cell, radiation)
     # Bring home hydrogens corecif scattered into the wrong ASU (their bond to a heavy

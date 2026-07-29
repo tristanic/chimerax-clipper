@@ -620,7 +620,7 @@ def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index
 
 def realize_symmetry_copies(session, structure, places, name=None,
         prune_special_positions=True, tolerance=0.5, multiplicities=None,
-        cell=None, tile_size=None):
+        cell=None, tile_size=None, allow_single_copy=None):
     '''
     Build real, whole-model copies of `structure` under each of `places` (a list
     of ChimeraX Place objects in the structure's own coordinate frame, with the
@@ -663,9 +663,20 @@ def realize_symmetry_copies(session, structure, places, name=None,
     Omitting both (e.g. the "near a selection" `clipper symcopies` path) keeps the
     original single-group raw-Cartesian behaviour.
 
-    Returns the combined model (with `.clipper_sym_expansion` set), or None if no
-    genuine symmetry copy survives.
+    `allow_single_copy` decides whether a result with only ONE surviving copy (just the
+    untranslated ASU - no genuine symmetry mate or lattice tile) is a valid box or a
+    failure. For a unit-cell / supercell expansion it IS valid: a P1 cell (or any cell
+    whose orbit fits in the requested block without tiling) has a legitimate single-ASU
+    periodic box - the ASU *is* the box - and should come back with `clipper_n_asu == 1`.
+    For a "near a selection" query a lone copy just means "no symmetry neighbour in range",
+    which the caller treats as nothing to show. Default (None) infers it from `cell`:
+    True for an expansion (cell given), False otherwise. Pass explicitly to override.
+
+    Returns the combined model (with `.clipper_sym_expansion` set), or None if no copy
+    survives (or only one does and `allow_single_copy` is false).
     '''
+    if allow_single_copy is None:
+        allow_single_copy = cell is not None
     if not places:
         return None
     from chimerax.geometry import find_close_points
@@ -737,7 +748,10 @@ def realize_symmetry_copies(session, structure, places, name=None,
         kept_places.append(place)
         surv_masks.append(surv)
 
-    if len(copies) <= 1:
+    if not copies or (len(copies) == 1 and not allow_single_copy):
+        # No genuine symmetry copy survived. A lone identity copy is a valid single-ASU
+        # box for an expansion (allow_single_copy) but "nothing to show" for a
+        # near-a-selection query - drop it in the latter case.
         for c in copies:
             c.delete()
         return None
