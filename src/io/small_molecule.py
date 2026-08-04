@@ -173,6 +173,58 @@ def _neighbour_pairs(coords, radius):
         return out
 
 
+# Metalloids / near-metals that Element.is_metal reports True for but which form GENUINE
+# covalent bonds, so they are EXEMPT from metal->coordination-pseudobond demotion. Measured
+# on ChimeraX 1.13/Py3.14 (2026-08-04): of the classic metalloids only Ge and Sb report
+# is_metal True (B, Si, As, Te, Se are False and never reach the demotion); Po also reports
+# True and is included for completeness. Listing the already-False ones documents intent.
+_COVALENT_METALLOIDS = frozenset({'B', 'Si', 'Ge', 'As', 'Sb', 'Te', 'Se', 'Po'})
+
+
+def _is_coordination_metal(element):
+    '''True for a metal whose bonds should be carried as coordination pseudobonds rather
+    than covalent bonds - i.e. a metal that is NOT one of the genuinely-covalent
+    metalloids (see ``_COVALENT_METALLOIDS``).'''
+    return element.is_metal and element.name not in _COVALENT_METALLOIDS
+
+
+def _demote_metal_bonds(session, model, source_name):
+    '''Convert every COVALENT bond INVOLVING a coordination metal (either endpoint) to a
+    metal-coordination pseudobond, and return the number demoted.
+
+    ChimeraX's corecif parser already demotes metal-O / metal-N / metal-metal contacts
+    this way, but it leaves metal-HALIDE bonds (e.g. Na-Cl, Na-I) as covalent bonds. Those
+    fuse an ion to its coordination sphere - which defeats the special-position dedup (the
+    fused fragment is only partially coincident with its image), manufactures a spurious
+    force-field bond/angle term on a ~3 A ionic contact, and breaks per-ion charge
+    perception. Whether a metal contact is a bond is a force-field decision, and the force
+    field cannot make it if the information arrives pre-committed as covalency; a pseudobond
+    is the honest "not yet decided" representation. The predicate is "involving a metal"
+    (not "metal-ligand"), so metal-metal pairs (e.g. Na-Na, Li-Li) are demoted too. Genuine
+    organometallic covalency (ferrocene Fe-C, C-Li, C-Mg) is demoted as well - accepted, as
+    an explicit metal/coordination model is a later phase; metalloid covalency (B, Si, Ge,
+    As, Sb, Te) is preserved via ``_COVALENT_METALLOIDS``.'''
+    to_demote = [b for b in model.bonds
+                 if _is_coordination_metal(b.atoms[0].element)
+                 or _is_coordination_metal(b.atoms[1].element)]
+    if not to_demote:
+        return 0
+    # Match corecif's own metal-coordination group, which is a "per coordset" group;
+    # requesting the default "normal" type raises "Group type mismatch" when it exists.
+    pbg = model.pseudobond_group('metal coordination bonds', create_type='per coordset')
+    existing = {frozenset(pb.atoms) for pb in pbg.pseudobonds}
+    for b in to_demote:
+        pair = frozenset(b.atoms)
+        a1, a2 = b.atoms
+        b.delete()
+        if pair not in existing:
+            pbg.new_pseudobond(a1, a2)
+            existing.add(pair)
+    session.logger.info('(CLIPPER) %s: demoted %d metal bond(s) to coordination '
+                        'pseudobonds.' % (source_name, len(to_demote)))
+    return len(to_demote)
+
+
 def repair_connectivity(session, model, tolerance=0.4, min_bond=0.6):
     '''
     Repair covalent connectivity that ChimeraX's corecif parser drops on
@@ -395,14 +447,19 @@ def _prepare_corecif_model(session, model, path):
     needs, so outside callers get a corrected model straight from
     :func:`open_small_molecule_cif` and never touch the workarounds themselves:
 
-      1. repair covalent connectivity corecif drops on metal-coordinated atoms
+      1. demote covalent bonds involving a (non-metalloid) metal to coordination
+         pseudobonds - corecif leaves metal-halide bonds covalent (see
+         :func:`_demote_metal_bonds`);
+      2. repair covalent connectivity corecif drops on metal-coordinated atoms
          (see :func:`repair_connectivity`);
-      2. drop covalent bonds too long to be real - spurious ``_geom_bond`` entries
+      3. drop covalent bonds too long to be real - spurious ``_geom_bond`` entries
          corecif copies without a distance check (see :func:`drop_implausibly_long_bonds`).
 
-    Both steps are idempotent. Running them here, at open time, means every downstream
-    consumer (fragment splitting, symmetry completion, the structure-factor model) sees
-    corrected connectivity.
+    All steps are idempotent. Demotion runs first so a ligand left bondless by it whose
+    real partner is IN the model gets re-perceived by step 2 (its cross-symmetry partner,
+    if any, is completed later by ``fragments complete``). Running them here, at open time,
+    means every downstream consumer (fragment splitting, symmetry completion, the
+    structure-factor model) sees corrected connectivity.
 
     NOTE: the historical step 0 - rebuilding coordinates in Clipper's orthogonal frame to
     undo corecif's oblique-cell fractional->Cartesian distortion - was REMOVED once the
@@ -413,13 +470,19 @@ def _prepare_corecif_model(session, model, path):
     the bundle's ``ChimeraX-Core ==1.13.*`` build dependency targets the daily.
     '''
     import os
+    name = os.path.basename(path)
+    try:
+        _demote_metal_bonds(session, model, name)
+    except Exception as e:
+        session.logger.warning('(CLIPPER) metal-bond demotion failed for %r: %s'
+                               % (path, e))
     try:
         repair_connectivity(session, model)
     except Exception as e:
         session.logger.warning('(CLIPPER) connectivity repair failed for %r: %s'
                                % (path, e))
     try:
-        drop_implausibly_long_bonds(session, model, os.path.basename(path))
+        drop_implausibly_long_bonds(session, model, name)
     except Exception as e:
         session.logger.warning('(CLIPPER) long-bond cleanup failed for %r: %s'
                                % (path, e))
