@@ -59,11 +59,12 @@ def open_small_molecule_cif(session, path, file_name=None):
     '''Open a small-molecule CIF via ChimeraX's corecif parser. Returns the
     (single) AtomicStructure model, added to the session.
 
-    The returned model has already had the corecif workarounds applied (see
-    :func:`_prepare_corecif_model`): coordinates rebuilt in Clipper's orthogonal
-    frame, and covalent connectivity repaired where corecif drops it on
-    metal-coordinated atoms. Callers therefore never need to correct the frame or
-    re-perceive bonds themselves.'''
+    The returned model has already had the corecif connectivity workarounds applied
+    (see :func:`_prepare_corecif_model`): covalent connectivity repaired where corecif
+    drops it on metal-coordinated atoms, and impossible over-long ``_geom_bond`` bonds
+    dropped. Callers therefore never need to re-perceive bonds themselves. (Coordinates
+    are used as corecif delivers them: the daily fixed the oblique-cell frame distortion
+    that once needed correcting here - see :func:`_prepare_corecif_model`.)'''
     from chimerax.mmcif.corecif import open_corecif
     models, status = open_corecif(session, path, file_name=file_name)
     if not models:
@@ -142,39 +143,6 @@ def _build_payload(session, model, path, radiation='auto'):
     if sf is not None:
         payload.update(sf)
     return payload
-
-
-def _clipper_frame_coords(model, path, cell):
-    '''
-    Cartesian coordinates (Angstroms) for the model's atoms, rebuilt from the CIF
-    fractional coordinates via Clipper's orthogonalisation, in the model's atom
-    order (matched by atom label). This avoids a fractional->Cartesian error in
-    ChimeraX's corecif parser that distorts coordinates for oblique unit cells
-    (see CORECIF_BUG_REPORT.md): rebuilt coordinates reproduce the CIF's published
-    bond distances essentially exactly. Falls back to the corecif coordinate for
-    any atom whose label is not found in the CIF.
-    '''
-    import numpy
-    from chimerax.mmcif import get_cif_tables
-    from ..clipper_python import Coord_frac
-
-    atoms = model.atoms
-    coords = numpy.array(atoms.coords, numpy.double)
-    at, _aniso = get_cif_tables(path, ['atom_site', 'atom_site_aniso'])
-    if at is None or not at.has_field('fract_x') or not at.has_field('label'):
-        return coords
-    frac = {}
-    for r in at.fields(('label', 'fract_x', 'fract_y', 'fract_z')):
-        try:
-            frac[r[0]] = (float(_strip_su(r[1])), float(_strip_su(r[2])), float(_strip_su(r[3])))
-        except ValueError:
-            pass
-    for i, name in enumerate(atoms.names):
-        uvw = frac.get(name)
-        if uvw is not None:
-            co = Coord_frac(*uvw).coord_orth(cell)
-            coords[i] = (co.x, co.y, co.z)
-    return coords
 
 
 # Generous per-element covalent-degree ceilings for the connectivity repair's
@@ -419,37 +387,32 @@ def drop_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
             'distance or a non-bonding close contact listed as a bond): %s%s'
             % (source_name, len(offenders), ex, ' ...' if len(offenders) > 3 else ''))
     return len(offenders)
-    return len(offenders)
 
 
-def _prepare_corecif_model(session, model, path, cell=None):
+def _prepare_corecif_model(session, model, path):
     '''
-    Apply the corecif workarounds every freshly-opened small-molecule model needs,
-    so outside callers get a corrected model straight from
+    Apply the corecif connectivity workarounds every freshly-opened small-molecule model
+    needs, so outside callers get a corrected model straight from
     :func:`open_small_molecule_cif` and never touch the workarounds themselves:
 
-      1. rebuild coordinates in Clipper's orthogonal frame (corecif
-         mis-orthogonalises oblique cells - see :func:`_clipper_frame_coords`);
-      2. repair covalent connectivity corecif drops on metal-coordinated atoms
+      1. repair covalent connectivity corecif drops on metal-coordinated atoms
          (see :func:`repair_connectivity`);
-      3. drop covalent bonds too long to be real - spurious ``_geom_bond`` entries
+      2. drop covalent bonds too long to be real - spurious ``_geom_bond`` entries
          corecif copies without a distance check (see :func:`drop_implausibly_long_bonds`).
 
-    All steps are idempotent. A no-op when the CIF carries no crystal symmetry. Running the
-    connectivity fixes here, at open time, means every downstream consumer (fragment
-    splitting, symmetry completion, the structure-factor model) sees corrected connectivity.
+    Both steps are idempotent. Running them here, at open time, means every downstream
+    consumer (fragment splitting, symmetry completion, the structure-factor model) sees
+    corrected connectivity.
+
+    NOTE: the historical step 0 - rebuilding coordinates in Clipper's orthogonal frame to
+    undo corecif's oblique-cell fractional->Cartesian distortion - was REMOVED once the
+    ChimeraX daily fixed that parser bug (verified 2026-08-04 on 1.13.dev202608021548 /
+    Python 3.14: raw corecif coordinates reproduce the CIF frame to 0.0000 A for
+    monoclinic and triclinic cells). corecif now delivers the correct geometry directly,
+    so idatm typing at open time also runs on it. Requires a ChimeraX build with that fix;
+    the bundle's ``ChimeraX-Core ==1.13.*`` build dependency targets the daily.
     '''
     import os
-    if cell is None:
-        try:
-            cell, _sg, _grid = crystal_symmetry_from_cif_file(path)
-        except Exception:
-            return
-    try:
-        model.atoms.coords = _clipper_frame_coords(model, path, cell)
-    except Exception as e:
-        session.logger.warning('(CLIPPER) coordinate-frame correction failed for '
-                               '%r: %s' % (path, e))
     try:
         repair_connectivity(session, model)
     except Exception as e:

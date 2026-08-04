@@ -147,12 +147,12 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     pieces by hand is error-prone because several corecif corrections are easy to
     miss; this bakes them in, in the right order:
 
-      1. open the CIF (corecif parser). ``open_small_molecule_cif`` internally
-         rebuilds coordinates in Clipper's frame — correcting corecif's oblique-cell
-         coordinate error (a NO-OP for orthorhombic cells but essential for
-         monoclinic/triclinic, where skipping it silently corrupts the structure
-         factors, not merely NaNs them) — and repairs covalent connectivity corecif
-         drops on metal-coordinated atoms;
+      1. open the CIF (corecif parser). ``open_small_molecule_cif`` repairs covalent
+         connectivity corecif drops on metal-coordinated atoms and drops impossible
+         over-long ``_geom_bond`` bonds. (It used to also rebuild coordinates in
+         Clipper's frame to undo a corecif oblique-cell distortion; the ChimeraX daily
+         has since fixed that parser bug, so corecif now delivers correct geometry
+         directly — see ``io.small_molecule._prepare_corecif_model``);
       2. **hydrate** the crystallographic per-atom data corecif omits — isotropic B,
          orthogonal-frame anisotropic U, and the ionic scattering species. Skipping
          this leaves ``Atom.bfactor == 0`` -> U = 0 -> infinitely sharp atoms ->
@@ -210,7 +210,7 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     from ..clipper_util import site_multiplicities
 
     radiation = _resolve_radiation(radiation, cif_path)
-    # open corrects the oblique-cell coordinate frame + repairs connectivity internally.
+    # open repairs connectivity internally (coords come correct from corecif on the daily).
     model = open_small_molecule_cif(session, cif_path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(cif_path)
     # P1 (num_symops == 1) is fine: with no symmetry to expand the ASU is itself a valid

@@ -631,12 +631,11 @@ def split_fragments_cmd(session, structures, mode='rename'):
                 'crystal symmetry for fragment split; skipping.' % m)
             continue
         cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
-        # Apply the corecif workarounds to this (generically-opened) model: rebuild
-        # Clipper-frame coordinates - corecif mis-orthogonalises oblique cells, which
-        # would misplace completed symmetry atoms and defeat the special-position test -
-        # and repair covalent connectivity corecif drops on metal-coordinated atoms.
-        # Both idempotent, so this is safe on a model opened via `clipper smallmol` too.
-        _prepare_corecif_model(session, m, path, cell)
+        # Apply the corecif connectivity workarounds to this (generically-opened) model:
+        # repair covalent bonds corecif drops on metal-coordinated atoms, and drop
+        # impossible over-long _geom_bond bonds. Idempotent, so this is safe on a model
+        # opened via `clipper smallmol` too.
+        _prepare_corecif_model(session, m, path)
         # 'complete' reassembles molecules via symmetry; rewrap symmetry-scattered H onto
         # their parents first (matches the `clipper cod`/`smallmol` complete path).
         if mode == 'complete':
