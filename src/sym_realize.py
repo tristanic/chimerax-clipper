@@ -618,6 +618,24 @@ def _redundant_fragments(structure_copy, matched_atoms, multiplicities, op_index
     return merged, records, straddle_warn
 
 
+def _register_expansion_attrs(session):
+    '''Register (idempotent) the structure-level flags stamped on a symmetry-expanded box,
+    so a consumer can act on them programmatically and they round-trip a .cxs save/restore:
+      - ``clipper_straddle_incomplete`` (bool): a molecule split across a special position
+        was not symmetry-complete, so the box may carry partial duplicate atoms; a headless
+        consumer should reject the crystal rather than train on a box with duplicates.
+      - ``clipper_n_dedup`` (int): number of special-position residue copies dropped as
+        redundant during the expansion (informational).'''
+    if getattr(session, '_clipper_expansion_attrs_registered', False):
+        return
+    from chimerax.atomic import AtomicStructure
+    AtomicStructure.register_attr(session, 'clipper_straddle_incomplete',
+                                  'ChimeraX-Clipper', attr_type=bool)
+    AtomicStructure.register_attr(session, 'clipper_n_dedup',
+                                  'ChimeraX-Clipper', attr_type=int)
+    session._clipper_expansion_attrs_registered = True
+
+
 def realize_symmetry_copies(session, structure, places, name=None,
         prune_special_positions=True, tolerance=0.5, multiplicities=None,
         cell=None, tile_size=None, allow_single_copy=None):
@@ -797,6 +815,11 @@ def realize_symmetry_copies(session, structure, places, name=None,
             'special position that are not symmetry-complete; expansion may leave '
             'partial duplicates. Run "clipper fragments complete" first for exact '
             'special-position handling.'.format(structure.name))
+    # Surface the two diagnostics programmatically (not only as logger text) so a headless
+    # consumer can reject the crystal with a reason; registered so they round-trip a .cxs.
+    _register_expansion_attrs(session)
+    combined.clipper_straddle_incomplete = bool(straddle_warn)
+    combined.clipper_n_dedup = len(dedup_records)
     return combined
 
 
