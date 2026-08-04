@@ -37,7 +37,8 @@ Compiled extensions (all pybind11):
 ### Windows (primary platform)
 
 `make_win.bat` self-initialises the Visual Studio 2022 build environment (the
-v141 toolset that matches ChimeraX), so it can be run directly from a plain
+default/newest toolset — v143 — matching ChimeraX 1.13's Python 3.14, which is
+itself built with VS2022 / MSC v.1944), so it can be run directly from a plain
 `cmd` *or* PowerShell prompt — no need to pre-open a vcvars terminal:
 
 ```bat
