@@ -48,20 +48,27 @@ _DEFAULT_ION_CHARGE = {
     'CL': -1, 'BR': -1, 'IOD': -1, 'F': -1,
 }
 
-_valid_species = None
+_valid_species = {}   # radiation -> frozenset of valid identifiers
 
 # Assignment signatures already announced to the log, so the per-frame live-map
 # recalculation does not spam an identical message every redraw.
 _logged_signatures = set()
 
 
-def valid_scattering_species():
-    '''Set of every element/ion identifier Clipper can compute (cached).'''
-    global _valid_species
-    if _valid_species is None:
-        from .clipper_python import scattering_factor_names
-        _valid_species = set(scattering_factor_names())
-    return _valid_species
+def valid_scattering_species(radiation='xray'):
+    '''Set of every element/ion identifier Clipper can compute for the given
+    radiation (cached). X-ray and electron have different ionic coverage
+    (Waasmaier-Kirfel ions vs Peng-1998 ions), so an ion valid for one may be
+    absent from the other - validate against the set that will actually be used.'''
+    radiation = 'electron' if str(radiation).lower() == 'electron' else 'xray'
+    if radiation not in _valid_species:
+        from . import clipper_python
+        if radiation == 'electron':
+            names = clipper_python.scattering_factor_names_electron()
+        else:
+            names = clipper_python.scattering_factor_names()
+        _valid_species[radiation] = frozenset(names)
+    return _valid_species[radiation]
 
 
 def _normalize(identifier):
@@ -79,18 +86,19 @@ def _normalize(identifier):
     return ''.join(out)
 
 
-def clipper_species_from_type_symbol(type_symbol, neutral_fallback):
+def clipper_species_from_type_symbol(type_symbol, neutral_fallback, radiation='xray'):
     '''Map a CIF ``_atom_site_type_symbol`` to a Clipper scattering-factor species.
 
     Small-molecule CIFs commonly declare an ionic scattering type even for bonded
     atoms (e.g. ``O2-``, ``Ca2+``) -- that is the species the structure was refined
     against. Unlike the macromolecular path (which keeps bonded atoms neutral per
     the IAM convention), this honours the CIF-declared charge directly: it returns
-    the charged species when Clipper tabulates it, otherwise ``neutral_fallback``.
+    the charged species when Clipper tabulates it (for the given radiation --
+    X-ray and electron have different ionic coverage), otherwise ``neutral_fallback``.
     '''
     if not type_symbol:
         return neutral_fallback
-    valid = valid_scattering_species()
+    valid = valid_scattering_species(radiation)
     candidate = _normalize(type_symbol)
     if candidate in valid:
         return candidate
@@ -138,12 +146,18 @@ def _ccd_charge(session, resname, cache):
     return charge
 
 
-def ionic_scattering_names(atoms):
+def ionic_scattering_names(atoms, radiation='xray', log=True):
     '''Return a list of scattering-factor identifiers, one per atom.
 
     Bonded atoms keep their neutral element symbol; genuine monatomic ions get
     the matching ionic identifier (e.g. ``Ca2+``, ``Cl1-``) when one exists in
-    Clipper's table.
+    Clipper's table for the given radiation (X-ray vs electron have different
+    ionic coverage, so an ion tabulated for one may be absent from the other).
+
+    ``log`` announces (once per pattern) which atoms received ionic factors; set
+    it False for callers that build an atom list for symmetry/unit-cell use rather
+    than for the structure-factor calculation, so they don't emit a misleading
+    scattering-factor message.
     '''
     elements = atoms.element_names.tolist()
     n = len(elements)
@@ -156,7 +170,7 @@ def ionic_scattering_names(atoms):
     if not len(candidates):
         return elements
 
-    valid = valid_scattering_species()
+    valid = valid_scattering_species(radiation)
     session = _session_for(atoms)
     res_names = atoms.residues.names
     ccd_cache = {}
@@ -193,17 +207,19 @@ def ionic_scattering_names(atoms):
             key = (str(res_names[i]), element, candidate)
             assigned[key] = assigned.get(key, 0) + 1
 
-    _log_assignments(session, assigned)
+    if log:
+        _log_assignments(session, assigned, radiation)
     return elements
 
 
-def _log_assignments(session, assigned):
+def _log_assignments(session, assigned, radiation='xray'):
     '''Announce, once per distinct assignment pattern, which atoms received
     ionic (rather than neutral) scattering factors. De-duplicated so the live
     map's per-frame recalculation does not repeat the message.'''
     if not assigned or session is None:
         return
-    signature = frozenset(assigned.items())
+    rad = 'electron' if str(radiation).lower() == 'electron' else 'X-ray'
+    signature = (rad, frozenset(assigned.items()))
     if signature in _logged_signatures:
         return
     _logged_signatures.add(signature)
@@ -211,5 +227,5 @@ def _log_assignments(session, assigned):
              for (rname, el, sp), n in sorted(assigned.items())]
     total = sum(assigned.values())
     session.logger.info(
-        'ChimeraX-Clipper: using ionic X-ray scattering factors for {} atom(s): {}'
-        .format(total, ', '.join(parts)))
+        'ChimeraX-Clipper: using ionic {} scattering factors for {} atom(s): {}'
+        .format(rad, total, ', '.join(parts)))

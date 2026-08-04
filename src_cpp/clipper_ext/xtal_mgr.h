@@ -93,6 +93,19 @@ public:
     inline bool exclude_free_reflections() const { return exclude_freer_; }
     inline bool fill_with_fcalc() const { return fill_; }
 
+    // Opt-in display gating (Part B). display_gated_ defaults false, so by default
+    // a map behaves exactly as before (always FFT'd on recalc). Only maps that opt
+    // in (the debug component maps) are gated: when hidden they are skipped by the
+    // recalc loop and marked dirty_, and any read must first bring them current.
+    inline bool display_gated() const { return display_gated_; }
+    inline void set_display_gated(bool b) { display_gated_ = b; }
+    inline bool displayed() const { return displayed_; }
+    inline void set_displayed(bool b) { displayed_ = b; }
+    inline bool is_dirty() const { return dirty_; }
+    inline void set_dirty(bool b) { dirty_ = b; }
+    // A map is FFT'd during a recalc iff it is not gated, or it is currently shown.
+    inline bool needs_recalc() const { return !display_gated_ || displayed_; }
+
 
 private:
     HKL_info hkl_info_;
@@ -112,6 +125,10 @@ private:
     bool exclude_freer_=true;
     // if exclude_freer_, replace free reflections with DFcalc?
     bool fill_=true;
+    // Opt-in display gating (Part B); see the public accessors above.
+    bool display_gated_=false;
+    bool displayed_=true;
+    bool dirty_=false;
 
     std::unique_ptr<HKL_data<F_phi<ftype32>>> coeffs_;
     // Sharpening/smoothing B-factor to apply
@@ -143,6 +160,16 @@ public:
         ANISO_GAUSSIAN,
     };
 
+    // Structure-factor components that can be surfaced as (debug) maps: the total
+    // model Fcalc (atoms + bulk), the atoms-only contribution, the additive bulk
+    // contribution, and the (smoothed) solvent-mask transform.
+    enum MapComponent {
+        FCALC = 0,
+        FATOMS,
+        FBULK,
+        FMASK,
+    };
+
     //Xtal_mgr_base() {} // default constructor
     Xtal_mgr_base(const HKL_info& hklinfo, const HKL_data<Flag>& free_flags,
         const Grid_sampling& grid_sampling, const HKL_data<F_sigF<ftype32>>& fobs);
@@ -170,6 +197,37 @@ public:
 
     inline bool ignore_hydrogens() const { return ignore_hydrogens_; }
     inline void set_ignore_hydrogens(bool flag) { ignore_hydrogens_ = flag; }
+
+    // Scattering-factor table used for Fcalc: X-ray form factors (default) or
+    // electron form factors for micro-ED / 3D-ED. Forwarded to the bulk-solvent
+    // Fcalc engine, which builds each map's model density through it. Must be set
+    // before the first generate_fcalc() (it is read on the calculation thread).
+    inline void set_radiation(AtomShapeFn::RADIATION r) { bulk_solvent_calculator_.set_radiation(r); }
+    inline AtomShapeFn::RADIATION radiation() const { return bulk_solvent_calculator_.radiation(); }
+
+    // Occupancy-weighted bulk-solvent mask: when true (default), partial-occupancy
+    // atoms exclude solvent only fractionally. Forwarded to the bulk-solvent engine.
+    inline void set_occupancy_weighted_solvent_mask(bool b) { bulk_solvent_calculator_.set_occupancy_weighted(b); }
+    inline bool occupancy_weighted_solvent_mask() const { return bulk_solvent_calculator_.occupancy_weighted(); }
+
+    // All-reflections scaling: when true, the scale/bulk fit AND the one-time outlier
+    // rejection use ALL reflections rather than a seeded per-bin subset -- exact and
+    // unbiased (default false: the fast, reproducible seeded subset for live maps).
+    // The setter re-derives the outlier-cleaned working set, so it is not inline.
+    void set_all_reflections(bool b);
+    inline bool all_reflections() const { return use_all_reflections_; }
+    // Size of the reflection subset used by the (non-all-reflections) scale fit:
+    // reflections per resolution bin x number of bins. Ignored when all_reflections
+    // is true.
+    inline void set_scaling_reflections_per_bin(size_t n) { bulk_solvent_calculator_.set_scaling_reflections_per_bin(n); }
+    inline size_t scaling_reflections_per_bin() const { return bulk_solvent_calculator_.scaling_reflections_per_bin(); }
+    inline void set_scaling_num_bins(size_t n) { bulk_solvent_calculator_.set_scaling_num_bins(n); }
+    inline size_t scaling_num_bins() const { return bulk_solvent_calculator_.scaling_num_bins(); }
+    // Seed for the fixed (cached) scale-fit reflection subset. Governs ONLY the
+    // scaling subset -- outlier rejection uses a fixed internal seed -- so the seed
+    // can be varied to probe scaling sensitivity without perturbing the working set.
+    inline void set_scaling_seed(size_t s) { bulk_solvent_calculator_.set_scaling_seed(s); }
+    inline size_t scaling_seed() const { return bulk_solvent_calculator_.scaling_seed(); }
 
     const Xmap_details& map_details(const std::string& name) const { return maps_.at(name); }
 
@@ -289,6 +347,14 @@ public:
         bool exclude_missing_reflections=false,
         bool exclude_free_reflections=true, bool fill_with_fcalc=true, size_t num_threads=1);
 
+    // Add a "debug" map that FFTs a raw structure-factor component (Fcalc, atoms-
+    // only, Fbulk or Fmask) rather than sigmaa-weighted coefficients. No free-term
+    // filling or missing-reflection handling is applied. The map is created
+    // display-gated (Part B): it is only FFT'd while shown. Requires that Fcalc has
+    // already been generated at least once (same guard as add_xmap).
+    void add_debug_xmap(const std::string& name, MapComponent component,
+        const ftype& bsharp=0, size_t num_threads=1);
+
     void delete_xmap(const std::string& name) { maps_.erase(name); }
 
     // Recalculate map coefficients and real-space map for one previously-stored
@@ -393,8 +459,19 @@ private:
     HKL_data<Phi_fom<ftype32>> phi_fom_;
 
     std::unordered_map<std::string, Xmap_details> maps_;
-    // Most recent Fcalc values
+    // Most recent Fcalc values (total model = atoms + bulk)
     HKL_data<F_phi<ftype32>> fcalc_;
+    // Atoms-only Fcalc (fcalc_ - fbulk_). Base-coeffs pointer target for FATOMS
+    // debug maps; refreshed in generate_fcalc only while some map points at it
+    // (see fatoms_map_present_()), so it costs nothing when no Fatoms map exists.
+    HKL_data<F_phi<ftype32>> fcalc_atoms_;
+
+    // Base-coefficients pointer for a debug MapComponent (into a stable member).
+    const HKL_data<F_phi<ftype32>>* component_coeffs_ptr(MapComponent c) const;
+    // True if any stored map derives from fcalc_atoms_ (an FATOMS debug map).
+    bool fatoms_map_present_() const;
+    // Recompute fcalc_atoms_ = fcalc_ - fbulk_ from the current Fcalc/Fbulk.
+    void compute_fcalc_atoms_();
 
     std::vector<ftype> aniso_scale_params_;
 
@@ -422,6 +499,9 @@ private:
 
 
     const ftype OUTLIER_REJECTION_LIMIT = 1e-6;
+    // When true, the scale/bulk fit and outlier rejection use all reflections
+    // rather than a seeded subset. Read by remove_outliers.
+    bool use_all_reflections_ = false;
     const ftype NONLINEAR_DAMP = 1.0;
 
 }; // class Xmap_mgr
@@ -508,7 +588,7 @@ public:
     inline const ftype& weighted_rwork() { deletion_guard(); return mgr_->weighted_rwork(); }
     inline const ftype& weighted_rfree() { deletion_guard(); return mgr_->weighted_rfree(); }
 
-    inline const Xmap_details& map_details(const std::string& name) const { deletion_guard(); return mgr_->map_details(name); }
+    inline const Xmap_details& map_details(const std::string& name) { deletion_guard(); ensure_current(name); return mgr_->map_details(name); }
     inline size_t n_maps() const { deletion_guard(); return mgr_->n_maps(); }
     std::vector<std::string> map_names() const { deletion_guard(); return mgr_->map_names(); }
 
@@ -520,6 +600,22 @@ public:
 
     inline bool ignore_hydrogens() const { return mgr_->ignore_hydrogens(); }
     inline void set_ignore_hydrogens(bool flag) { mgr_->set_ignore_hydrogens(flag); }
+
+    // X-ray (default) vs electron scattering factors for micro-ED. Set once at
+    // setup, before the first recalculate_all(), so the calculation thread never
+    // races the write.
+    inline AtomShapeFn::RADIATION radiation() const { deletion_guard(); return mgr_->radiation(); }
+    inline void set_radiation(AtomShapeFn::RADIATION r) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_radiation(r); }
+    inline bool occupancy_weighted_solvent_mask() const { deletion_guard(); return mgr_->occupancy_weighted_solvent_mask(); }
+    inline void set_occupancy_weighted_solvent_mask(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_occupancy_weighted_solvent_mask(b); }
+    inline bool all_reflections() const { deletion_guard(); return mgr_->all_reflections(); }
+    inline void set_all_reflections(bool b) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_all_reflections(b); }
+    inline size_t scaling_reflections_per_bin() const { deletion_guard(); return mgr_->scaling_reflections_per_bin(); }
+    inline void set_scaling_reflections_per_bin(size_t n) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_reflections_per_bin(n); }
+    inline size_t scaling_num_bins() const { deletion_guard(); return mgr_->scaling_num_bins(); }
+    inline void set_scaling_num_bins(size_t n) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_num_bins(n); }
+    inline size_t scaling_seed() const { deletion_guard(); return mgr_->scaling_seed(); }
+    inline void set_scaling_seed(size_t s) { deletion_guard(); finalize_threads_if_necessary(); mgr_->set_scaling_seed(s); }
 
     // Finalise thread and return a copy
     HKL_data<F_phi<ftype32>> fcalc();
@@ -546,6 +642,21 @@ public:
         bool exclude_missing_reflections=false,
         bool exclude_free_reflections=true, bool fill_with_fcalc=true);
 
+    // Add a display-gated debug map for a raw structure-factor component.
+    void add_debug_xmap(const std::string& name, Xtal_mgr_base::MapComponent component,
+        const ftype& bsharp=0);
+
+    // Opt-in display gating (Part B): mark a map as gated (only FFT'd while shown),
+    // and push its current display state. Non-gated maps behave exactly as before.
+    void set_map_display_gated(const std::string& name, bool gated);
+    void set_map_displayed(const std::string& name, bool displayed);
+
+    // Bring one gated map up to date if it was skipped by the recalc loop while
+    // hidden (dirty). Finalises any running recalculation first, then FFTs just
+    // that map from the current base coefficients. A no-op for non-gated/clean
+    // maps, so it never triggers a synchronous FFT on their read paths.
+    void ensure_current(const std::string& name);
+
     void delete_xmap(const std::string& name);
 
     // Thread-safe update of one map's sharpening/smoothing B-factor. Finalises any
@@ -565,9 +676,9 @@ public:
     void delete_all();
 
 
-    inline const Xmap<ftype32>& get_xmap(const std::string& name) { deletion_guard(); return mgr_->get_xmap(name); }
+    inline const Xmap<ftype32>& get_xmap(const std::string& name) { deletion_guard(); ensure_current(name); return mgr_->get_xmap(name); }
 
-    inline const Map_stats& get_map_stats(const std::string& name) { deletion_guard(); return mgr_->get_map_stats(name); }
+    inline const Map_stats& get_map_stats(const std::string& name) { deletion_guard(); ensure_current(name); return mgr_->get_map_stats(name); }
 
     // Return the values of the current scaling function scaling fcalc to fobs
     // for each (H,K,L)
@@ -585,6 +696,10 @@ private:
     bool ready_ = false;
     std::future<bool> master_thread_result_;
     std::unordered_map<std::string, Xmap_details> xmap_thread_results_;
+    // Maps FFT'd in the current recalc pass (those needing recalc: not gated, or
+    // gated+shown). apply_new_maps() swaps back only these; gated-hidden maps are
+    // skipped and left for ensure_current() to refresh lazily on read.
+    std::vector<std::string> active_names_;
     //std::vector<std::pair<std::string, Xmap_details>> xmap_thread_results_;
 
     // Safety check to prevent use (and nullptr dereference) after delete() has

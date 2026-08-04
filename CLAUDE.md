@@ -37,7 +37,8 @@ Compiled extensions (all pybind11):
 ### Windows (primary platform)
 
 `make_win.bat` self-initialises the Visual Studio 2022 build environment (the
-v141 toolset that matches ChimeraX), so it can be run directly from a plain
+default/newest toolset — v143 — matching ChimeraX 1.13's Python 3.14, which is
+itself built with VS2022 / MSC v.1944), so it can be run directly from a plain
 `cmd` *or* PowerShell prompt — no need to pre-open a vcvars terminal:
 
 ```bat
@@ -55,6 +56,12 @@ make_win.bat release clean app-install
 ChimeraX paths assumed by `make_win.bat`:
 - Daily:   `C:\Program Files\ChimeraX-Daily\bin\ChimeraX-console.exe`
 - Release: `C:\Program Files\ChimeraX\bin\ChimeraX-console.exe`
+
+**ChimeraX source checkout:** `C:\Users\tcroll\gits\ChimeraX\src` — invaluable for
+tracing how ChimeraX itself invokes plugin code. E.g. the live-map surface pipeline
+crosses into `bundles/map/src/volume.py` (`Volume.set_geometry`) and
+`bundles/graphics/src/drawing.py`, whose `set_geometry` fires the `art()` remask
+callback that Clipper's `mask_handler.py` hooks.
 
 ### Linux / macOS
 
@@ -108,8 +115,11 @@ The bundle builder injects `/std:c++11` (MSVC) / `-std=c++11` (GCC/Clang) into a
 the **`clipper_cx`** library and the **`clipper_python`** bindings (Eigen reaches the
 bindings via `clipper_ext/adp_occ_refiner.h`'s `Eigen::VectorXd` interface) — are compiled
 with **C++14** (`/std:c++14` win, `-std=c++14` mac/linux) because Eigen ≥5.0.1 hard-requires
-it (`#error Eigen requires at least c++14 support`). Do **not** jump to C++17:
-`std::random_shuffle` (used in `util.h`) was removed in C++17.
+it (`#error Eigen requires at least c++14 support`). **Do NOT jump to C++17.** ChimeraX
+development itself is pinned at C++11 (C++14 on Windows), and these extensions must match its
+toolchain/ABI — C++14 is the ceiling, not just a floor. (Historically the concrete tripwire was
+`std::random_shuffle` in `util.h`, removed in C++17; that has since been migrated to a seeded
+`std::shuffle` — C++11 — so it no longer fails a stray C++17 build, but C++17 is still off-limits.)
 
 **MSVC masks standard-version bugs.** MSVC has no real `/std:c++11` mode (its floor is C++14),
 so code that needs C++14 compiles silently on Windows and only fails on Clang/GCC. This is
@@ -144,7 +154,10 @@ cosmetic — the code is correct because the STL members are private implementat
 
 Runtime (key):
 - `ChimeraX-Core ~1.11`, `ChimeraX-Atomic ~1.61`, `ChimeraX-AtomicLibrary ~14.2`
-- `numpy ~1.26.4`
+- `numpy >=2.4.6` (ChimeraX moved its bundled numpy to the 2.x series in the
+  2026-07 daily; the build pin in `pyproject.toml` tracks the shipped version. Was
+  `~=1.26.4` through mid-2026 — bump the lower bound if ChimeraX ships a newer numpy,
+  since a build dep pinned below what ChimeraX ships is never the binding constraint.)
 
 Bundled C++ (source-compiled):
 - Clipper (`src_cpp/deps/clipper/`) — Kevin Cowtan's crystallography library

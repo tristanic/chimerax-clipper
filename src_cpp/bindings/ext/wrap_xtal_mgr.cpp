@@ -89,6 +89,21 @@ void declare_xtal_mgr(py::module& m)
         .def("get_xmap_ref", &Class::get_xmap, py::return_value_policy::reference_internal)
         .def("get_xmap_copy", &Class::get_xmap)
         .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
+        // Occupancy-weighted bulk-solvent mask (parity with Xtal_thread_mgr): when True
+        // (default) partial-occupancy atoms exclude solvent only fractionally; False
+        // restores the original binary mask, for A/B comparison.
+        .def_property("occupancy_weighted_solvent_mask",
+            &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
+        // Scaling: all_reflections (exact, fit over all reflections) + the seeded-
+        // subset size/seed knobs used when it is off. Parity with Xtal_thread_mgr.
+        .def_property("all_reflections",
+            &Class::all_reflections, &Class::set_all_reflections)
+        .def_property("scaling_reflections_per_bin",
+            &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
+        .def_property("scaling_num_bins",
+            &Class::scaling_num_bins, &Class::set_scaling_num_bins)
+        .def_property("scaling_seed",
+            &Class::scaling_seed, &Class::set_scaling_seed)
         .def("delete_xmap", &Class::delete_xmap)
         ;
 } // declare_xal_mgr
@@ -149,6 +164,26 @@ void declare_xtal_thread_mgr(py::module& m)
             py::arg("exclude_free_reflections")=true,
             py::arg("fill_with_fcalc")=true)
         .def("delete_xmap", &Class::delete_xmap)
+        .def("add_debug_xmap",
+            [](Class& self, const std::string& name, const std::string& component,
+               const ftype& b_sharp)
+            {
+                using MC = cx::Xtal_mgr_base::MapComponent;
+                MC c;
+                if      (component == "fcalc")  c = MC::FCALC;
+                else if (component == "fatoms") c = MC::FATOMS;
+                else if (component == "fbulk")  c = MC::FBULK;
+                else if (component == "fmask")  c = MC::FMASK;
+                else throw std::invalid_argument(
+                    "Unknown debug map component '" + component +
+                    "' (expected one of: fcalc, fatoms, fbulk, fmask)");
+                self.add_debug_xmap(name, c, b_sharp);
+            },
+            py::arg("name"), py::arg("component"), py::arg("b_sharp")=0)
+        .def("set_map_display_gated", &Class::set_map_display_gated,
+            py::arg("name"), py::arg("gated"))
+        .def("set_map_displayed", &Class::set_map_displayed,
+            py::arg("name"), py::arg("displayed"))
         .def("set_map_b_sharp", &Class::set_map_b_sharp,
             py::arg("name"), py::arg("b_sharp"))
         .def("set_grid_sampling", &Class::set_grid_sampling,
@@ -158,6 +193,17 @@ void declare_xtal_thread_mgr(py::module& m)
         .def("get_xmap_copy", &Class::get_xmap)
         .def("get_map_stats", &Class::get_map_stats)
         .def_property("ignore_hydrogens", &Class::ignore_hydrogens, &Class::set_ignore_hydrogens)
+        .def_property("radiation", &Class::radiation, &Class::set_radiation)
+        .def_property("occupancy_weighted_solvent_mask",
+            &Class::occupancy_weighted_solvent_mask, &Class::set_occupancy_weighted_solvent_mask)
+        .def_property("all_reflections",
+            &Class::all_reflections, &Class::set_all_reflections)
+        .def_property("scaling_reflections_per_bin",
+            &Class::scaling_reflections_per_bin, &Class::set_scaling_reflections_per_bin)
+        .def_property("scaling_num_bins",
+            &Class::scaling_num_bins, &Class::set_scaling_num_bins)
+        .def_property("scaling_seed",
+            &Class::scaling_seed, &Class::set_scaling_seed)
         .def("delete", &Class::delete_all)
         ;
 }

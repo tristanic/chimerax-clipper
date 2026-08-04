@@ -76,6 +76,32 @@ def invsim(x):
 
 
 ### Useful utility functions ###
+def site_multiplicities(coords, cell, spacegroup, grid_sampling):
+    '''
+    Return an integer numpy array giving the crystallographic site multiplicity of
+    each orthogonal-space coordinate in `coords` (an N x 3 array). A multiplicity
+    greater than one means the site lies on a special position - a point left
+    invariant by that many symmetry operators - and the value is exactly how many
+    operators fix it (so the redundancy factor when the site is expanded by
+    symmetry). Uses Clipper's optimised Xmap.multiplicity lookup, so it is
+    grid-quantised at the given sampling.
+    Args:
+        coords ( [n*3 float] ):
+            An n*3 array of orthogonal (Cartesian) coordinates.
+        cell (clipper.Cell object)
+        spacegroup (clipper.Spacegroup object)
+        grid_sampling (clipper.Grid_sampling object)
+    '''
+    from .clipper_python import Xmap_double, Coord_orth
+    xm = Xmap_double(spacegroup, cell, grid_sampling)
+    out = numpy.empty(len(coords), int)
+    for i, xyz in enumerate(coords):
+        cg = Coord_orth(float(xyz[0]), float(xyz[1]), float(xyz[2])) \
+            .coord_frac(cell).coord_grid(grid_sampling)
+        out[i] = xm.multiplicity(cg)
+    return out
+
+
 def get_minmax_grid(coords, cell, grid_sampling):
     '''
     Return a numpy array containing the (min, max) grid coordinates

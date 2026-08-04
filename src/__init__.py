@@ -29,10 +29,14 @@ from chimerax.atomic import Atom
 
 __version__ = "0.28.dev0"
 
-# v3: XmapHandler_Live snapshots gained bsharp_adjustable / bsharp_designated.
-# Older (<=2) sessions lack them; restore_snapshot falls back to the
-# difference-map rule (not is_difference_map), so they still open cleanly.
-CLIPPER_STATE_VERSION = 3
+# v3: XmapHandler_Live snapshots gained bsharp_adjustable / bsharp_designated, and
+# XmapSet snapshots gained 'radiation'. Older (<=2) sessions lack these; restore_snapshot
+# falls back (difference-map rule for bsharp; 'xray' for radiation), so they open cleanly.
+# v4: XmapSet snapshots gained a 'small molecule' block (crystal definition + Fobs) so
+# small-molecule (COD) crystals with live SmallMoleculeXmapMgr maps round-trip through a
+# session. Older sessions lack it; restore falls back to the macromolecular path (the key
+# is simply absent), so they open unchanged.
+CLIPPER_STATE_VERSION = 4
 
 def get_lib():
     from os import path
@@ -112,6 +116,19 @@ from .symmetry import (
     get_all_symmetry_handlers,
     get_map_mgr
     )
+
+# GUI-free crystallographic symmetry realisation (usable headless / by ISOLDE).
+from .sym_realize import (
+    CrystalSymmetry,
+    SymmetryExpansion,
+    crystal_symmetry_for,
+    realize_symmetry_copies,
+    collapse_to_asu,
+    sym_select_within,
+    places_from_matrices,
+    unit_cell_places,
+    )
+from .clipper_util import site_multiplicities
 
 
 from chimerax.core.toolshed import BundleAPI
@@ -286,7 +303,7 @@ def _sf_file_open_info():
         def open_args(self):
             from chimerax.atomic import StructureArg
             from chimerax.core.commands import (FloatArg, BoolArg, StringArg,
-                OpenFileNameArg, ListOf)
+                OpenFileNameArg, ListOf, EnumOf)
 
             return {
                 'structure_model':  StructureArg,
@@ -297,6 +314,11 @@ def _sf_file_open_info():
                 'map_columns':      ListOf(StringArg),
                 'free_flags':       StringArg,
                 'free_flags_file':  OpenFileNameArg,
+                # X-ray (default) vs electron form factors for micro-ED / 3D-ED,
+                # so `open <mtz/cif> radiation electron` and PDB-fetch structure
+                # factors (`open <id> structureFactors true radiation electron`)
+                # both reach the macromolecular Fcalc path.
+                'radiation':        EnumOf(['auto', 'xray', 'electron']),
             }
     return Info()
 

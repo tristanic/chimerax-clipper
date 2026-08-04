@@ -85,6 +85,9 @@ void declare_refine_config(py::module& m)
             "float: relative delta-f convergence threshold (0 disables)")
         .def_readwrite("n_threads",        &Class::n_threads,
             "int: thread count for EDcalc and FFT steps")
+        .def_readwrite("use_electron_scattering", &Class::use_electron_scattering,
+            "bool: use electron scattering factors (micro-ED / cryo-EM potential) "
+            "instead of X-ray for the density and Agarwal gradients (default False)")
         // b_restraints / b_target_restraints / occupancy groups are no longer
         // caller-set: restraints are supplied (ChimeraX-indexed + altloc) as
         // launch() / launch_realspace() arguments and occupancy groups are

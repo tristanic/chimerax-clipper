@@ -28,7 +28,10 @@ def atom_list_from_sel(atom_list):
     '''
     n = len(atom_list)
     from .scattering import ionic_scattering_names
-    elements = ionic_scattering_names(atom_list)
+    # This atom list feeds symmetry / unit-cell handling, not the structure-factor
+    # calculation, so don't announce a scattering-factor choice here (log=False):
+    # the radiation-appropriate message is emitted on the map path instead.
+    elements = ionic_scattering_names(atom_list, log=False)
     coords = atom_list.coords
     occupancies = atom_list.occupancies
     import numpy

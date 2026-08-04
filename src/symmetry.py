@@ -307,24 +307,98 @@ def _crystal_symmetry_from_cif(path):
             raise TypeError('Could not determine space group from CIF!')
         spacegroup = Spacegroup(Spgr_descr(sym))
 
-    res = _resolution_from_cif(diffrn_t, cell_t)
+    # Grid sampling for the real-space (display) map and the special-position
+    # multiplicity lookup. Prefer the resolution the DEPOSITED REFLECTIONS actually
+    # reach, so the display map is gridded to match the data (not an arbitrary
+    # clamp); fall back to the CIF collection limits, then the default. Clamp to a
+    # sane range, then cap the total grid size as a final backstop against an
+    # adversarial cell x resolution product (COD is machine-aggregated - see
+    # _resolution_from_cif).
+    res = _resolution_from_reflections(path, cell)
+    if res is None:
+        res = _resolution_from_cif(diffrn_t, cell_t)
+    res = min(max(res, 0.3), 5.0)
     grid = Grid_sampling(spacegroup, cell, Resolution(res))
+    while grid.nu * grid.nv * grid.nw > 64000000 and res < 5.0:
+        res = min(res * 1.5, 5.0)
+        grid = Grid_sampling(spacegroup, cell, Resolution(res))
     return cell, spacegroup, grid, res
 
 
 def _resolution_from_cif(diffrn_t, cell_t):
     # High-resolution limit d_min = lambda / (2 sin(theta_max)); theta in degrees.
-    from math import sin, radians
+    #
+    # This resolution only sizes the Grid_sampling for the real-space map and the
+    # special-position multiplicity lookup - it is NOT the resolution of the
+    # structure-factor calculation (that comes from the reflections themselves). It
+    # must nonetheless be a sane positive number: COD is machine-aggregated, so the
+    # CIF fields are adversarial. A non-positive wavelength (the '-1'/'0' "not
+    # recorded" sentinels) yields a non-positive d_min -> Grid_sampling returns a
+    # negative/overflowed grid -> the Xmap allocation SEGFAULTS; an electron-
+    # diffraction wavelength (~0.02 A) fed to the X-ray Bragg relation yields an
+    # absurd ~0.016 A d_min -> a multi-billion-point grid -> OUT-OF-MEMORY crash.
+    # Reject non-positive inputs to the default and clamp to a physical small-molecule
+    # range so neither can happen.
+    from math import sin, radians, isfinite
+    default = 0.84  # sensible small-molecule default when collection limits are absent
     wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
     theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
     if theta is None:
         theta = _first_cif_field(cell_t, 'measurement_theta_max')
+    res = default
     try:
         if wl is not None and theta is not None:
-            return float(_strip_su(wl)) / (2.0 * sin(radians(float(_strip_su(theta)))))
+            wl = float(_strip_su(wl))
+            sin_theta = sin(radians(float(_strip_su(theta))))
+            if wl > 0 and sin_theta > 0:
+                res = wl / (2.0 * sin_theta)
     except (ValueError, ZeroDivisionError):
-        pass
-    return 0.84  # sensible small-molecule default when collection limits are absent
+        res = default
+    if not isfinite(res) or res <= 0:
+        res = default
+    return min(max(res, 0.5), 5.0)
+
+
+def _resolution_from_reflections(path, cell, min_refl=10):
+    '''Highest-resolution limit (d_min, Angstrom) implied by the DEPOSITED reflections -
+    a sibling .hkl reflection CIF or an embedded _refln_ loop - as 1/sqrt(max invresolsq).
+    This is the true experimental resolution, so the display-map grid can be sized to
+    match the data. Returns None when no usable reflection list is present (no _refln_
+    loop, or fewer than min_refl indexed reflections), so the caller falls back to the
+    CIF collection limits.'''
+    import os, numpy
+    from math import cos
+    from chimerax.mmcif import get_cif_tables
+    for cand in (os.path.splitext(path)[0] + '.hkl', path):
+        if not os.path.exists(cand):
+            continue
+        tables = get_cif_tables(cand, ['refln'])
+        refln = tables[0] if tables else None
+        if refln is None or not (refln.has_field('index_h')
+                                 and refln.has_field('F_squared_meas')):
+            continue
+        hkl = []
+        for r in refln.fields(('index_h', 'index_k', 'index_l'), allow_missing_fields=True):
+            try:
+                hkl.append((int(r[0]), int(r[1]), int(r[2])))
+            except (ValueError, IndexError):
+                pass
+        if len(hkl) < min_refl:
+            continue
+        hkl = numpy.array(hkl, float)
+        # invresolsq = h . G* . h via the reciprocal-cell parameters; matches Clipper
+        # HKL.invresolsq to machine precision, vectorized over every reflection.
+        asx, bsx, csx = cell.a_star, cell.b_star, cell.c_star
+        ca, cb, cg = cos(cell.alpha_star), cos(cell.beta_star), cos(cell.gamma_star)
+        H, K, L = hkl[:, 0], hkl[:, 1], hkl[:, 2]
+        invresolsq = ((H * asx) ** 2 + (K * bsx) ** 2 + (L * csx) ** 2
+                      + 2 * K * L * bsx * csx * ca + 2 * H * L * asx * csx * cb
+                      + 2 * H * K * asx * bsx * cg)
+        smax = float(invresolsq.max())
+        if smax > 0:
+            return 1.0 / numpy.sqrt(smax)
+    return None
+
 
 def simple_p1_box(model, resolution=3):
     '''
@@ -373,8 +447,15 @@ def symmetry_from_model_metadata_mmcif(model):
     if not res:
             res = 3.0
 
+    # Extract the real cell + space group only for crystallographic experiments.
+    # Electron *crystallography* (micro-ED / SerialED / 3D-ED) and neutron
+    # diffraction are genuine crystals with a real unit cell, so include them
+    # alongside X-ray; single-particle cryo-EM (em_3d_reconstruction) and other
+    # non-crystalline methods still fall back to a P1 bounding box.
+    CRYSTALLOGRAPHIC_METHODS = (
+        'X-RAY DIFFRACTION', 'ELECTRON CRYSTALLOGRAPHY', 'NEUTRON DIFFRACTION')
     exptl_data = metadata.get('exptl data', None)
-    if exptl_data is None or 'X-RAY DIFFRACTION' not in exptl_data:
+    if exptl_data is None or not any(m in exptl_data for m in CRYSTALLOGRAPHIC_METHODS):
         return simple_p1_box(model, resolution=res)
 
     try:
@@ -668,6 +749,12 @@ class SymmetryManager(Model):
         super().__init__(name, session)
         self._last_box_center = session.view.center_of_rotation
         self._session_restore = False
+        # Durable "just restored from a session" flag. Unlike _session_restore
+        # (True only during the synchronous add_model in _end_restore_session_cb),
+        # this stays True until after the deferred 'frame drawn' default-styling
+        # callbacks have run, so restored per-atom colours / draw modes / display
+        # bits / radii / cartoon are NOT overwritten with Clipper defaults.
+        self._restored_skip_default_styling = False
         self._debug = debug
         self._stepper = None
         self._last_covered_selection = None
@@ -700,9 +787,17 @@ class SymmetryManager(Model):
             # Replaced the atomic model with a new one. All structure change
             # handlers will need to be reapplied
             'model replaced',
-            # Shifted some subset of atoms into a different ASU. Firing data 
+            # Shifted some subset of atoms into a different ASU. Firing data
             # should contain the shifted atoms and the transform applied
             'sym shifted atoms',
+            # Fires whenever the displayed set of symmetry ghosts is (re)drawn -
+            # i.e. at the end of AtomicSymmetryModel.update_graphics (spotlight
+            # move, focal-set display, coordinate change, ...). Firing data is the
+            # AtomicSymmetryModel. Lets dependent bundles (e.g. ISOLDE, which
+            # draws its own validation/restraint markup on the ghosts) refresh in
+            # lockstep without polling. Registered on the manager (not the lazily-
+            # recreated AtomicSymmetryModel) so subscriptions are durable.
+            'symmetry display changed',
         )
         for t in trigger_names:
             self.triggers.add_trigger(t)
@@ -771,6 +866,11 @@ class SymmetryManager(Model):
             )
         if not self._session_restore:
             self.set_default_atom_display(mode=self._hydrogen_mode)
+        # NB: no metadata write-back here. On plain association Clipper *reads* the
+        # model's symmetry (from its metadata), so there is nothing to rewrite, and
+        # doing so would clobber fields like _exptl.method. Write-back happens only
+        # where Clipper *changes* the symmetry: add_symmetry_info (new/different
+        # dataset) and discard_model_symmetry (revert to P1).
 
     def _structure_change_cb(self, trigger_name, changes):
         if 'aniso_u changed' in changes[1].atom_reasons():
@@ -800,12 +900,92 @@ class SymmetryManager(Model):
         self.resolution = resolution
         self._unit_cell = Unit_Cell(self.structure.atoms, cell, spacegroup, grid_sampling)
         self.has_symmetry = True
+        self._write_symmetry_to_model_metadata()
+
+    @staticmethod
+    def _metadata_field(md, category, tag):
+        '''Value of one field in an mmCIF metadata category, or None. ChimeraX
+        stores a category as md[category] = [category, tag1, ...] and
+        md[category+' data'] = [val1, ...] aligned to the tags.'''
+        headers = md.get(category)
+        values = md.get(category + ' data')
+        if not headers or not values:
+            return None
+        try:
+            idx = [h.lower() for h in headers[1:]].index(tag.lower())
+        except ValueError:
+            return None
+        return values[idx] if idx < len(values) else None
+
+    def _write_symmetry_to_model_metadata(self):
+        '''Rewrite the model's *native* symmetry metadata to Clipper's current
+        authoritative symmetry, so the model stays self-consistent and any later
+        re-derivation (or re-save to PDB/mmCIF) is correct. This matters when a
+        model's original metadata symmetry is irrelevant to its current use -- an
+        old crystal model reused in a cryo-EM (non-crystallographic) context, or
+        reused with a new crystal dataset of different cell/space group.
+
+        Only the model's *native* representation is written (PDB CRYST1, or mmCIF
+        cell/symmetry): ChimeraX's writers cross-convert between the two via
+        metadata (mmcif_write builds cell/symmetry from CRYST1; the PDB writer
+        builds CRYST1 from cell/symmetry), so writing both risks confusing their
+        "came-from-X" heuristics. No-op during session restore.'''
+        if getattr(self, '_session_restore', False):
+            return
+        model = self.structure
+        if model is None:
+            return
+        set_entry = getattr(model, 'set_metadata_entry', None)
+        if set_entry is None:
+            return
+        if self.has_symmetry:
+            a, b, c = self.cell.dim
+            al, be, ga = self.cell.angles_deg
+            hm = self.spacegroup.symbol_hm
+        else:
+            # Conventional "no crystallographic symmetry": unit cubic P1 box.
+            a = b = c = 1.0
+            al = be = ga = 90.0
+            hm = 'P 1'
+        md = model.metadata
+        if 'cell' in md and 'CRYST1' not in md:
+            # mmCIF-origin.
+            if not self.has_symmetry:
+                # Non-crystallographic: drop cell/symmetry so re-derivation falls
+                # through to simple_p1_box (cleaner than fighting the _exptl gate).
+                set_entry('cell', None)
+                set_entry('symmetry', None)
+            else:
+                fmt = lambda v: '{:.4f}'.format(v)
+                set_entry('cell', ['cell', 'length_a', 'length_b', 'length_c',
+                                   'angle_alpha', 'angle_beta', 'angle_gamma'])
+                set_entry('cell data', [fmt(a), fmt(b), fmt(c), fmt(al), fmt(be), fmt(ga)])
+                set_entry('symmetry', ['symmetry', 'space_group_name_H-M'])
+                set_entry('symmetry data', [hm])
+                # symmetry_from_model_metadata_mmcif only reads the cell if
+                # _exptl.method names a crystallographic experiment. Preserve an
+                # existing crystallographic method (e.g. ELECTRON CRYSTALLOGRAPHY);
+                # only set one when promoting a previously non-crystallographic model.
+                CRYST = ('X-RAY DIFFRACTION', 'ELECTRON CRYSTALLOGRAPHY', 'NEUTRON DIFFRACTION')
+                cur = self._metadata_field(md, 'exptl', 'method')
+                if cur is None or cur.upper() not in CRYST:
+                    rt = str(getattr(self.map_mgr, 'radiation_type', None)).lower()
+                    method = 'ELECTRON CRYSTALLOGRAPHY' if rt == 'electron' else 'X-RAY DIFFRACTION'
+                    set_entry('exptl', ['exptl', 'method'])
+                    set_entry('exptl data', [method])
+        else:
+            # PDB-origin (or no prior symmetry metadata): one raw fixed-width
+            # CRYST1 record, using ChimeraX's exact pdb_chars.cpp format -- which
+            # is also exactly what symmetry_from_model_metadata_pdb parses by column.
+            line = 'CRYST1%9.3f%9.3f%9.3f%7.2f%7.2f%7.2f %-11s%4d' % (
+                a, b, c, al, be, ga, hm, 1)
+            set_entry('CRYST1', [line])
 
     def added_to_session(self, session):
         # Temporary hack due to issue #18427 in ChimeraX 1.10. TODO: remove for 1.11
         self.structure._cpp_notify_position(self.structure.scene_position)
         super().added_to_session(session)
-        if self.structure is not None:
+        if self.structure is not None and not self._restored_skip_default_styling:
             self.set_default_atom_display(mode=self._hydrogen_mode)
         from .mousemodes import initialize_clipper_mouse_modes
         initialize_clipper_mouse_modes(session)
@@ -1036,8 +1216,10 @@ class SymmetryManager(Model):
         if len(self.map_mgr.xmapsets):
             raise RuntimeError('Cannot discard model symmetry while a crystal '
                 'dataset is loaded!')
-        self.cell, self.spacegroup, self.grid, self._has_symmetry = simple_p1_box(self.structure)
+        self.cell, self.spacegroup, self.grid, self.resolution, self._has_symmetry = \
+            simple_p1_box(self.structure)
         self._unit_cell = Unit_Cell(self.structure.atoms, self.cell, self.spacegroup, self.grid)
+        self._write_symmetry_to_model_metadata()
 
 
     def set_default_atom_display(self, mode='polar'):
@@ -1301,6 +1483,9 @@ class SymmetryManager(Model):
     @staticmethod
     def restore_snapshot(session, data):
         sh = SymmetryManager(session)
+        # Preserve the restored model's saved display: block default styling until
+        # the deferred 'frame drawn' callbacks have run (cleared in _end_restore_session_cb).
+        sh._restored_skip_default_styling = True
         Model.set_state_from_snapshot(sh, session, data['model state'])
         session.triggers.add_handler('end restore session', sh._end_restore_session_cb)
         sh._session_restore_data = data
@@ -1315,6 +1500,11 @@ class SymmetryManager(Model):
             self.add_model(self.structure, session_restore_data=data)
         delattr(self, '_session_restore_data')
         self._session_restore=False
+        # NB: _restored_skip_default_styling is NOT cleared here on a frame count
+        # (that released it before the deferred styling callback fired). It is
+        # cleared inside AtomicSymmetryModel._set_default_cartoon_cb, which is the
+        # last deferred one-time styling event — so the flag lives exactly as long
+        # as needed regardless of how many frames the callback takes to fire.
         from chimerax.core.triggerset import DEREGISTER
         return DEREGISTER
 
@@ -1381,7 +1571,10 @@ class AtomicSymmetryModel(Model):
         self.live_scrolling = live
         self._save_session_handler = session.triggers.add_handler('begin save session',
             self._start_save_session_cb)
-        self._assign_atom_radii(self.structure.atoms)
+        # On session restore, keep the restored atom radii; only assign default
+        # per-element radii for a genuine fresh association.
+        if not getattr(self.manager, '_restored_skip_default_styling', False):
+            self._assign_atom_radii(self.structure.atoms)
 
     def added_to_session(self, session):
         super().added_to_session(session)
@@ -1394,6 +1587,14 @@ class AtomicSymmetryModel(Model):
         from chimerax.core.triggerset import DEREGISTER
         if not hasattr(self, 'session'):
             # Most likely the model has been closed prior to drawing. Just deregister
+            return DEREGISTER
+        if getattr(self.manager, '_restored_skip_default_styling', False):
+            # Session restore carries the saved cartoon/colour/display state;
+            # don't overwrite it. This is the last deferred one-time styling event
+            # of a restore, so releasing the flag here (rather than on a fragile
+            # frame count) is exactly when the restore-styling window closes -- and
+            # lets later genuine restyles (swap_model, user-added atoms) proceed.
+            self.manager._restored_skip_default_styling = False
             return DEREGISTER
         from .util import set_to_default_cartoon
         set_to_default_cartoon(self.session, model = self.structure)
@@ -1473,56 +1674,74 @@ class AtomicSymmetryModel(Model):
             whole_residues (default true):
                 Whether to expand the selections to whole_residues.
         '''
-        if coords is None:
-            coords = atoms.coords
-        coords = coords.astype(numpy.float32)
-        master_atoms = self.structure.atoms
-        master_coords = master_atoms.coords.astype(numpy.float32)
-        from .clipper_util import get_minmax_grid
-        grid_minmax = get_minmax_grid(coords, self.cell, self.grid)
-        from .crystal import calculate_grid_padding
-        pad = calculate_grid_padding(cutoff, self.grid, self.cell)
-        grid_minmax += numpy.array((-pad, pad))
-        min_xyz = clipper_python.Coord_grid(grid_minmax[0]).coord_frac(self.grid).coord_orth(self.cell).xyz
-        dim = grid_minmax[1]-grid_minmax[0]
-        symops = self.unit_cell.all_symops_in_box(min_xyz, dim, True, self._sym_search_frequency)
-        symmats = symops.all_matrices_orth(self.cell, '3x4')
+        from .sym_realize import sym_select_within as _sym_select_within
+        return _sym_select_within(self.structure, self.cell, self.grid,
+            self.unit_cell, atoms, cutoff, coords=coords,
+            whole_residues=whole_residues,
+            sym_search_frequency=self._sym_search_frequency)
+
+    def _places_from_matrices(self, matrices, indices, include_identity):
+        '''
+        Turn a set of orthogonal-space 3x4 symmetry matrices and a collection of
+        indices into them into a list of ChimeraX Place objects. The identity
+        (ASU) operator lives at index 0 (see Unit_Cell.all_symops_in_box) and is
+        placed first when requested; all other operators follow in ascending
+        index order so the result is deterministic.
+        '''
+        from .sym_realize import places_from_matrices
+        return places_from_matrices(matrices, indices, include_identity)
+
+    def currently_displayed_sym_transforms(self, include_identity=True):
+        '''
+        Return the symmetry operators (as a list of ChimeraX Place objects, in the
+        master model's own coordinate frame) for every symmetry copy currently
+        drawn in the spotlight - i.e. every copy whose ribbon is being displayed.
+        The identity/ASU transform is included first unless include_identity is
+        False. Returns an empty list if nothing is currently displayed.
+        '''
+        tfs = getattr(self, '_current_tfs', None)
+        ribbon_syms = getattr(self, '_current_ribbon_syms', None)
+        if tfs is None or ribbon_syms is None or not len(tfs):
+            return []
+        return self._places_from_matrices(tfs, ribbon_syms, include_identity)
+
+    def drawn_ghosts_by_operator(self, include_identity=False):
+        '''
+        Return the symmetry ghosts currently drawn, grouped by operator, as a list
+        of ``(Place, Atoms)`` tuples: for each operator with at least one ghost on
+        screen, the operator (as a :class:`Place` in the master model's coordinate
+        frame) and the master :class:`Atoms` whose ghost copies are drawn under it.
+        The identity/ASU operator (the real atoms) is excluded unless
+        ``include_identity`` is True. Returns an empty list if nothing is drawn.
+
+        This is the public accessor for "what symmetry is on screen right now",
+        intended for dependent bundles that draw their own decorations on the
+        ghosts. It reflects exactly what :meth:`update_graphics` last drew; pair it
+        with the manager's ``'symmetry display changed'`` trigger to stay in sync.
+        '''
+        sym_atoms = getattr(self, '_current_sym_atoms', None)
+        atom_syms = getattr(self, '_current_atom_syms', None)
+        tfs = getattr(self, '_current_tfs', None)
+        if sym_atoms is None or atom_syms is None or tfs is None or not len(sym_atoms):
+            return []
         from chimerax.geometry import Place
-        target = [(coords, Place().matrix.astype(numpy.float32))]
-        search_list = []
-        for i, s in enumerate(symmats):
-            search_list.append((master_coords, s.astype(numpy.float32)))
-        from chimerax.geometry import find_close_points_sets
-        # We want to respond gracefully if the cutoff is zero, but
-        # find_close_points_sets returns nothing if the cutoff is
-        # *actually* zero. So just set it to a very small non-zero value.
-        if cutoff == 0:
-            cutoff = 1e-6
-        i1, i2 = find_close_points_sets(search_list, target, cutoff)
-        found_atoms = []
-        sym_indices = []
-        sym_count = 0
-        for i, (c, s) in enumerate(zip(i1, symmats)):
-            if len(c):
-                sel = master_atoms[c]
-                if whole_residues:
-                    sel = sel.unique_residues.atoms
-                found_atoms.append(sel)
-                indices = numpy.empty(len(sel), numpy.uint8)
-                indices[:] = i
-                sym_indices.append(indices)
-        if len(found_atoms) > 1:
-            from chimerax.atomic import concatenate
-            found_atoms = concatenate(found_atoms)
-            sym_indices = numpy.concatenate(sym_indices)
-        elif len(found_atoms) == 0:
-            from chimerax.atomic import Atoms
-            found_atoms = Atoms()
-            sym_indices = numpy.array([], numpy.uint8) #sym_indices[0]
-        else:
-            found_atoms = found_atoms[0]
-            sym_indices = sym_indices[0]
-        return (found_atoms, symmats, sym_indices, symops)
+        out = []
+        for idx in numpy.unique(atom_syms):
+            idx = int(idx)
+            if idx == 0 and not include_identity:
+                continue
+            out.append((Place(matrix=tfs[idx]), sym_atoms[atom_syms == idx]))
+        return out
+
+    def sym_transforms_near(self, atoms, cutoff, include_identity=True):
+        '''
+        Return the symmetry operators (as a list of ChimeraX Place objects, in the
+        master model's own coordinate frame) for every symmetry copy with at least
+        one atom approaching within cutoff (Angstroms) of the given atoms. The
+        identity/ASU transform is included first unless include_identity is False.
+        '''
+        found_atoms, symmats, sym_indices, symops = self.sym_select_within(atoms, cutoff)
+        return self._places_from_matrices(symmats, sym_indices, include_identity)
 
     def delete(self):
         bh = self._box_changed_handler
@@ -1551,7 +1770,9 @@ class AtomicSymmetryModel(Model):
         else:
             raise TypeError('Unrecognised mode! Should be one of "ribbon" or "CA trace"')
         if old_mode != mode:
-            self.triggers.activate_trigger('backbone mode changed', mode)
+            # 'backbone mode changed' is registered on the manager, not on this
+            # model's own (Model-default) TriggerSet, so fire it there.
+            self.manager.triggers.activate_trigger('backbone mode changed', mode)
 
     def unhide_all_atoms(self):
         self.structure.atoms.hides &= ~HIDE_ISOLDE
@@ -1806,7 +2027,11 @@ class AtomicSymmetryModel(Model):
         update_needed = False
         ribbon_update_needed = False
         created_atoms = changes.created_atoms()
-        if len(created_atoms):
+        # Skip default radii/style while a session restore is settling: any
+        # atoms reported here then are the restored structure's own atoms, whose
+        # saved radii/colours/draw-modes must be preserved. Genuine user-added
+        # atoms (after the restore flag clears) are styled normally.
+        if len(created_atoms) and not getattr(self.manager, '_restored_skip_default_styling', False):
             self._assign_atom_radii(created_atoms)
             self._set_new_atom_style(created_atoms)
         if len(created_atoms) or changes.num_deleted_atoms()>0:
@@ -1865,6 +2090,11 @@ class AtomicSymmetryModel(Model):
         self._update_atom_graphics(lod)
         self._update_bond_graphics(lod)
         self._update_ribbon_graphics()
+        # Every path that changes the displayed ghost set converges here, and all
+        # _current_* state is fresh at this point. Notify dependent bundles (e.g.
+        # ISOLDE) so they can redraw markup on the ghosts. Fired on the durable
+        # manager so subscriptions survive AtomicSymmetryModel recreation.
+        self.manager.triggers.activate_trigger('symmetry display changed', self)
 
     def _update_atom_graphics(self, lod):
         ad = self._atoms_drawing
@@ -2000,12 +2230,42 @@ class PickedSymAtom(Pick):
 #from chimerax.core.atomic.structure import BondsDrawing
 class SymBondsDrawing(structure.BondsDrawing):
     def first_intercept(self, mxyz1, mxyz2, exclude=None):
-        return None #too-hard basket for now.
-
         if not self.display or (exclude and exclude(self)):
             return None
-        #from chimerax.core.atomic.structure import _bond_intercept
-        b, f = structure._bond_intercept(bonds, mxyz1, mxyz2)
+        asm = self.parent
+        bonds = getattr(asm, '_current_bonds', None)
+        if bonds is None or not len(bonds):
+            return None
+        tfs = asm._current_tfs
+        symops = asm._current_symops
+        # _current_bond_syms has one entry per half-bond (2 x len(bonds)), laid out
+        # blocked as [half0 for each bond, half1 for each bond]; both halves of a
+        # bond share an operator, so the per-bond operator index is the first half.
+        nb = len(bonds)
+        bond_syms = numpy.asarray(asm._current_bond_syms)[:nb]
+        from chimerax.geometry import Place, closest_cylinder_intercept
+        best_bond = best_f = best_k = None
+        # A ghost bond under operator k is the master bond transformed by the
+        # operator, so intercepting the ray with the ghost is the same as
+        # intercepting the *inverse-transformed* ray with the master bond (the ray
+        # fraction is preserved by the rigid transform). We hit-test against the
+        # master bond geometry directly (closest_cylinder_intercept, not
+        # _bond_intercept) so a ghost stays pickable even when its master bond is
+        # hidden by the spotlight - matching how SymAtomsDrawing picks.
+        for k in numpy.unique(bond_syms):
+            k = int(k)
+            bset = bonds[bond_syms == k]
+            if not len(bset):
+                continue
+            lxyz1, lxyz2 = Place(matrix=tfs[k]).inverse() * (mxyz1, mxyz2)
+            a1, a2 = bset.atoms
+            f, bnum = closest_cylinder_intercept(a1.coords, a2.coords, bset.radii,
+                                                 lxyz1, lxyz2)
+            if f is not None and (best_f is None or f < best_f):
+                best_bond, best_f, best_k = bset[bnum], f, k
+        if best_bond is None:
+            return None
+        return PickedSymBond(best_bond, best_f, symops[best_k])
 
     def planes_pick(self, mxyz1, mxyz2, exclude=None):
         return []

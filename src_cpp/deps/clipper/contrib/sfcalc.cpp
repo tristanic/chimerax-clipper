@@ -92,7 +92,7 @@ template<class T> bool SFcalc_aniso_sum<T>::operator() ( HKL_data<datatypes::F_p
     for ( int j = 0; j < spgr.num_symops(); j++ ) {
       Atom atom( atoms[i] );
       atom.transform( spgr.symop(j).rtop_orth( cell ) );
-      AtomShapeFn sf( atom );
+      AtomShapeFn sf( atom, radiation_ );
       Coord_frac uvw =	atom.coord_orth().coord_frac( cell );
       for ( ih = hkls.first(); !ih.last(); ih.next() ) {
 	T phi = Util::twopi() * (ih.hkl().coord_reci_frac()*uvw);
@@ -164,7 +164,7 @@ template<class T> bool SFcalc_aniso_fft<T>::operator() ( HKL_data<datatypes::F_p
     U_aniso_orth u( atoms[i].u_aniso_orth() );
     if ( u.is_null() ) u = U_aniso_orth( atoms[i].u_iso() );
     AtomShapeFn sf( atoms[i].coord_orth(), atoms[i].element(),
-		    u + uadd, atoms[i].occupancy() );
+		    u + uadd, atoms[i].occupancy(), radiation_ );
     uvw = atoms[i].coord_orth().coord_frac( cell );
     g0 = uvw.coord_grid( grid ) + gd.min();
     g1 = uvw.coord_grid( grid ) + gd.max();

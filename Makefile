@@ -130,12 +130,12 @@ clean:
 # with no re-run. See tools/chimerax_clipper_parallel_build.py.
 install-parallel-build-hook:
 	CXC_HOOK_SRC="$(CURDIR)/tools/chimerax_clipper_parallel_build.py" \
-	  "$(CHIMERAX_EXE)" --nogui --silent --exit \
+	  $(CHIMERAX_EXE) --nogui --silent --exit \
 	  --script "$(CURDIR)/tools/install_parallel_build_hook.py"
 
 uninstall-parallel-build-hook:
 	CXC_HOOK_UNINSTALL=1 \
-	  "$(CHIMERAX_EXE)" --nogui --silent --exit \
+	  $(CHIMERAX_EXE) --nogui --silent --exit \
 	  --script "$(CURDIR)/tools/install_parallel_build_hook.py"
 
 .PHONY: docs install-parallel-build-hook uninstall-parallel-build-hook

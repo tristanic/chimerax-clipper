@@ -93,6 +93,17 @@ class XmapSet(MapSetBase):
         '2mFo-DFc': {'b_sharp': 0, 'is_difference_map': False, 'display': True},
         'mFo-DFc': {'b_sharp': 0, 'is_difference_map': True, 'display': True},
     }
+    # Structure-factor component maps for the `clipper debugmaps` command. Each is a
+    # live map that FFTs a raw component rather than sigmaa-weighted coefficients:
+    # Fcalc = total model (atoms + bulk); Fatoms = atoms only; Fbulk = k_sol*F_mask
+    # bulk contribution; Fmask = the (smoothed) solvent-mask transform. They are
+    # display-gated (Part B): created hidden and only FFT'd while shown.
+    DEBUG_MAP_SPECS = (
+        ('Fcalc (total)', 'fcalc'),
+        ('Fatoms',        'fatoms'),
+        ('Fbulk',         'fbulk'),
+        ('Fmask',         'fmask'),
+    )
     def __init__(self, manager, crystal_data = None,
         use_live_maps = True,
         use_static_maps = True,
@@ -104,7 +115,8 @@ class XmapSet(MapSetBase):
         show_r_factors=True,
         auto_add_to_session=True,
         small_molecule_data=None,
-        map_columns=None):
+        map_columns=None,
+        radiation='xray'):
         '''
         Prepare the XmapSet and create all required maps.
 
@@ -173,6 +185,11 @@ class XmapSet(MapSetBase):
 
         xm = self._live_xmap_mgr = None
         self._small_molecule_data = small_molecule_data
+        # X-ray (default) vs electron scattering factors for the live Fcalc. For
+        # small-molecule maps radiation travels inside small_molecule_data; for the
+        # macromolecular path it is applied to the C++ Xtal_thread_mgr (see
+        # _launch_live_xmap_mgr).
+        self._radiation = radiation
         self._live_update = False
         self._recalc_needed = False
         self._model_changes_handler = None
@@ -205,16 +222,16 @@ class XmapSet(MapSetBase):
     def base_name(self):
         return self._name
 
-    def _init_small_molecule_maps(self):
-        '''Set up live small-molecule maps from self._small_molecule_data (cell,
-        spacegroup, grid, hklinfo, resolution, scaffold, fobs amplitudes, the live
-        structure and a scaffold->model index map). Uses SmallMoleculeXmapMgr (FFT
-        structure factors, no bulk solvent) in place of the C++ Xtal_thread_mgr, and
-        reuses the standard box/spotlight + live-recalc machinery.'''
-        smd = self._small_molecule_data
+    def _launch_small_molecule_xmap_mgr(self, smd):
+        '''Build the unit-cell/box scaffold and the SmallMoleculeXmapMgr for a
+        small-molecule crystal, WITHOUT adding any maps. Shared by
+        _init_small_molecule_maps (fresh open, which then adds the 2Fo-Fc / Fo-Fc maps)
+        and _end_restore_session_cb (session restore, where the maps are themselves
+        restored as child models and only re-registered with the manager).'''
+        self._small_molecule_data = smd
         from .. import Unit_Cell, atom_list_from_sel
         alist = atom_list_from_sel(self.structure.atoms)
-        self._unit_cell = Unit_Cell(alist, self.cell, self.spacegroup, self.grid, 5)
+        self._unit_cell = Unit_Cell(alist, smd['cell'], smd['spacegroup'], smd['grid'], 5)
         if self.spotlight_mode:
             self._box_changed_cb('init', (self.spotlight_center, self.display_radius))
         else:
@@ -222,12 +239,22 @@ class XmapSet(MapSetBase):
         from .small_molecule_map import SmallMoleculeXmapMgr
         self._live_xmap_mgr = SmallMoleculeXmapMgr(
             smd['hklinfo'], smd['cell'], smd['spacegroup'], smd['grid'],
-            smd['scaffold'], smd['fobs'],
-            structure=smd.get('structure'),
-            scaffold_to_model=smd.get('scaffold_to_model'))
+            smd['fobs'], smd['structure'],
+            radiation=smd.get('radiation', 'xray'))
         self._maps_initialized = True
-        self.add_live_xmap('2mFo-DFc', is_difference_map=False)
-        diff = self.add_live_xmap('mFo-DFc', is_difference_map=True)
+
+    def _init_small_molecule_maps(self):
+        '''Set up live small-molecule maps from self._small_molecule_data (cell,
+        spacegroup, grid, hklinfo, resolution, fobs amplitudes and the live structure).
+        Uses SmallMoleculeXmapMgr (FFT structure factors, no bulk solvent) in place of
+        the C++ Xtal_thread_mgr, and reuses the standard box/spotlight + live-recalc
+        machinery. The manager reads per-atom SF inputs live from the structure.'''
+        self._launch_small_molecule_xmap_mgr(self._small_molecule_data)
+        # Plain 2Fo-Fc / Fo-Fc, NOT the macromolecular 2mFo-DFc / mFo-DFc: these
+        # coefficients carry Fcalc phases with no sigma-A figure-of-merit (m) or
+        # weighting (D) and no R-free set (see SmallMoleculeXmapMgr).
+        self.add_live_xmap('2Fo-Fc', is_difference_map=False)
+        diff = self.add_live_xmap('Fo-Fc', is_difference_map=True)
         # Small-molecule difference maps are contoured at a fixed ABSOLUTE level
         # (electrons/A^3), not sigma. The map is on the e/A^3 scale (see
         # SmallMoleculeXmapMgr), and a well-fit model leaves a near-flat residual
@@ -241,7 +268,20 @@ class XmapSet(MapSetBase):
         # positive/negative colours stay correct) and pin them: clearing
         # _contour_sigma stops XmapHandler_Live._map_recalc_cb from rescaling the
         # levels by the sigma ratio on each recalculation.
+        #
+        # `level` is a FLOOR, not a fixed value: a well-fit light-atom structure
+        # leaves a near-flat residual whose sigma is tiny, so a +/-3 sigma default
+        # would sit in the noise (blobs over every atom) - hence the 0.3 e/A^3 floor.
+        # But a heavy-atom / atomic-resolution structure has genuinely larger
+        # residuals (hard-to-model heavy atoms plus bonding density), where 0.3 is
+        # far below the noise floor and the map fills with a mess (COD 2020656). Use
+        # max(floor, 3 * robust sigma): the floor wins for clean light-atom maps, the
+        # robust 3-sigma wins for busy ones. Robust (MAD) sigma, so a couple of large
+        # heavy-atom difference lobes don't themselves inflate the level.
         import numpy
+        robust = getattr(handler, 'robust_sigma', None)
+        if robust:
+            level = max(level, 3.0 * robust)
         signs = [s.level for s in handler.surfaces] if handler.surfaces else [level, -level]
         handler.set_parameters(
             surface_levels=[numpy.sign(c) * level if c else level for c in signs])
@@ -387,6 +427,117 @@ class XmapSet(MapSetBase):
         return self._live_xmap_mgr
 
     @property
+    def occupancy_weighted_solvent_mask(self):
+        '''
+        If True (default), the bulk-solvent mask is occupancy-weighted: a
+        partial-occupancy atom (e.g. a partially-occupied ligand or one altloc of
+        a branched side chain) excludes solvent only fractionally, rather than
+        stamping a full exclusion sphere. Set False for the original binary mask
+        (useful for A/B comparison against other refinement packages).
+        '''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.occupancy_weighted_solvent_mask
+        return getattr(self, '_occupancy_weighted_solvent_mask', True)
+
+    @occupancy_weighted_solvent_mask.setter
+    def occupancy_weighted_solvent_mask(self, flag):
+        flag = bool(flag)
+        self._occupancy_weighted_solvent_mask = flag
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.occupancy_weighted_solvent_mask != flag:
+            xm.occupancy_weighted_solvent_mask = flag
+            # Changing the mode alters the mask (and hence f_bulk), so refit the
+            # bulk solvent and recompute the maps.
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def all_reflections(self):
+        '''
+        If False (default), the Fcalc->Fobs bulk-solvent scale is fit on a fixed,
+        seeded subset of reflections (see scaling_seed): fast and reproducible, with
+        a tiny fixed bias vs the full fit. If True, it is fit over all reflections -
+        exact and unbiased, at a larger (one-off) cost. Leave False for interactive
+        live maps; True is used internally where the exact scale matters (e.g. the
+        B-factor/occupancy refiner).
+        '''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.all_reflections
+        return getattr(self, '_all_reflections', False)
+
+    @all_reflections.setter
+    def all_reflections(self, flag):
+        flag = bool(flag)
+        self._all_reflections = flag
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.all_reflections != flag:
+            xm.all_reflections = flag
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_reflections_per_bin(self):
+        '''Reflections per resolution bin in the seeded subset used to fit the
+        bulk-solvent scale (default 500). Ignored when all_reflections is True.
+        Exposed for tuning/characterising the subset size.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_reflections_per_bin
+        return getattr(self, '_scaling_reflections_per_bin', 500)
+
+    @scaling_reflections_per_bin.setter
+    def scaling_reflections_per_bin(self, n):
+        n = int(n)
+        self._scaling_reflections_per_bin = n
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_reflections_per_bin != n:
+            xm.scaling_reflections_per_bin = n
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_num_bins(self):
+        '''Number of resolution bins in the seeded subset used to fit the
+        bulk-solvent scale (default 20). Ignored when all_reflections is True.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_num_bins
+        return getattr(self, '_scaling_num_bins', 20)
+
+    @scaling_num_bins.setter
+    def scaling_num_bins(self, n):
+        n = int(n)
+        self._scaling_num_bins = n
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_num_bins != n:
+            xm.scaling_num_bins = n
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
+    def scaling_seed(self):
+        '''Seed for the fixed reflection subset used to fit the bulk-solvent scale
+        (default 10061865). The subset is drawn once and reused across recalculations,
+        so the scale is reproducible; vary the seed to probe sensitivity to which
+        reflections were chosen. Ignored when all_reflections is True.'''
+        xm = self._live_xmap_mgr
+        if xm is not None:
+            return xm.scaling_seed
+        return getattr(self, '_scaling_seed', 10061865)
+
+    @scaling_seed.setter
+    def scaling_seed(self, s):
+        s = int(s)
+        self._scaling_seed = s
+        xm = self._live_xmap_mgr
+        if xm is not None and xm.scaling_seed != s:
+            xm.scaling_seed = s
+            xm.bulk_solvent_optimization_needed()
+            self.recalc_needed()
+
+    @property
     def live_xmaps(self):
         return [m for m in self.child_models() if isinstance(m, XmapHandler_Live)]
 
@@ -521,11 +672,35 @@ class XmapSet(MapSetBase):
         xm = self._live_xmap_mgr = Xtal_thread_mgr(self.hklinfo,
             crystal_data.free_flags.data, self.grid, f_sigf,
             num_threads=available_cores())
+        # Select the scattering-factor table before the first (threaded) recalc.
+        # Electron factors give an electrostatic-potential map + kinematical R-factor
+        # for micro-ED / 3D-ED; X-ray (default) is byte-identical to before.
+        radiation = getattr(self, '_radiation', 'xray')
+        from ..clipper_python import AtomShapeFn
+        xm.radiation = (AtomShapeFn.ELECTRON if str(radiation).lower() == 'electron'
+                        else AtomShapeFn.XRAY)
+        # Occupancy-weighted bulk-solvent mask (default on). Apply any preference
+        # set before the manager existed; harmless no-op when left at the default.
+        xm.occupancy_weighted_solvent_mask = getattr(
+            self, '_occupancy_weighted_solvent_mask', True)
+        # Seeded-subset scaling knobs (size + seed) and the all-reflections toggle.
+        # Apply only preferences set before the manager existed; the default (seeded
+        # subset with the C++ default seed) needs no push. Enabling all_reflections
+        # re-derives the working set, so avoid a needless startup re-sample when left
+        # at the default.
+        if getattr(self, '_scaling_reflections_per_bin', None) is not None:
+            xm.scaling_reflections_per_bin = self._scaling_reflections_per_bin
+        if getattr(self, '_scaling_num_bins', None) is not None:
+            xm.scaling_num_bins = self._scaling_num_bins
+        if getattr(self, '_scaling_seed', None) is not None:
+            xm.scaling_seed = self._scaling_seed
+        if getattr(self, '_all_reflections', False):
+            xm.all_reflections = True
         # from ..util import atom_list_from_sel
         # ca = self._clipper_atoms = atom_list_from_sel(self.structure.atoms)
         atoms = self.structure.atoms
         from ..scattering import ionic_scattering_names
-        xm.init(atoms.pointers, ionic_scattering_names(atoms))
+        xm.init(atoms.pointers, ionic_scattering_names(atoms, radiation=radiation))
         end_time = time()
         print(f'Launching live xmap mgr took {end_time-start_time} seconds.')
 
@@ -570,7 +745,10 @@ class XmapSet(MapSetBase):
                 contour = self.STANDARD_HIGH_CONTOUR
 
 
-        levels = numpy.array(contour) * xmap_handler.sigma
+        # For small-molecule maps this is a winsorized sigma (robust to heavy-atom
+        # peaks); for macromolecular/static maps it is just the raw sigma.
+        sigma_basis = getattr(xmap_handler, 'contour_sigma_basis', xmap_handler.sigma)
+        levels = numpy.array(contour) * sigma_basis
 
         xmap_handler.set_parameters(**{'cap_faces': False,
                                   'surface_levels': levels,
@@ -584,7 +762,7 @@ class XmapSet(MapSetBase):
         # Record the sigma value these (absolute) levels were set against, so the
         # contours can be kept fixed in sigma units if the map is later rescaled
         # (see XmapHandler_Live._map_recalc_cb).
-        xmap_handler._contour_sigma = xmap_handler.sigma
+        xmap_handler._contour_sigma = sigma_basis
 
     def add_live_xmap(self, name,
         b_sharp=0,
@@ -653,6 +831,96 @@ class XmapSet(MapSetBase):
             else:
                 new_handler.display=False
         return new_handler
+
+    def add_live_debug_xmap(self, name, component, color=None, style=None,
+        transparency=0.0, contour=None):
+        '''
+        Add a display-gated live map for a raw structure-factor component (one of
+        'fcalc', 'fatoms', 'fbulk', 'fmask'). The map is created hidden; while
+        hidden it is skipped by the background recalculation (no FFT), and it is
+        brought up to date only when shown or otherwise read. Not saved in sessions.
+        '''
+        xm = self._live_xmap_mgr
+        if xm is None:
+            raise RuntimeError('This crystal dataset has no experimental amplitudes!')
+        xm.add_debug_xmap(name, component)
+        new_handler = XmapHandler_Live(self, name, is_difference_map=False)
+        new_handler._display_gated = True
+        new_handler.bsharp_adjustable = False
+        # Debug maps are a transient diagnostic aid: keep them out of saved sessions
+        # (the restore path replays add_xmap(**_rebuild_args), which does not apply
+        # to component maps).
+        new_handler.SESSION_SAVE = False
+        self.set_xmap_display_style(new_handler, is_difference_map=False,
+            color=color, style=style, transparency=transparency, contour=contour)
+        self.add([new_handler])
+        # Created hidden; sync the manager's display state so it starts gated-off.
+        new_handler.display = False
+        xm.set_map_displayed(name, False)
+        return new_handler
+
+    def add_debug_maps(self):
+        '''Create the standard set of live structure-factor component maps.'''
+        xm = self._live_xmap_mgr
+        if xm is None:
+            from chimerax.core.errors import UserError
+            raise UserError('This crystal dataset has no live maps to debug '
+                '(no experimental amplitudes).')
+        if getattr(self, '_debug_handlers', None):
+            return self._debug_handlers
+        self._register_debug_display_handler()
+        handlers = []
+        for name, component in self.DEBUG_MAP_SPECS:
+            handlers.append(self.add_live_debug_xmap(name, component))
+        self._debug_handlers = handlers
+        return handlers
+
+    def remove_debug_maps(self):
+        '''Remove any live structure-factor component maps.'''
+        handlers = getattr(self, '_debug_handlers', None)
+        if not handlers:
+            return
+        xm = self._live_xmap_mgr
+        for h in handlers:
+            name = h._map_name
+            if not h.deleted:
+                h.delete()
+            if xm is not None:
+                try:
+                    xm.delete_xmap(name)
+                except Exception:
+                    pass
+        self._debug_handlers = []
+        self._deregister_debug_display_handler()
+
+    def _register_debug_display_handler(self):
+        if getattr(self, '_debug_display_handler', None) is not None:
+            return
+        from chimerax.core.models import MODEL_DISPLAY_CHANGED
+        self._debug_display_handler = self.session.triggers.add_handler(
+            MODEL_DISPLAY_CHANGED, self._debug_map_display_changed_cb)
+
+    def _deregister_debug_display_handler(self):
+        h = getattr(self, '_debug_display_handler', None)
+        if h is not None:
+            self.session.triggers.remove_handler(h)
+            self._debug_display_handler = None
+
+    def _debug_map_display_changed_cb(self, trigger_name, model):
+        # A gated component map's visibility drives whether it is FFT'd. On show,
+        # mark it live and refill from fresh data (the read triggers ensure_current
+        # in the C++ manager); on hide, mark it gated-off.
+        if not isinstance(model, XmapHandler_Live):
+            return
+        if not getattr(model, '_display_gated', False) or model.mapset is not self:
+            return
+        xm = self._live_xmap_mgr
+        if xm is None:
+            return
+        shown = bool(model.display)
+        xm.set_map_displayed(model._map_name, shown)
+        if shown:
+            model._map_recalc_cb(model._map_name)
 
     def add_static_xmap(self, dataset,
         is_difference_map=None,
@@ -826,8 +1094,15 @@ class XmapSet(MapSetBase):
         # ca = self._clipper_atoms = atom_list_from_sel(atoms)
         # Ionic scattering factors for any monatomic ions; recomputed here (rather
         # than cached) so it tracks ions added/removed during modelling. The
-        # per-atom species aligns by index with atoms.pointers.
-        elements = ionic_scattering_names(atoms)
+        # per-atom species aligns by index with atoms.pointers. Uses the same
+        # radiation as the manager so per-frame recalcs stay on the electron table
+        # for micro-ED (otherwise they would silently revert to X-ray).
+        elements = ionic_scattering_names(atoms, radiation=getattr(self, '_radiation', 'xray'))
+        # Keep gated component maps' display state current so this recalc FFTs only
+        # the ones currently shown (Part B); hidden ones are refreshed lazily on read.
+        for h in getattr(self, '_debug_handlers', None) or ():
+            if not h.deleted:
+                xm.set_map_displayed(h._map_name, bool(h.display))
         delayed_reaction(self.session.triggers, 'new frame',
             xm.recalculate_all_maps, [atoms.pointers, elements],
             xm.ready,
@@ -855,8 +1130,8 @@ class XmapSet(MapSetBase):
         xm = self.live_xmap_mgr
         xm.apply_new_maps()
         if self.show_r_factors:
-            rfactor_string = 'R-work: {:0.4f}  Rfree: {:0.4f}'.format(xm.rwork, xm.rfree)
-            self.session.logger.status(rfactor_string, secondary=True)
+            self.session.logger.status(self._r_factor_string(precision=4),
+                                       secondary=True)
         if self.report_timing:
             self.session.logger.info(f'Applying new maps for live xmapset #{self.id_string} before "maps recalculated" trigger took {(perf_counter()-start_time)*1e3:.3f} ms.')
             start_time = perf_counter()
@@ -904,6 +1179,19 @@ class XmapSet(MapSetBase):
             )
         self._update_r_factor_text()
 
+    def _r_factor_string(self, precision=4, trailing=''):
+        '''Format the current R-factor(s) for display. A macromolecular manager
+        carries a genuine R-free set, so both Rwork and Rfree are shown; a small-
+        molecule manager (has_rfree = False) has none - it reports a single R, rather
+        than a misleading Rwork == Rfree pair.'''
+        lxm = self.live_xmap_mgr
+        if lxm is None:
+            return ''
+        if getattr(lxm, 'has_rfree', True):
+            return 'Rwork: {0:0.{p}f}  Rfree: {1:0.{p}f}{t}'.format(
+                self.rwork, self.rfree, p=precision, t=trailing)
+        return 'R: {0:0.{p}f}{t}'.format(self.rwork, p=precision, t=trailing)
+
     def _update_r_factor_text(self, *_):
         lb = self._r_factor_label
         lxm = self.live_xmap_mgr
@@ -911,7 +1199,7 @@ class XmapSet(MapSetBase):
             self._r_factor_label_handler = None
             from chimerax.core.triggerset import DEREGISTER
             return DEREGISTER
-        lb.text = 'Rwork: {:0.3f} Rfree: {:0.3f}  '.format(self.rwork, self.rfree)
+        lb.text = self._r_factor_string(precision=3, trailing='  ')
         lb.update_drawing()
 
     def stop_showing_r_factors(self, *_):
@@ -922,6 +1210,12 @@ class XmapSet(MapSetBase):
             self._r_factor_label.delete()
             self._r_factor_label = None
 
+    @property
+    def radiation_type(self):
+        '''Scattering regime of this crystal dataset: 'xray' or 'electron'
+        (None only if somehow unset). Consumed by child XmapHandler_Live.'''
+        return getattr(self, '_radiation', None)
+
     def take_snapshot(self, session, flags):
         from chimerax.core.models import Model
         data = {
@@ -929,7 +1223,28 @@ class XmapSet(MapSetBase):
             'model state': Model.take_snapshot(self, session, flags),
             'F/sigF': self._f_sigf_data_name,
             'live update': self.live_update,
+            'radiation': getattr(self, '_radiation', 'xray'),
         }
+        # Small-molecule crystals carry no ReflectionDataContainer / MTZ (the live maps
+        # come from SmallMoleculeXmapMgr, fed by a raw Fobs HKL_data + crystal definition
+        # held on self._small_molecule_data). None of that is a child model, so persist it
+        # here so a session can rebuild the manager on restore without the source CIF. The
+        # expensive symmetry expansion is NOT redone: the maps recompute cheaply by FFT.
+        smd = self._small_molecule_data
+        if smd is not None:
+            fh, fv = smd['fobs'].data
+            grid = smd['grid']
+            data['small molecule'] = {
+                'hall symbol': smd['spacegroup'].symbol_hall,
+                'cell dim': smd['cell'].dim,
+                'cell angles': smd['cell'].angles_deg,
+                'resolution': smd['resolution'],
+                'grid': (int(grid.nu), int(grid.nv), int(grid.nw)),
+                'fobs hkls': fh,
+                'fobs values': fv,
+                'radiation': smd.get('radiation', 'xray'),
+                'path': smd.get('path'),
+            }
         from .. import CLIPPER_STATE_VERSION
         data['version']=CLIPPER_STATE_VERSION
         return data
@@ -943,12 +1258,68 @@ class XmapSet(MapSetBase):
         xmapset = XmapSet(cm, auto_add_to_session=False)
         Model.set_state_from_snapshot(xmapset, session, data['model state'])
         xmapset._f_sigf_data_name = data['F/sigF']
+        # v2 sessions lack 'radiation'; default to X-ray so old sessions restore
+        # byte-identically. Set before _end_restore_session_cb relaunches the live
+        # manager, which reads _radiation to pick the scattering-factor table.
+        xmapset._radiation = data.get('radiation', 'xray')
         xmapset._session_restore_live_update = data['live update']
+        # Small-molecule crystal data (absent in macromolecular / older sessions). The
+        # crystal definition (cell/spacegroup/grid/hklinfo + Fobs) must be reconstructed
+        # NOW, before the child XmapHandler_Live models restore: their data-array
+        # generation reads self.cell/self.grid (voxel_size), which resolve from
+        # _small_molecule_data. The live manager (needs the atomic structure) is launched
+        # later in _end_restore_session_cb, once the SymmetryManager has reconnected it.
+        sm = data.get('small molecule')
+        if sm is not None:
+            xmapset._reconstruct_small_molecule_crystal(sm)
         session.triggers.add_handler('end restore session', xmapset._end_restore_session_cb)
         return xmapset
 
+    def _reconstruct_small_molecule_crystal(self, sm):
+        '''Rebuild the crystal definition + Fobs (no structure yet) from the persisted
+        'small molecule' snapshot block and install it as self._small_molecule_data, so the
+        cell/spacegroup/grid/hklinfo accessors work while the child maps restore.'''
+        import numpy
+        from .. import (Cell, Cell_descr, Spacegroup, Spgr_descr, Resolution,
+                        Grid_sampling, HKL_info, HKL_data_F_sigF)
+        cell = Cell(Cell_descr(*sm['cell dim'], *sm['cell angles']))
+        spacegroup = Spacegroup(Spgr_descr(sm['hall symbol'], Spgr_descr.Hall))
+        grid = Grid_sampling(*sm['grid'])
+        res = sm['resolution']
+        hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
+        fobs = HKL_data_F_sigF(hklinfo)
+        fobs.set_data(numpy.asarray(sm['fobs hkls']), numpy.asarray(sm['fobs values']))
+        self._radiation = sm.get('radiation', 'xray')
+        # structure is filled in _end_restore_session_cb (reconnected by then).
+        self._small_molecule_data = {
+            'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
+            'resolution': res, 'fobs': fobs, 'structure': None,
+            'path': sm.get('path'), 'radiation': self._radiation}
+
+    def _relaunch_small_molecule_maps(self):
+        '''Launch the SmallMoleculeXmapMgr and re-register the restored 2Fo-Fc / Fo-Fc
+        handlers so they recompute (cheap FFT, NO symmetry re-expansion). Deferred to
+        end-of-restore because it needs the atomic structure, reconnected by the
+        SymmetryManager's own end-restore handler (which runs first, parent before child).'''
+        smd = self._small_molecule_data
+        smd['structure'] = self.structure
+        from ..io.small_molecule import register_clipper_atom_attributes
+        register_clipper_atom_attributes(self.session)
+        self._launch_small_molecule_xmap_mgr(smd)
+        for m in self.child_models():
+            if isinstance(m, XmapHandler_Live):
+                self._live_xmap_mgr.add_xmap(m._map_name, **m._rebuild_args)
+                # Reconnect the contour basis the recalc callback rescales against:
+                # the difference map uses an absolute level (pin _contour_sigma None so
+                # it is not rescaled); the 2Fo-Fc map tracks its winsorized sigma.
+                m._contour_sigma = None if m.is_difference_map else m.contour_sigma_basis
+                m._session_restore = False
+        self.live_update = self._session_restore_live_update
+
     def _end_restore_session_cb(self, *_):
-        if self.crystal_data is not None and self._f_sigf_data_name is not None:
+        if self._small_molecule_data is not None:
+            self._relaunch_small_molecule_maps()
+        elif self.crystal_data is not None and self._f_sigf_data_name is not None:
             for fsigf in self.all_models():
                 if fsigf.name == self._f_sigf_data_name:
                     break
@@ -1090,6 +1461,13 @@ class XmapHandler_Live(XmapHandlerBase):
     a box around the centre of rotation, and static display of a given region.
     '''
     SESSION_SAVE=True
+
+    @property
+    def radiation_type(self):
+        # Live crystallographic map: report the scattering regime of the owning
+        # XmapSet ('xray'/'electron'). Overrides the None default on MapHandlerBase.
+        return getattr(self.mapset, 'radiation_type', None)
+
     def __init__(self, mapset, name,
         is_difference_map=False, session_restore=False):
         '''
@@ -1154,6 +1532,66 @@ class XmapHandler_Live(XmapHandlerBase):
         all = self.xmap_mgr.get_map_stats(self._map_name)
         return (all.mean, all.std_dev, all.std_dev)
 
+    # Winsorization clip factor (in robust sigmas) for small-molecule contour levels.
+    # See contour_sigma_basis.
+    SMALL_MOLECULE_WINSORIZE_C = 8.0
+
+    @property
+    def _is_small_molecule_map(self):
+        from .small_molecule_map import SmallMoleculeXmapMgr
+        return isinstance(self.xmap_mgr, SmallMoleculeXmapMgr)
+
+    def _whole_cell_values(self):
+        '''The whole periodic unit-cell grid as a flat float64 array, or None. Read
+        losslessly over [0, n) in each axis (matching self.sigma, which is the
+        whole-cell Clipper std_dev).'''
+        xmap = self.xmap
+        if xmap is None:
+            return None
+        from .. import Coord_grid
+        gs = xmap.grid_sampling
+        return numpy.asarray(xmap.export_section_numpy(
+            Coord_grid(0, 0, 0),
+            Coord_grid(int(gs.nu), int(gs.nv), int(gs.nw))), numpy.float64).ravel()
+
+    @property
+    def robust_sigma(self):
+        '''A MAD-based standard-deviation estimate of the whole-cell map, robust to a
+        few extreme (heavy-atom) density peaks. Falls back to the raw sigma when the
+        grid is unavailable or degenerate.'''
+        rho = self._whole_cell_values()
+        if rho is None:
+            return self.sigma
+        med = numpy.median(rho)
+        mad = float(numpy.median(numpy.abs(rho - med)) * 1.4826)
+        return mad if mad > 0 else self.sigma
+
+    @property
+    def contour_sigma_basis(self):
+        '''The sigma the default contour levels are pinned to and rescaled by (see
+        XmapSet.set_xmap_display_style and _do_recalc_refill).
+
+        For small-molecule maps this is a WINSORIZED sigma, not the raw whole-cell
+        sigma. A crystal with heavy atoms produces a handful of enormous density
+        peaks - a 53-electron iodine reaches ~200 e/A^3 in 2Fo-Fc versus ~12 for
+        carbon - which inflate the raw sigma several-fold; the standard 2.5-sigma
+        level then lands above every light-atom peak and the framework contours to
+        nothing (COD 2020656 was the reported case). Clipping the map at
+        median +/- c*MAD before taking the standard deviation removes the heavy-atom
+        tail so the level tracks the light-atom density scale. Macromolecular maps
+        are near-Gaussian (no dominant scatterer) and keep the raw sigma unchanged.'''
+        if not self._is_small_molecule_map:
+            return self.sigma
+        rho = self._whole_cell_values()
+        if rho is None:
+            return self.sigma
+        med = numpy.median(rho)
+        mad = numpy.median(numpy.abs(rho - med)) * 1.4826
+        if not mad > 0:
+            return self.sigma
+        c = self.SMALL_MOLECULE_WINSORIZE_C
+        return float(numpy.clip(rho, med - c * mad, med + c * mad).std())
+
     @property
     def b_sharp(self):
         '''
@@ -1192,6 +1630,17 @@ class XmapHandler_Live(XmapHandlerBase):
     def _map_recalc_cb(self, name, *_):
         if self.deleted:
             return
+        # A hidden display-gated (debug) map is skipped by the recalc loop and left
+        # dirty; refilling it would force a synchronous FFT via ensure_current and
+        # defeat the gating. It is refreshed on show instead (see
+        # XmapSet._debug_map_display_changed_cb).
+        if getattr(self, '_display_gated', False) and not self.display:
+            return
+        # Defer the in-place box refill if a contour worker is still reading the
+        # buffer (avoids tearing the surface into garbage triangle indices).
+        self._refill_when_idle('recalc', self._do_recalc_refill)
+
+    def _do_recalc_refill(self):
         for s in self.surfaces:
             s._use_thread=True
         self._fill_volume_data(self._data_fill_target, self.box_params.origin_grid)
@@ -1200,7 +1649,7 @@ class XmapHandler_Live(XmapHandlerBase):
         # mean B-factor shifts the map's overall scale (sigma) changes, so rescale
         # the levels by the sigma ratio rather than reusing the stale absolutes.
         old_sigma = getattr(self, '_contour_sigma', None)
-        new_sigma = self.sigma
+        new_sigma = self.contour_sigma_basis
         if old_sigma and new_sigma and old_sigma > 0 and self.surfaces:
             scale = new_sigma / old_sigma
             if scale != 1.0:

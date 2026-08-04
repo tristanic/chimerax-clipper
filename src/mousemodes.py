@@ -27,6 +27,30 @@ from chimerax.mouse_modes import (
     SelectContextMenuAction
 )
 
+def _as_proper_place(place):
+    '''Return `place` unchanged if its rotation is already proper (det +1); otherwise a
+    copy whose rotation is the closest proper (right-handed) rotation, translation kept.
+
+    A camera pose has to be right-handed - feeding it an improper transform (an
+    orthogonal matrix with det -1: a mirror, glide or inversion) flips its handedness,
+    which renders as looking at the back of the molecule, an inverted mouse drag, and
+    dark surfaces (the reflection flips the surface normals away from the light). No
+    proper camera can reproduce a mirror-image view, so the best we can do is reorient
+    by the nearest proper rotation. The closest proper rotation to a pure mirror works
+    out to the identity, so a mirror pick simply re-centres from the current viewpoint.'''
+    m = numpy.array(place.matrix, float)
+    r = m[:3, :3]
+    if numpy.linalg.det(r) > 0:
+        return place
+    # Closest proper rotation (orthogonal Procrustes / Kabsch sign correction).
+    u, _s, vt = numpy.linalg.svd(r)
+    d = numpy.eye(3)
+    d[2, 2] = numpy.sign(numpy.linalg.det(u @ vt))
+    m[:3, :3] = u @ d @ vt
+    from chimerax.geometry import Place
+    return Place(matrix=m)
+
+
 def initialize_clipper_mouse_modes(session):
     initialize_zoom_mouse_modes(session)
     initialize_map_contour_mouse_modes(session)
@@ -86,11 +110,20 @@ class RotateMouseMode(RotateMouseMode_Base):
         cofr = v.center_of_rotation
         cofr_method = v.center_of_rotation_method
         if sym is not None:
-            v.move(sym)
-            cofr = v.center_of_rotation = sym.inverse()*cofr
+            # `sym` re-aims the camera so the real (ASU) atom is presented as the picked
+            # symmetry copy was. A camera pose must be a PROPER (right-handed) rigid
+            # transform; an improper symmetry operator (mirror / glide / inversion,
+            # det = -1 - present in the centrosymmetric small-molecule space groups but
+            # NOT the chiral protein groups this was written for) would flip the camera's
+            # handedness, leaving it looking at the back of the molecule with inverted
+            # drag and dark (flipped-normal) surfaces. A real camera cannot show a
+            # molecule as its own mirror image, so reorient by the closest proper
+            # rotation instead (re-centring below is a point transform, unaffected).
+            move = _as_proper_place(sym)
+            v.move(move)
+            cofr = v.center_of_rotation = move.inverse()*cofr
 
         center = atoms.coords.mean(axis=0)
-        cd = v.camera.view_direction()
         shift = cofr-center
         from chimerax.geometry import translation
         v.move(translation(shift))

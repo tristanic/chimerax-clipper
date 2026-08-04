@@ -43,8 +43,10 @@ void declare_sfcalc_aniso_sum(py::module& m, const char* dtype)
     using Class=SFcalc_aniso_sum<T>;
     auto pyclass_name = std::string("SFcalc_aniso_sum_") + dtype;
     py::class_<Class, SFcalc_base<T>>(m, pyclass_name.c_str())
-        .def(py::init<>())
-        .def(py::init<HKL_data<F_phi<T>>&, const Atom_list&>())
+        .def(py::init<AtomShapeFn::RADIATION>(),
+            py::arg("radiation")=AtomShapeFn::XRAY)
+        .def(py::init<HKL_data<F_phi<T>>&, const Atom_list&, AtomShapeFn::RADIATION>(),
+            py::arg("fphidata_out"), py::arg("atoms"), py::arg("radiation")=AtomShapeFn::XRAY)
         ;
 } // declare_sfcalc_aniso_sum
 
@@ -67,10 +69,10 @@ void declare_sfcalc_aniso_fft(py::module& m, const char* dtype)
     using Class=SFcalc_aniso_fft<T>;
     auto pyclass_name = std::string("SFcalc_aniso_fft_") + dtype;
     py::class_<Class, SFcalc_base<T>>(m, pyclass_name.c_str())
-        .def(py::init<const ftype, const ftype, const ftype>(),
-            py::arg("radius")=2.5, py::arg("rate")=1.5, py::arg("uadd")=0.0)
-        .def(py::init<HKL_data<F_phi<T>>&, const Atom_list&, const ftype, const ftype, const ftype>(),
-            py::arg("fphidata_out"), py::arg("atoms"), py::arg("radius")=2.5, py::arg("rate")=1.5, py::arg("uadd")=0.0)
+        .def(py::init<const ftype, const ftype, const ftype, AtomShapeFn::RADIATION>(),
+            py::arg("radius")=2.5, py::arg("rate")=1.5, py::arg("uadd")=0.0, py::arg("radiation")=AtomShapeFn::XRAY)
+        .def(py::init<HKL_data<F_phi<T>>&, const Atom_list&, const ftype, const ftype, const ftype, AtomShapeFn::RADIATION>(),
+            py::arg("fphidata_out"), py::arg("atoms"), py::arg("radius")=2.5, py::arg("rate")=1.5, py::arg("uadd")=0.0, py::arg("radiation")=AtomShapeFn::XRAY)
         ;
 } // declare_sfcalc_aniso_fft
 

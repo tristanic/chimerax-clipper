@@ -275,7 +275,7 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   }
 
   // do ed calc from atomu (uniformly B-shifted for proper FFT sampling)
-  EDcalc_aniso_thread<ftype32> edcalc(nthreads);
+  EDcalc_aniso_thread<ftype32> edcalc(nthreads, radiation_);
   edcalc( xmap, atomu);
 
   xmap.fft_to( fphi_atom, nthreads );
@@ -283,19 +283,19 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
   // do density calc from mask.
   //
   // The solvent mask (hence its transform fphi_mask, and the mean solvent
-  // fraction bulkfrc) is a function of atom positions, elements and
-  // zero-occupancy status ONLY -- invariant to B-factor and occupancy-value
-  // changes.  When those mask-determining inputs are unchanged from the previous
-  // call (e.g. across B-factor/occupancy refinement macrocycles, where
-  // coordinates are fixed) reuse the cached transform fmask_ and skip a full
-  // EDcalc_mask + FFT -- roughly half the cost of this routine.
+  // fraction bulkfrc) is a function of atom positions, elements, and -- when
+  // occupancy_weighted_ is on -- per-atom occupancy values (else only
+  // zero-occupancy status); it is invariant to B-factor changes.  When those
+  // mask-determining inputs are unchanged from the previous call (e.g. across
+  // B-factor refinement macrocycles, where coordinates and occupancies are fixed)
+  // reuse the cached transform fmask_ and skip a full EDcalc_mask + FFT --
+  // roughly half the cost of this routine.
   const uint64_t mask_sig = mask_signature(atoms);
   const bool mask_reused = mask_cache_valid_ && (mask_sig == mask_signature_);
 
   if ( !mask_reused )
   {
-    auto emcalc = EDcalc_mask_vdw<ftype32>();
-    emcalc.set_num_threads(nthreads);
+    auto emcalc = EDcalc_mask_vdw<ftype32>(3.0, 1.0, 1.1, nthreads, true, occupancy_weighted_);
     emcalc( xmap, atoms );
     for ( Xmap<ftype32>::Map_reference_index ix = xmap.first();
           !ix.last(); ix.next() )
@@ -333,10 +333,23 @@ bool SFcalc_obs_bulk_vdw<T>::operator() ( HKL_data<datatypes::F_phi<T> >& fphi,
 
   if (bulk_solvent_optimization_needed_)
   {
-      HKL_info selected_hkls = select_random_reflections_in_bins(fsig, 500, 20);
+      // All-reflections mode fits over the full set; otherwise a seeded per-bin
+      // subset (sized by the exposed knobs), drawn ONCE and cached. The selection
+      // and the observed-F subset depend only on the HKL set + knobs + seed -- none
+      // of which change during a refinement -- so they are reused across recalcs,
+      // sparing the HKL_info rebuild + obs-subset copy each fit.
+      if (!all_reflections_ && !scaling_subset_valid_)
+      {
+          scaling_subset_hkls_ = select_random_reflections_in_bins(
+              fsig, scaling_refls_per_bin_, scaling_num_bins_, scaling_seed_);
+          scaling_subset_fsig_ = reflection_subset(fsig, scaling_subset_hkls_);
+          scaling_subset_valid_ = true;
+      }
+      const HKL_info& selected_hkls = all_reflections_ ? fsig.hkl_info() : scaling_subset_hkls_;
+      const HKL_data<F_sigF<T>>& fsig_temp = all_reflections_ ? fsig : scaling_subset_fsig_;
+      // The fcalc-dependent subsets change every fit and must be refreshed here.
       auto fphi_atom_temp = reflection_subset(fphi_atom, selected_hkls);
       auto fphi_mask_temp = reflection_subset(mask, selected_hkls);
-      auto fsig_temp = reflection_subset(fsig, selected_hkls);
       auto fphi_temp = reflection_subset(fphi, selected_hkls);
 
       T sum_fobs=0, tolerance=0;
@@ -392,11 +405,13 @@ template <class T>
 uint64_t SFcalc_obs_bulk_vdw<T>::mask_signature( const Atom_list& atoms ) const
 {
   // 64-bit FNV-1a over exactly the inputs EDcalc_mask_vdw consumes: the atom
-  // count, and per non-null atom its orthogonal coordinates, element name and a
-  // zero-occupancy flag.  A moved atom, changed element, or occupancy crossing
-  // zero changes the hash and so invalidates the cached mask.  Returned by value
-  // as a plain integer (no heap allocation) so the cached member is safe across
-  // this exported class's DLL boundary.
+  // count, the occupancy-weighting mode, and per non-null atom its orthogonal
+  // coordinates, element name, and occupancy (the full value when weighting is on,
+  // else just a zero/non-zero flag).  A moved atom, changed element, toggled mode,
+  // or -- under weighting -- any occupancy change alters the hash and so
+  // invalidates the cached mask.  Returned by value as a plain integer (no heap
+  // allocation) so the cached member is safe across this exported class's DLL
+  // boundary.
   uint64_t h = 1469598103934665603ull;            // FNV-1a offset basis
   auto mix = [&h](const void* p, size_t n) {
     const unsigned char* b = reinterpret_cast<const unsigned char*>(p);
@@ -404,6 +419,8 @@ uint64_t SFcalc_obs_bulk_vdw<T>::mask_signature( const Atom_list& atoms ) const
   };
   const size_t n = atoms.size();
   mix(&n, sizeof(n));
+  const unsigned char ow_flag = occupancy_weighted_ ? 1 : 0;
+  mix(&ow_flag, 1);
   for ( const auto& a : atoms )
   {
     const unsigned char null_flag = a.is_null() ? 1 : 0;
@@ -414,8 +431,13 @@ uint64_t SFcalc_obs_bulk_vdw<T>::mask_signature( const Atom_list& atoms ) const
     mix(xyz, sizeof(xyz));
     const String& el = a.element();
     mix(el.c_str(), el.length());
-    const unsigned char occ_zero = (a.occupancy() == 0.0) ? 1 : 0;
-    mix(&occ_zero, 1);
+    if ( occupancy_weighted_ ) {
+      const double occ = a.occupancy();
+      mix(&occ, sizeof(occ));
+    } else {
+      const unsigned char occ_zero = (a.occupancy() == 0.0) ? 1 : 0;
+      mix(&occ_zero, 1);
+    }
   }
   return h;
 }

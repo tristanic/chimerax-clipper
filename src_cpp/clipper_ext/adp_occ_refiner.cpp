@@ -22,6 +22,7 @@
 #pragma warning(disable: 4251)
 #include "adp_occ_refiner.h"
 #include "edcalc_ext.h"
+#include "aniso_scale.h"   // scale_fcalc_to_fobs (aniso-Gaussian x isotropic-spline)
 
 #include <algorithm>
 #include <atomic>
@@ -346,7 +347,8 @@ void BFactorOccRefiner::init_derived()
         fcalc_hkl_   = HKL_data<F_phi<ftype32>>(hkls, cell_);
         driving_hkl_ = HKL_data<F_phi<ftype32>>(hkls, cell_);
     }
-    edcalc_ = EDcalc_aniso_thread<ftype32>((size_t)cfg_.n_threads);
+    edcalc_ = EDcalc_aniso_thread<ftype32>((size_t)cfg_.n_threads,
+        cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON : AtomShapeFn::XRAY);
 
     // Validate and derive any_occ_refined_
     if (!cfg_.refine_occ.empty()) {
@@ -590,9 +592,19 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
         ftype residual  = fc_scaled - m * fo;
         T += ftype(0.5) * residual * residual;
 
-        // d(h) = k·(m|Fo| − k|Fc|)·exp(iφ_calc):  consistent with ∂T/∂p = −Σ d·∂ρ/∂p
+        // d(h) = ε_c·k·(m|Fo| − k|Fc|)·exp(iφ_calc):  consistent with ∂T/∂p = −Σ d·∂ρ/∂p.
+        // The per-reflection multiplicity weight ε_c = hkl_class().epsilonc()
+        // (= 2·epsilon centric, epsilon acentric) compensates for fft_from spreading
+        // each ASU reflection over its orbit (symmetry mates + Friedel) via set_hkl:
+        // centric/axis reflections populate fewer distinct grid points, so their
+        // single-count coefficient must be boosted or the back-FFT gradient is the
+        // gradient of the WRONG target (T with centric reflections silently
+        // under-weighted). T itself stays the plain unweighted ASU sum above; only
+        // the driving coefficient carries ε_c, making this the exact gradient of T.
+        // ε_c = 1 for every reflection in P1 (unchanged there). See xray_gradient.cpp.
+        ftype eps_c = ih.hkl_class().epsilonc();
         std::complex<ftype32> coeff =
-            ftype32(k) * ftype32(m * fo - fc_scaled)
+            ftype32(eps_c * k) * ftype32(m * fo - fc_scaled)
             * std::polar(ftype32(1.0f), ftype32(phi_c));
         driving_hkl_.set_data(ih.hkl(), F_phi<ftype32>(coeff));
     }
@@ -627,7 +639,9 @@ double BFactorOccRefiner::operator()(const Eigen::VectorXd& x, Eigen::VectorXd& 
             if (a.is_null()) continue;
 
             AtomShapeFn sf(a.coord_orth(), a.element(),
-                           (ftype)current_u_iso_[j], (ftype)current_occ_[j]);
+                           (ftype)current_u_iso_[j], (ftype)current_occ_[j],
+                           cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON
+                                                        : AtomShapeFn::XRAY);
             sf.agarwal_params() = agarwal_types_;
 
             Grid_range gd(cell, grid, (ftype)atom_radii_[j]);
@@ -801,7 +815,9 @@ double BFactorOccRefiner::operator_realspace_(const Eigen::VectorXd& x, Eigen::V
         Coord_orth pos_p1 = a.coord_orth() - target_origin_;
 
         AtomShapeFn sf(pos_p1, a.element(),
-                       (ftype)current_u_iso_[j], (ftype)current_occ_[j]);
+                       (ftype)current_u_iso_[j], (ftype)current_occ_[j],
+                       cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON
+                                                    : AtomShapeFn::XRAY);
         sf.agarwal_params() = agarwal_types_;
 
         Grid_range gd(cell, grid, (ftype)atom_radii_[j]);
@@ -1191,30 +1207,26 @@ std::pair<double, double> BFactorOccRefiner::compute_rfactors()
         }
     }
 
-    // Isotropic scale k = Σ(|Fo||Fc|) / Σ|Fc|²  (working set only, flag != 0):
-    // the least-squares scale of |Fc| onto |Fo|.  STANDARD (not FOM-weighted) so the
-    // reported R-factors are the same quantity the manager/GUI reports and the
-    // before/after bail-out comparison is like-for-like.  (FOM-weighting here used to
-    // inflate the "R" by ~(1−⟨m⟩), spuriously tripping the bail-out on incomplete
-    // models where ⟨m⟩ ≪ 1.)
-    ftype sum_cross = 0.0, sum_sq = 0.0;
-    for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()
-            || usage_[ih].flag() == 0) continue;
-        ftype fc = fcalc_hkl_[ih].f();
-        ftype fo = fobs_[ih].f();
-        sum_cross += fo * fc;
-        sum_sq    += fc * fc;
-    }
-    ftype k = (sum_sq > ftype(1e-10)) ? sum_cross / sum_sq : ftype(1.0);
+    // Place |Fc| on the |Fo| scale with the same anisotropic-Gaussian x isotropic-spline
+    // model the map manager (Xtal_mgr_base::calculate_r_factors) and the small-molecule R
+    // use, rather than a single least-squares scalar k = Σ(|Fo||Fc|)/Σ|Fc|². The linear
+    // scalar minimises the global LS residual, so it lets the strongest scatterer (a heavy
+    // atom) soak up the misfit and reports an optimistically low R; the aniso+spline model
+    // spreads the scale across resolution shells - the same R-factor definition every other
+    // surface in the plugin reports, so the before/after bail-out comparison stays
+    // like-for-like against the manager/GUI value.
+    HKL_data<F_phi<ftype32>> scaled(fobs_.base_hkl_info(), cell_);
+    U_aniso_orth uaniso;
+    std::vector<ftype> aniso_params;
+    scale_fcalc_to_fobs<ftype32>(fcalc_hkl_, fobs_, scaled, uaniso, aniso_params);
 
-    // Standard R-work / R-free: Σ|k·|Fc| − |Fo|| / Σ|Fo|.
+    // Standard R-work / R-free: Σ||Fc_scaled| − |Fo|| / Σ|Fo|.
     // Convention: flag != 0 → working; flag == 0 → free.
     double rw_num = 0.0, rw_den = 0.0;
     double rf_num = 0.0, rf_den = 0.0;
     for (HKL_info::HKL_reference_index ih = fobs_.first(); !ih.last(); ih.next()) {
-        if (fobs_[ih].missing() || usage_[ih].missing()) continue;
-        ftype fc  = k * fcalc_hkl_[ih].f();
+        if (fobs_[ih].missing() || usage_[ih].missing() || scaled[ih].missing()) continue;
+        ftype fc  = scaled[ih].f();
         ftype fo  = fobs_[ih].f();
         ftype res = std::abs(fc - fo);
         if (usage_[ih].flag() != 0) { rw_num += res; rw_den += fo; }
@@ -1273,7 +1285,8 @@ Xmap<ftype32>* BFactorOccRefinerThread::compute_realspace_density(
             atomu_all.push_back(shift_atom(a, a.u_iso(), a.occupancy()));
     }
 
-    EDcalc_aniso_thread<ftype32> edcalc((size_t)std::max(1, cfg_.n_threads));
+    EDcalc_aniso_thread<ftype32> edcalc((size_t)std::max(1, cfg_.n_threads),
+        cfg_.use_electron_scattering ? AtomShapeFn::ELECTRON : AtomShapeFn::XRAY);
     edcalc(*xmap, atomu_all);
     return xmap;   // ownership transferred to Python via take_ownership
 }

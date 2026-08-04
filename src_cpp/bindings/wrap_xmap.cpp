@@ -211,7 +211,11 @@ void add_xmap_numpy_functions(py::class_<C, Xmap_base>& pyclass)
         .def("export_numpy", [](const C& self)
         {
             const auto& g = self.grid_asu();
-            auto s = g.max()-g.min();
+            // Grid_range corners are INCLUSIVE (nu()=max-min+1), so the array must
+            // span max-min+1 points per axis; the bare max-min dropped the last
+            // grid plane in every axis (one plane short — corrupted periodic
+            // wrapping for cell-edge voxels).
+            auto s = g.max()-g.min()+Coord_grid(1,1,1);
             auto target = py::array_t<T>({s.u(), s.v(), s.w()});
             numpy_export_core_(self, target, g.min());
             return target;
