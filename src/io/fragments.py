@@ -294,8 +294,22 @@ def _heavy_signature(heavy):
 def _complete(model, made, special, fracs, cell, cif_symop_strings, xbonds, by_name):
     '''Add the symmetry-generated atoms that finish molecules split across a special
     position, and enforce unit occupancy on atoms lying ON a special position (PDB
-    convention). Returns the number of atoms added.'''
-    import numpy
+    convention). Returns the number of atoms added.
+
+    Completion is a bond-driven breadth-first search over the crystallographic bond graph
+    (see _complete_fragment). Each atom is generated only as the endpoint of a bond being
+    traversed - an in-model neighbour at the same rigid placement, a special-position
+    atom's site-symmetry neighbour image, or a cross-symmetry _geom_bond partner at the
+    COMPOSED placement P.op - so every generated atom is bonded by construction and no
+    bondless atom is ever imaged. Traversing bonds (rather than applying whole-fragment
+    operators once) is what lets completion (a) compose operators, reaching an atom that
+    needs two symmetry steps - e.g. the fourth oxalate oxygen S5.S2(O6) in cod_2209193,
+    which a single-operator pass cannot reach - and (b) image each bond with its OWN
+    operator+lattice code, since one fragment's bonds can carry different codes (cod_2103691:
+    the naphthalene ring closes via op2_656 while its sulfonate's third oxygen needs
+    op2_657). Coincidence is tested by MINIMUM IMAGE, which both wires a deposited orphan
+    whose real partner is a symmetry image and bounds the walk (images a lattice-vector
+    apart fold together, so the orbit of a finite molecule is finite).'''
     for a, on_special in special.items():
         if on_special:
             a.occupancy = 1.0
@@ -304,146 +318,176 @@ def _complete(model, made, special, fracs, cell, cif_symop_strings, xbonds, by_n
     # Each operator as (rotation 3x3, translation 3) in fractional space; applying it is
     # then a plain rot.uvw + trn (no Clipper Symop needed - its constructor takes no
     # xyz string). CIF order is preserved, so index n-1 matches a _geom_bond code n.
+    import numpy
     ops_rt = [_parse_xyz_op(s) for s in cif_symop_strings]
+
+    # Cross-symmetry _geom_bond edges as (atom_1, atom_2, op_index, lattice): a bond
+    # between atom_1 (identity placement) and op.atom_2. Metal endpoints are skipped (a
+    # metal stays its own fragment); hydrogen endpoints are skipped because terminal H are
+    # relocated by reassemble_symmetry_scattered_hydrogens (run before this) and water H
+    # come through the site-symmetry branch, so wiring a symmetry-coded H bond here would
+    # double it.
+    edges = []
+    if xbonds:
+        for l1, l2, (n, dk, dl, dm) in xbonds:
+            a1, a2 = by_name.get(l1), by_name.get(l2)
+            if a1 is None or a2 is None:
+                continue
+            if a1.element.is_metal or a2.element.is_metal:
+                continue
+            if a1.element.number == 1 or a2.element.number == 1:
+                continue
+            if not (1 <= n <= len(ops_rt)):
+                continue
+            edges.append((a1, a2, n - 1, numpy.array([dk, dl, dm], float)))
 
     existing_names = set(model.atoms.names)
     n_added = 0
     for res, comp in made:
-        comp_set = set(comp)
-        ops = []   # each: (rot, translation, [(existing_atom, source_atom), ...])
-        # (a) Site-symmetry of any atom sitting ON a special position generates the
-        #     images of its (off-axis) neighbours - the water-H case. Fold in the shift
-        #     that fixes the special atom exactly, so the image is the bonded one.
-        anchor = next((a for a in comp if special.get(a)), None)
-        if anchor is not None:
-            fa = numpy.array(fracs[anchor].uvw)
-            for rot, trn in ops_rt:
-                fimg = rot.dot(fa) + trn
-                shift = numpy.round(fimg - fa)
-                if numpy.allclose(fimg - shift, fa, atol=1e-3):
-                    ops.append((rot, trn - shift, []))
-        # (b) Bonds to a symmetry copy (CIF _geom_bond) generate that copy - covers
-        #     molecules split across an element passing through a bond (e.g. a dimer on
-        #     an inversion centre, where no atom is on the special position).
-        if xbonds:
-            for l1, l2, (n, dk, dl, dm) in xbonds:
-                a1, a2 = by_name.get(l1), by_name.get(l2)
-                if a1 is None or a2 is None or a1.element.is_metal or a2.element.is_metal:
-                    continue
-                if a1 not in comp_set and a2 not in comp_set:
-                    continue
-                # Terminal hydrogen whose bond is symmetry-coded (deposited in a
-                # neighbouring ASU): reassemble_symmetry_scattered_hydrogens (run before
-                # this, under `fragments complete`) relocates the real H onto its parent.
-                # Do NOT also generate a symmetry image of it here - that duplicates the H
-                # and, because reassemble put the real atom at exactly the image position,
-                # over-bonds it. Special-position water H are handled by branch (a) above.
-                if a2.element.number == 1 or a1.element.number == 1:
-                    continue
-                if not (1 <= n <= len(ops_rt)):
-                    continue
-                # bond is a1 -- S(a2): applying S to the fragment places S(a2) bonded to a1.
-                rot, trn = ops_rt[n - 1]
-                ops.append((rot, trn + numpy.array([dk, dl, dm], float), [(a1, a2)]))
-        n_added += _apply_ops(res, comp, ops, fracs, cell, existing_names)
+        n_added += _complete_fragment(res, comp, special, fracs, cell, ops_rt,
+                                       edges, existing_names)
     return n_added
 
 
-def _apply_ops(res, comp, ops, fracs, cell, existing_names):
+def _invert_op(rot, trn):
+    '''Inverse of the affine fractional operator (rot, trn): (rot^-1, -rot^-1.trn).'''
     import numpy
+    ir = numpy.linalg.inv(rot)
+    return ir, -ir.dot(trn)
+
+
+def _complete_fragment(res, comp, special, fracs, cell, ops_rt, edges, existing_names):
+    '''Complete one fragment by bond-driven BFS. Returns the number of atoms added.'''
+    import numpy
+    from collections import deque
     from chimerax.atomic import struct_edit
     from ..clipper_python import Coord_frac
-    added = []   # atoms generated for this fragment (dedup across ops)
-    # Partial-occupancy atoms are disorder components; snapshot the set up front (before any
-    # occupancy is promoted below) so the skip below is driven by the ORIGINAL occupancy and
-    # cannot re-duplicate the atom under a later operator.
-    disorder = {a for a in comp if a.occupancy < 0.99}
-    promote = set()   # disorder atoms whose symmetry image would have been a distinct copy
 
-    def occupied(xyz):
-        for a in comp:
-            if numpy.linalg.norm(numpy.array(a.coord) - xyz) < _POS_TOL:
-                return a
-        for na in added:
-            if numpy.linalg.norm(numpy.array(na.coord) - xyz) < _POS_TOL:
-                return na
+    comp_set = set(comp)
+    # Partial-occupancy atoms are disorder components of a shared/averaged site; snapshot
+    # the set up front (before any promotion below) so the skip is driven by the ORIGINAL
+    # occupancy. A full-atom symmetry copy of one would clash with its own disorder partner
+    # and break the fragment's charge/valence - the canonical case is a 0.5-occupancy
+    # bridging proton on a 2-fold (cod_2215867): keep the single deposited atom, and
+    # promote it to full occupancy so the completed molecule is a physical snapshot (one
+    # whole shared proton, integer net charge) rather than two clashing half-atoms.
+    disorder = {a for a in comp if a.occupancy < 0.99}
+    promote = set()
+
+    I3 = numpy.eye(3)
+    Z3 = numpy.zeros(3)
+
+    def frac_of(atom):
+        return numpy.array(fracs[atom].uvw, float)
+
+    # placed[i] = [element_number, fractional position, atom]; seeded with the ASU atoms.
+    placed = [[a.element.number, frac_of(a), a] for a in comp]
+
+    def cart_len(dfrac):
+        co = Coord_frac(float(dfrac[0]), float(dfrac[1]), float(dfrac[2])).coord_orth(cell)
+        return (co.x * co.x + co.y * co.y + co.z * co.z) ** 0.5
+
+    def occupant(elem, fpos):
+        for e, fp, at in placed:
+            if e != elem:
+                continue
+            d = fpos - fp
+            d = d - numpy.round(d)              # minimum image
+            if cart_len(d) < _POS_TOL:
+                return at
         return None
 
-    for rot, trn, links in ops:
-        img = {}   # source atom -> atom occupying its image position (existing or new)
-        for a in comp:
-            uvw = rot.dot(numpy.array(fracs[a].uvw)) + trn
-            co = Coord_frac(*uvw).coord_orth(cell)
-            xyz = numpy.array([co.x, co.y, co.z])
-            img[a] = [occupied(xyz), xyz]
-        new_this = set()
-        for a in comp:
-            target, xyz = img[a]
-            if target is not None:
-                continue
-            # Do not instantiate a symmetry image of a partial-occupancy (disorder)
-            # atom: it is one component of an averaged/shared site, so a full-atom copy
-            # would clash with its own disorder partner and break the fragment's
-            # charge/valence. The canonical case is a short-strong H-bond across a
-            # symmetry element - e.g. a 0.5-occupancy bridging carboxyl H on a 2-fold
-            # (cod_2215867): copying it gives two clashing protons and a spurious +1 in
-            # the ASU, when physically there is one time-averaged proton. Reaching here (a
-            # NEW, unoccupied image position) means the copy would be distinct: keep the
-            # single deposited atom and promote it to full occupancy (below), so the
-            # completed molecule is a physical snapshot - one whole shared proton, integer
-            # net charge - not two half-atoms. The full-occupancy heavy framework still
-            # completes normally.
-            if a in disorder:
-                promote.add(a)
-                continue
-            name = _unique_atom_name(a.name, existing_names)
-            existing_names.add(name)
-            na = struct_edit.add_atom(name, a.element, res, xyz,
-                                      occupancy=a.occupancy, bfactor=a.bfactor,
-                                      info_from=a)
-            # This is a crystallographic-symmetry image of an ASU atom; Clipper's SFcalc
-            # regenerates it from the source, so keep it out of the structure-factor sum.
-            na.clipper_sf_exclude = True
-            img[a][0] = na
-            new_this.add(na)
-            added.append(na)
-        # Mirror the fragment's own connectivity onto the freshly generated atoms.
-        for a in comp:
-            ia = img[a][0]
-            if ia is None:
-                continue
-            for nb in a.neighbors:
-                if nb not in img:
+    added = []
+
+    def get_or_create(source, gR, gt):
+        '''Atom occupying source's image at placement (gR, gt), creating it if the position
+        is not already occupied (minimum image). Returns (atom, is_new); (None, False) if a
+        disorder atom's image would have been distinct (kept single, source promoted).'''
+        fpos = gR.dot(frac_of(source)) + gt
+        occ = occupant(source.element.number, fpos)
+        if occ is not None:
+            return occ, False
+        if source in disorder:
+            promote.add(source)
+            return None, False
+        co = Coord_frac(float(fpos[0]), float(fpos[1]), float(fpos[2])).coord_orth(cell)
+        na = struct_edit.add_atom(_unique_atom_name(source.name, existing_names),
+                                  source.element, res,
+                                  numpy.array([co.x, co.y, co.z]),
+                                  occupancy=source.occupancy, bfactor=source.bfactor,
+                                  info_from=source)
+        existing_names.add(na.name)
+        # A crystallographic-symmetry image of an ASU atom; Clipper's SFcalc regenerates it
+        # from the source, so keep it out of the structure-factor sum.
+        na.clipper_sf_exclude = True
+        placed.append([source.element.number, fpos, na])
+        added.append(na)
+        return na, True
+
+    def link(atom, source, gR, gt, queue):
+        partner, is_new = get_or_create(source, gR, gt)
+        if partner is None:
+            return
+        if partner is not atom and partner not in atom.neighbors:
+            struct_edit.add_bond(atom, partner)
+        if is_new:
+            queue.append((source, gR, gt, partner))
+
+    def site_ops(atom):
+        '''Non-identity operators (rot, translation) that fix atom's position modulo
+        lattice - its site symmetry. The translation is folded so the fixed point maps
+        exactly onto itself, so a neighbour imaged under it lands bonded.'''
+        fa = frac_of(atom)
+        out = []
+        for idx, (rot, trn) in enumerate(ops_rt):
+            fimg = rot.dot(fa) + trn
+            shift = numpy.round(fimg - fa)
+            if numpy.allclose(fimg - shift, fa, atol=1e-3):
+                t = trn - shift
+                if idx == 0 and numpy.allclose(t, Z3, atol=1e-9):
                     continue
-                inb = img[nb][0]
-                if inb is None or inb is ia:
-                    continue
-                if (ia in new_this or inb in new_this) and inb not in ia.neighbors:
-                    struct_edit.add_bond(ia, inb)
-        # Wire the explicit cross-symmetry bond(s): original atom -> image of its partner.
-        for orig, src in links:
-            isrc = img.get(src, [None])[0]   # image of the partner, S(a2)
-            if isrc is not None and isrc is not orig and isrc not in orig.neighbors:
-                struct_edit.add_bond(orig, isrc)
-            # ...and its symmetry mate. When the splitting operator is an involution -
-            # a special position THROUGH a bond (inversion / 2-fold / mirror), the case
-            # that leaves half a molecule in the ASU - the bond a1--S(a2) has an
-            # equal-length partner S(a1)--a2 that also closes the completed molecule
-            # (e.g. a ring on an inversion centre: the CIF lists only C1--S(C3), but the
-            # ring also needs S(C1)--C3, cod_2018032). The CIF _geom_bond loop names each
-            # bond once, so this mate is never in `links`. Wire it, guarded by a
-            # bond-length match against the forward bond so a non-involutive operator
-            # (whose S(a1) lands far from a2) cannot add a spurious bond.
-            iorig = img.get(orig, [None])[0]   # image of a1, S(a1)
-            if (isrc is not None and iorig is not None and iorig is not src
-                    and src not in iorig.neighbors):
-                d_fwd = numpy.linalg.norm(numpy.array(orig.coord) - numpy.array(isrc.coord))
-                d_mate = numpy.linalg.norm(numpy.array(iorig.coord) - numpy.array(src.coord))
-                if abs(d_fwd - d_mate) < _POS_TOL:
-                    struct_edit.add_bond(iorig, src)
-    # Promote the retained single copy of each symmetric-disorder atom to full occupancy,
-    # so the completed molecule carries one whole shared atom (e.g. one bridging proton ->
-    # integer/neutral ASU charge) instead of an unphysical fractional one.
+                out.append((rot, t))
+        return out
+
+    # Bound the walk: a finite molecule has a finite minimum-image orbit, but a bad-data
+    # extended framework / polymer would not terminate cleanly, so cap generation at a
+    # generous multiple of the fragment's heavy-atom count (the runaway is dropped/flagged
+    # downstream).
+    hard_cap = max(200, 30 * sum(1 for a in comp if a.element.number > 1))
+
+    queue = deque((a, I3, Z3, a) for a in comp)
+    while queue:
+        if len(added) > hard_cap:
+            break
+        source, gR, gt, atom = queue.popleft()
+        # (1) in-model covalent neighbours, at the same rigid placement.
+        for nb in source.neighbors:
+            if not nb.element.is_metal and nb in comp_set:
+                link(atom, nb, gR, gt, queue)
+        # (1b) a special-position atom's neighbours are also imaged by its site symmetry
+        #      (the water-H case: O on a 2-fold with only one H modelled).
+        if special.get(source):
+            for sR, st in site_ops(source):
+                pR = gR.dot(sR)
+                pt = gR.dot(st) + gt
+                for nb in source.neighbors:
+                    if not nb.element.is_metal and nb in comp_set:
+                        link(atom, nb, pR, pt, queue)
+        # (2) cross-symmetry _geom_bond edges, imaged with the edge's own operator+lattice
+        #     at the COMPOSED placement.
+        for a1, a2, opi, latt in edges:
+            rot, trn = ops_rt[opi]
+            trn = trn + latt
+            if source is a1:                    # partner a2 at g.op
+                pR = gR.dot(rot)
+                pt = gR.dot(trn) + gt
+                link(atom, a2, pR, pt, queue)
+            elif source is a2:                  # partner a1 at g.op^-1
+                irot, itrn = _invert_op(rot, trn)
+                pR = gR.dot(irot)
+                pt = gR.dot(itrn) + gt
+                link(atom, a1, pR, pt, queue)
+
     for a in promote:
         a.occupancy = 1.0
     return len(added)
