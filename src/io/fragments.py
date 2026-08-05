@@ -181,6 +181,12 @@ def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=
         # bond is its minimum image; only integer lattice translations are applied, so all
         # structure factors - and hence maps, R factors and SF gradients - are invariant.
         _gather_molecules(model, cell)
+        # corecif reads metal coordination from the CIF _geom_bond loop at open but ignores
+        # the symmetry-coded entries, so a metal on a special position loses coordination to
+        # the ligands supplied by symmetry (a metalloporphyrin on an inversion centre keeps
+        # only half its metal-N bonds). Completion has now generated those ligand images, so
+        # add the coordination pseudobonds the symmetry-coded _geom_bond entries name.
+        _complete_metal_coordination(model, cell, cif_symop_strings, xbonds, by_name, fracs)
         # Gathering a molecule can translate a metal-coordinated atom to a lattice image
         # farther from its metal than the nearest one, leaving the coordination pseudobond
         # drawn across the cell; drop those (see _prune_wrapped_coordination).
@@ -407,6 +413,76 @@ def _gather_molecules(model, cell):
                     nb.coord = numpy.array([co.x, co.y, co.z])
                 visited.add(nb)
                 stack.append(nb)
+
+
+def _complete_metal_coordination(model, cell, cif_symop_strings, xbonds, by_name, fracs):
+    '''Add the metal-coordination pseudobonds to symmetry-generated ligand images that
+    completion produced. corecif builds a metal's intra-ASU (identity) coordination from the
+    CIF _geom_bond loop at open, but - like the symmetry-coded COVALENT bonds - ignores the
+    symmetry-coded coordination entries, so a metal on a special position keeps coordination
+    only to the ligands modelled in the ASU. The canonical case is a metalloporphyrin on an
+    inversion centre (cod_1561255): _geom_bond lists 3 deposited Mg-N and 3 symmetry-coded
+    ones, so the Mg comes out 3-coordinate when the completed macrocycle is 6-coordinate -
+    fatal for the only sensible classical-MD model, which promotes the coordination to
+    covalent. Each metal _geom_bond entry with a symmetry code names exactly one such bond -
+    metal(identity) coordinating op(ligand) - and completion has already built that ligand
+    image as covalent framework, so add the pseudobond to it (matched by MINIMUM-IMAGE
+    position, since unwrapping may have translated the image by a lattice vector). This uses
+    the deposited coordination partner + operator, so no distance criterion is guessed. A
+    coordination image that lands across the cell is left to _prune_wrapped_coordination.'''
+    if not cif_symop_strings or not xbonds:
+        return
+    import numpy
+    from ..clipper_python import Coord_orth, Coord_frac
+    ops_rt = [_parse_xyz_op(s) for s in cif_symop_strings]
+    # (metal_atom, ligand_atom, rot, trn): the metal coordinates rot.ligand_frac + trn.
+    metal_edges = []
+    for l1, l2, (n, dk, dl, dm) in xbonds:
+        a1, a2 = by_name.get(l1), by_name.get(l2)
+        if a1 is None or a2 is None or not (1 <= n <= len(ops_rt)):
+            continue
+        if a1.element.is_metal == a2.element.is_metal:  # non-metal, or metal-metal
+            continue
+        if a1.element.number == 1 or a2.element.number == 1:
+            continue
+        rot, trn = ops_rt[n - 1]
+        trn = trn + numpy.array([dk, dl, dm], float)
+        if a1.element.is_metal:                         # a1 coordinates op(a2)
+            metal_edges.append((a1, a2, rot, trn))
+        else:                                           # a1(id)-op(a2) == a2(id)-op^-1(a1)
+            irot, itrn = _invert_op(rot, trn)
+            metal_edges.append((a2, a1, irot, itrn))
+    if not metal_edges:
+        return
+    atoms = list(model.atoms)
+    fr = {}
+    for a in atoms:
+        x, y, z = a.coord
+        fr[a] = numpy.array(Coord_orth(float(x), float(y), float(z)).coord_frac(cell).uvw,
+                            float)
+
+    def find_at(target, elem):
+        for a in atoms:
+            if a.element.number != elem:
+                continue
+            d = fr[a] - target
+            d = d - numpy.round(d)                      # minimum image
+            co = Coord_frac(float(d[0]), float(d[1]), float(d[2])).coord_orth(cell)
+            if (co.x * co.x + co.y * co.y + co.z * co.z) ** 0.5 < _POS_TOL:
+                return a
+        return None
+
+    pbg = model.pseudobond_group('metal coordination bonds', create_type='per coordset')
+    existing = set(frozenset(pb.atoms) for pb in pbg.pseudobonds)
+    for metal, lig, rot, trn in metal_edges:
+        img = find_at(rot.dot(numpy.array(fracs[lig].uvw)) + trn, lig.element.number)
+        if img is None or img is metal:
+            continue
+        key = frozenset((metal, img))
+        if key in existing:
+            continue
+        pbg.new_pseudobond(metal, img)
+        existing.add(key)
 
 
 def _prune_wrapped_coordination(model, cell):
