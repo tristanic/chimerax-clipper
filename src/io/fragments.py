@@ -175,6 +175,12 @@ def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=
         register_clipper_atom_attributes(session)
         n_added = _complete(model, made, special, fracs, cell,
                             cif_symop_strings, xbonds, by_name)
+        # Completion wires bonds across the periodic boundary (a lattice-translation
+        # _geom_bond partner, or a symmetry image that landed in an adjacent cell), which
+        # would otherwise be drawn as a cell-spanning bond. Unwrap every molecule so each
+        # bond is its minimum image; only integer lattice translations are applied, so all
+        # structure factors - and hence maps, R factors and SF gradients - are invariant.
+        _gather_molecules(model, cell)
 
     summary = {'mode': mode, 'n_fragments': len(made), 'n_added_atoms': n_added,
                'counts': counts}
@@ -347,6 +353,51 @@ def _complete(model, made, special, fracs, cell, cif_symop_strings, xbonds, by_n
         n_added += _complete_fragment(res, comp, special, fracs, cell, ops_rt,
                                        edges, existing_names)
     return n_added
+
+
+def _gather_molecules(model, cell):
+    '''Unwrap every covalently-bonded molecule so each bond is its minimum image - i.e.
+    make molecules whole across periodic boundaries. Completion wires bonds a molecule can
+    have across the unit-cell boundary: a pure lattice-translation _geom_bond partner (a
+    carboxylate whose second O is one cell over, cod_2223203/2223282) or a symmetry image
+    that landed in an adjacent cell (a special-position molecule's generated half,
+    cod_2103691); left alone these draw as cell-spanning bonds. A breadth-first walk of the
+    covalent-bond graph translates each atom by the integer lattice vector that places it on
+    the minimum image of its already-placed neighbour. ONLY integer lattice translations are
+    applied, so every structure factor is exactly invariant (exp(2*pi*i h.(r+n)) ==
+    exp(2*pi*i h.r)) - maps, R factors and SF gradients are untouched; this is purely a
+    spatial gathering. Metals sit in their own component (their bonds were demoted to
+    coordination pseudobonds, which are not covalent bonds), so they are left in place.'''
+    import numpy
+    from ..clipper_python import Coord_orth, Coord_frac
+    atoms = model.atoms
+    if len(atoms) == 0:
+        return
+    frac = {}
+    for a in atoms:
+        x, y, z = a.coord
+        frac[a] = numpy.array(Coord_orth(float(x), float(y), float(z)).coord_frac(cell).uvw,
+                              float)
+    visited = set()
+    for seed in atoms:
+        if seed in visited:
+            continue
+        visited.add(seed)
+        stack = [seed]
+        while stack:
+            a = stack.pop()
+            fa = frac[a]
+            for nb in a.neighbors:
+                if nb in visited:
+                    continue
+                shift = numpy.round(frac[nb] - fa)
+                if shift.any():
+                    nf = frac[nb] - shift
+                    frac[nb] = nf
+                    co = Coord_frac(float(nf[0]), float(nf[1]), float(nf[2])).coord_orth(cell)
+                    nb.coord = numpy.array([co.x, co.y, co.z])
+                visited.add(nb)
+                stack.append(nb)
 
 
 def _invert_op(rot, trn):
