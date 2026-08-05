@@ -181,6 +181,10 @@ def split_fragments(session, model, cell, spacegroup, grid, mode='rename', path=
         # bond is its minimum image; only integer lattice translations are applied, so all
         # structure factors - and hence maps, R factors and SF gradients - are invariant.
         _gather_molecules(model, cell)
+        # Gathering a molecule can translate a metal-coordinated atom to a lattice image
+        # farther from its metal than the nearest one, leaving the coordination pseudobond
+        # drawn across the cell; drop those (see _prune_wrapped_coordination).
+        _prune_wrapped_coordination(model, cell)
 
     summary = {'mode': mode, 'n_fragments': len(made), 'n_added_atoms': n_added,
                'counts': counts}
@@ -378,8 +382,13 @@ def _gather_molecules(model, cell):
         x, y, z = a.coord
         frac[a] = numpy.array(Coord_orth(float(x), float(y), float(z)).coord_frac(cell).uvw,
                               float)
+    # Seed from the DEPOSITED atoms before the symmetry-generated images, so a real atom
+    # anchors each molecule and only the generated copies are translated onto it. This
+    # keeps deposited atoms at their deposited positions wherever a molecule has one to
+    # anchor on - notably a metal-coordinated oxygen whose completed sulfonate image would
+    # otherwise drag it (and its coordination bond) a cell away (cod_2103691).
     visited = set()
-    for seed in atoms:
+    for seed in sorted(atoms, key=lambda a: bool(getattr(a, 'clipper_sf_exclude', False))):
         if seed in visited:
             continue
         visited.add(seed)
@@ -398,6 +407,35 @@ def _gather_molecules(model, cell):
                     nb.coord = numpy.array([co.x, co.y, co.z])
                 visited.add(nb)
                 stack.append(nb)
+
+
+def _prune_wrapped_coordination(model, cell):
+    '''Delete metal-coordination pseudobonds left pointing across the unit cell by molecule
+    unwrapping. _gather_molecules translates a molecule so its covalent bonds are whole; a
+    metal-coordinated atom can thereby move to a lattice image farther from its metal than
+    the nearest one, so the coordination pseudobond is drawn cell-spanning and coordinates a
+    symmetry copy that is not a distinct atom in the gathered model. Drop any pseudobond
+    whose current length exceeds its minimum-image distance (a nearer periodic image of the
+    ligand exists) - so a genuine nearest-image coordination (e.g. a Ca...P at its deposited
+    3.49 A) is kept, while a bond stretched to a wrapped copy is removed. This is unavoidable
+    for a coordination polymer where a ligand bridges metals in adjacent cells (a sulfonyl O
+    bound to one metal and, a cell over, coordinating another - cod_2223282): the covalent
+    molecule is kept whole and the redundant cross-cell coordination display is dropped.'''
+    import numpy
+    from ..clipper_python import Coord_orth, Coord_frac
+    def frac(a):
+        x, y, z = a.coord
+        return numpy.array(Coord_orth(float(x), float(y), float(z)).coord_frac(cell).uvw,
+                           float)
+    for pbg in list(model.pbg_map.values()):
+        for pb in list(pbg.pseudobonds):
+            a1, a2 = pb.atoms
+            d = frac(a2) - frac(a1)
+            dmin = d - numpy.round(d)
+            co = Coord_frac(float(dmin[0]), float(dmin[1]), float(dmin[2])).coord_orth(cell)
+            len_min = (co.x * co.x + co.y * co.y + co.z * co.z) ** 0.5
+            if pb.length > len_min + _POS_TOL:
+                pb.delete()
 
 
 def _invert_op(rot, trn):
