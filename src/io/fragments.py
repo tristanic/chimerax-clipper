@@ -539,6 +539,18 @@ def _complete_fragment(res, comp, special, fracs, cell, ops_rt, edges, existing_
     disorder = {a for a in comp if a.occupancy < 0.99}
     promote = set()
 
+    # A bridging proton - a hydrogen covalently bonded to two heavy atoms, i.e. a
+    # short-strong O-H...O / N-H...O hydrogen bond the CIF _geom_bond loop lists as two bonds
+    # (a carboxyl-carboxylate shared proton, cod_2017117) - fuses the two moieties it bridges
+    # into one completion fragment. Imaging THROUGH it (propagating a symmetry operator from
+    # one moiety across the bridge into the other) drags a spurious image of the proton and
+    # the far moiety a whole cell away, wiring a ~17 A bond that no unwrap can resolve (the
+    # bridged network is periodic). So the imaging BFS does not step onto a bridging proton:
+    # its deposited bonds are left intact (the shared proton is kept, for downstream
+    # tautomer / dual-bond force-field treatment), only its symmetry IMAGE is not generated.
+    bridging = {a for a in comp if a.element.number == 1
+                and sum(1 for nb in a.neighbors if nb.element.number > 1) >= 2}
+
     I3 = numpy.eye(3)
     Z3 = numpy.zeros(3)
 
@@ -627,7 +639,7 @@ def _complete_fragment(res, comp, special, fracs, cell, ops_rt, edges, existing_
         source, gR, gt, atom = queue.popleft()
         # (1) in-model covalent neighbours, at the same rigid placement.
         for nb in source.neighbors:
-            if not nb.element.is_metal and nb in comp_set:
+            if not nb.element.is_metal and nb in comp_set and nb not in bridging:
                 link(atom, nb, gR, gt, queue)
         # (1b) a special-position atom's neighbours are also imaged by its site symmetry
         #      (the water-H case: O on a 2-fold with only one H modelled).
@@ -636,7 +648,7 @@ def _complete_fragment(res, comp, special, fracs, cell, ops_rt, edges, existing_
                 pR = gR.dot(sR)
                 pt = gR.dot(st) + gt
                 for nb in source.neighbors:
-                    if not nb.element.is_metal and nb in comp_set:
+                    if not nb.element.is_metal and nb in comp_set and nb not in bridging:
                         link(atom, nb, pR, pt, queue)
         # (2) cross-symmetry _geom_bond edges, imaged with the edge's own operator+lattice
         #     at the COMPOSED placement.
