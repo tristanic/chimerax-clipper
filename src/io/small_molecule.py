@@ -180,6 +180,19 @@ def _neighbour_pairs(coords, radius):
 # True and is included for completeness. Listing the already-False ones documents intent.
 _COVALENT_METALLOIDS = frozenset({'B', 'Si', 'Ge', 'As', 'Sb', 'Te', 'Se', 'Po'})
 
+# Halogens, and the Lewis-base acceptors (N, O) they make SECONDARY bonds to. A halogen...N/O
+# secondary bond - a halogen bond, or the secondary-bonding sphere that completes a hypervalent
+# iodane's coordination - is far longer than the primary covalent bond, yet slips under the
+# generic long-bond tolerance because Element.bond_length returns a large, element-dominated
+# value for iodine (2.08 A, same for I-O/I-N/I-C), so bond_length + 0.5 reaches 2.58 A and
+# admits e.g. the 2.57 A I...O secondary contact of the lambda-3-iodane in cod_1567011 (whose
+# primary bonds are I-O 1.81, I-C 2.13/2.14). A tighter bar for halogen...N/O keeps the primary
+# covalent I-O/I-N (<= ~2.2 A) but drops the secondary contact (>= ~2.5 A). Halogen-carbon and
+# halogen-halogen bonds are deliberately NOT included - organohalides and polyiodides are real.
+_HALOGENS = frozenset({'F', 'Cl', 'Br', 'I', 'At'})
+_HALOGEN_SECONDARY_ACCEPTORS = frozenset({'N', 'O'})
+_HALOGEN_SECONDARY_TOLERANCE = 0.3
+
 
 def _is_coordination_metal(element):
     '''True for a metal whose bonds should be carried as coordination pseudobonds rather
@@ -424,13 +437,21 @@ def drop_implausibly_long_bonds(session, model, source_name, tolerance=0.5):
         bl = Element.bond_length(a1.element, a2.element)
         if bl == 0.0:
             continue
+        # A halogen...N/O secondary/halogen bond needs a tighter bar than the generic one
+        # (see _HALOGENS): iodine's large bond_length makes bond_length + 0.5 admit a ~2.57 A
+        # secondary I...O contact as covalent (cod_1567011's lambda-3-iodane).
+        e1, e2 = a1.element.name, a2.element.name
+        tol = tolerance
+        if ((e1 in _HALOGENS and e2 in _HALOGEN_SECONDARY_ACCEPTORS) or
+                (e2 in _HALOGENS and e1 in _HALOGEN_SECONDARY_ACCEPTORS)):
+            tol = min(tolerance, _HALOGEN_SECONDARY_TOLERANCE)
         d = float(numpy.linalg.norm(a1.coord - a2.coord))
-        if d > bl + tolerance:
-            offenders.append((b, a1.name, a2.name, d, bl))
+        if d > bl + tol:
+            offenders.append((b, a1.name, a2.name, d, bl, tol))
     if offenders:
         offenders.sort(key=lambda o: o[4] - o[3])   # most egregious first
-        ex = '; '.join('%s-%s %.2f A (max ~%.2f)' % (n1, n2, d, bl + tolerance)
-                       for _b, n1, n2, d, bl in offenders[:3])
+        ex = '; '.join('%s-%s %.2f A (max ~%.2f)' % (n1, n2, d, bl + tol)
+                       for _b, n1, n2, d, bl, tol in offenders[:3])
         for o in offenders:
             o[0].delete()
         session.logger.warning(
