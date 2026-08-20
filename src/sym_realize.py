@@ -434,30 +434,41 @@ def _assign_unique_chain_ids(copies):
 _CLIPPER_ATOM_ATTRS = ('clipper_scattering_species',)
 
 
-def _propagate_clipper_attrs(copies, combined):
+def _propagate_clipper_attrs(structure, surv_masks, combined):
     '''
     Re-stamp the clipper per-atom custom attributes onto `combined` after a
-    `combine`. Because every copy was given unique chain IDs, `combine` merges no
-    chains, so combined.atoms is exactly the copies' atoms concatenated in order -
-    letting us copy the attribute values positionally. Only attributes actually
-    present on the source atoms are touched (proteins carry none, so skip).
+    `combine`, reading the values from the SOURCE structure (not the copies) and
+    aligning them to `combined.atoms` via `surv_masks` - exactly as `_propagate_aniso`
+    does. Every copy was given unique chain IDs, so `combine` merges no chains and
+    `combined.atoms` is the surviving source atoms of each kept copy concatenated in
+    kept-place order (`surv_masks[i]` a bool mask over the source atoms).
+
+    Read and write are done with BULK Collection operations (`structure.atoms.<attr>`
+    / `combined.atoms.<attr> = ...`), never a per-atom Python loop. The old
+    copy-by-copy `for a in c.atoms` scan created a Python wrapper for every atom of
+    every copy on every expansion; because those wrappers are not reclaimed until the
+    models are closed, they accumulated across a batch (e.g. a corpus chunk that holds
+    many boxes in one session) and made ChimeraX's per-`copy`/`combine`
+    `_copy_custom_attrs` instance scan grow without bound - an O(N**2) cost in the
+    number of boxes. Bulk ops touch no per-atom wrapper, so the instance registry
+    stays flat. Attributes absent from the source (proteins, and the cached-record
+    corpus path, carry none) raise `AttributeError` on the bulk read and are skipped.
     '''
     catoms = combined.atoms
-    if len(catoms) != sum(c.num_atoms for c in copies):
+    n_surv = int(sum(int(m.sum()) for m in surv_masks))
+    if len(catoms) != n_surv:
         return  # concatenation assumption broken; do not risk mis-assigning
+    src_atoms = structure.atoms
     for attr in _CLIPPER_ATOM_ATTRS:
-        values = []
-        present = False
-        for c in copies:
-            for a in c.atoms:
-                v = getattr(a, attr, None)
-                present = present or v is not None
-                values.append(v)
-        if not present:
+        try:
+            src_vals = numpy.asarray(getattr(src_atoms, attr))
+        except AttributeError:
+            continue  # attribute not present on any source atom - nothing to carry
+        box_vals = numpy.concatenate([src_vals[m] for m in surv_masks]) if surv_masks \
+            else numpy.empty(0, src_vals.dtype)
+        if len(box_vals) != len(catoms):
             continue
-        for a, v in zip(catoms, values):
-            if v is not None:
-                setattr(a, attr, v)
+        setattr(catoms, attr, box_vals)
 
 
 # ---------------------------------------------------------------------------
@@ -781,7 +792,7 @@ def realize_symmetry_copies(session, structure, places, name=None,
         name = '{} symmetry copies'.format(structure.name)
     combined = combine_cmd(session, copies, close=False, name=name,
         add_to_session=False)
-    _propagate_clipper_attrs(copies, combined)
+    _propagate_clipper_attrs(structure, surv_masks, combined)
     _propagate_aniso(structure, kept_places, surv_masks, combined)
     for c in copies:
         c.delete()
