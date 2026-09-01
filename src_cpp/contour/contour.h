@@ -24,6 +24,8 @@
 #ifndef CONTOUR_HEADER_INCLUDED
 #define CONTOUR_HEADER_INCLUDED
 
+#include <cstdint>
+
 //
 // The data values can be any of the standard C numeric types.
 //
@@ -39,7 +41,13 @@
 namespace Contour_Calculation
 {
 typedef unsigned int Index; // grid and edge indices, and surface vertex indices
-typedef long Stride;	    // Array strides and pointer offsets, signed
+// Offsets into the grid, signed: the caller may hand us a numpy view with negative
+// strides (e.g. the reversed view "vol flip" produces).  MUST be wider than Index:
+// MSVC's long is 32 bits, so "Stride * Index" converted both operands to unsigned
+// long, turning a negative stride into ~4.29e9 and reading gigabytes past the array.
+// int64_t can represent every unsigned int value, so the product stays signed on
+// every platform.  Matches upstream ChimeraX's GIndex (map/_map/index_types.h).
+typedef std::int64_t Stride;
 
 class Contour_Surface
 {

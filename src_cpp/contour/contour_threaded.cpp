@@ -166,6 +166,8 @@ void Contour_Thread_Mgr::start_compute(py::array_t<float> data, float threshold,
 {
     if (working_)
         throw std::runtime_error("Contour thread is already running!");
+    if (data.ndim() != 3)
+        throw std::invalid_argument("Contour input must be a 3D array!");
     threshold_=threshold;
     // Reference (do NOT copy) the source data; the worker reads it directly via
     // the raw pointer, and the strides tell surface() how to index it (the map's
@@ -179,7 +181,12 @@ void Contour_Thread_Mgr::start_compute(py::array_t<float> data, float threshold,
         size_[i] = data.shape(i);
     }
     data_ref_ = data;                             // co-own: keeps the buffer alive
-    data_ptr_ = (float*)data_ref_.request().ptr;  // underlying (contiguous) buffer
+    // The view's logical element [0,0,0] - NOT necessarily the start of the
+    // allocation, and the array need not be contiguous.  A view with negative
+    // strides (e.g. from "vol flip") puts this at the END of the buffer and
+    // surface() walks backwards from here; Stride is signed and wider than Index
+    // so that arithmetic stays correct (see contour.h).
+    data_ptr_ = (float*)data_ref_.request().ptr;
     flip_triangles_ = det < 0;
     copy_transform(vertex_transform, vertex_transform_);
     copy_transform(normal_transform, normal_transform_);
