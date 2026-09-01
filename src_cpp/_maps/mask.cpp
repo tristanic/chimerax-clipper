@@ -22,12 +22,45 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/numpy.h>
 #include <iostream>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 #include <algorithm>
 
 namespace py=pybind11;
 using ssize_t = py::ssize_t;
+
+// Read-only arrays: let pybind11 hand us a C-contiguous array of the right dtype,
+// converting if it has to.  Needed as well as convenient - callers legitimately pass
+// a shape tuple for dim and a float32 Atoms.coords for coords.
+template<typename T>
+using c_array_in = py::array_t<T, py::array::c_style | py::array::forcecast>;
+
+// Every array below is read through a bare pointer, so its element count is a bounds
+// contract.  min_size is what the C++ actually dereferences.
+static void check_size(const py::array& arr, ssize_t min_size, const char* name)
+{
+    if (arr.size() < min_size)
+        throw std::runtime_error(std::string(name) + " must have at least "
+            + std::to_string(min_size) + " elements, but has "
+            + std::to_string(arr.size()) + "!");
+}
+
+// The mask is written through a flat C-order index (see stamp_atom_range), so it must
+// be 3D, C-contiguous, and shaped exactly as dim says.  Checked rather than coerced:
+// declaring it c_style would let pybind11 substitute a contiguous copy, and every
+// voxel we stamp would be silently discarded when the call returns.
+static void check_mask_array(const py::array& map, const size_t* dim)
+{
+    if (map.ndim() != 3)
+        throw std::runtime_error("Mask array must be 3D!");
+    if (!(map.flags() & py::array::c_style))
+        throw std::runtime_error("Mask array must be C-contiguous! It is written to "
+            "in place, so a strided or transposed view cannot be used.");
+    for (ssize_t i=0; i<3; ++i)
+        if ((size_t)map.shape(i) != dim[i])
+            throw std::runtime_error("Mask array shape does not match the given dimensions!");
+}
 
 template<typename T>
 void affine_transform(T* coord, T* tf, T* out )
@@ -128,15 +161,22 @@ void generate_mask(
 PYBIND11_MODULE(_map_mask, m){
     m.doc() = "Mask a map down to surround a set of coordinates.";
     m.def("generate_mask",
-        [](py::array_t<uint8_t,0> map, py::array_t<double> origin,
-            py::array_t<double> step, py::array_t<size_t> dim,
-            py::array_t<double> ijk_to_xyz, py::array_t<double> xyz_to_ijk,
-            py::array_t<double> coords, size_t n, double radius, size_t num_threads)
+        [](py::array_t<uint8_t,0> map, c_array_in<double> origin,
+            c_array_in<double> step, c_array_in<size_t> dim,
+            c_array_in<double> ijk_to_xyz, c_array_in<double> xyz_to_ijk,
+            c_array_in<double> coords, size_t n, double radius, size_t num_threads)
         {
+            check_size(dim, 3, "dim");
+            check_size(origin, 3, "origin");
+            check_size(step, 3, "step");
+            check_size(ijk_to_xyz, 12, "ijk_to_xyz");
+            check_size(xyz_to_ijk, 12, "xyz_to_ijk");
+            check_size(coords, 3*(ssize_t)n, "coords");
+            auto dptr = static_cast<size_t*>(dim.request().ptr);
+            check_mask_array(map, dptr);
             auto mptr = static_cast<uint8_t*>(map.request().ptr);
             auto optr = static_cast<double*>(origin.request().ptr);
             auto sptr = static_cast<double*>(step.request().ptr);
-            auto dptr = static_cast<size_t*>(dim.request().ptr);
             auto itptr = static_cast<double*>(ijk_to_xyz.request().ptr);
             auto xtptr = static_cast<double*>(xyz_to_ijk.request().ptr);
             auto cptr = static_cast<double*>(coords.request().ptr);

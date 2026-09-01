@@ -32,6 +32,34 @@ namespace py=pybind11;
 using ssize_t=py::ssize_t;
 using namespace clipper;
 
+// Numpy array that is guaranteed C-contiguous and of the right dtype by the time it
+// reaches C++: pybind11 substitutes a converted copy if necessary.  Correct only for
+// arrays we READ - never for an output array, where a silent copy would swallow
+// everything we write into it (use check_c_contiguous_3d() for those).
+template<typename T>
+using c_array_in = py::array_t<T, py::array::c_style | py::array::forcecast>;
+
+// Numpy array we WRITE into.  ExtraFlags=0 disables the forcecast that py::array_t
+// applies by default: a dtype mismatch must raise, not silently hand us a converted
+// copy whose contents are discarded when the call returns.
+template<typename T>
+using array_out = py::array_t<T, 0>;
+
+// Check that an OUTPUT array is 3D and C-contiguous, and throw if not.  Arrays we
+// fill by walking a bare pointer must be checked rather than coerced: declaring them
+// py::array::c_style would let pybind11 hand us a contiguous copy instead, and the
+// caller's array would silently never be written.  Takes py::array so it binds any
+// py::array_t instantiation without triggering a conversion.
+inline void check_c_contiguous_3d(const py::array& arr, const char* name)
+{
+    if (arr.ndim() != 3)
+        throw std::runtime_error(std::string(name) + " must be a 3D array, but has "
+            + std::to_string(arr.ndim()) + " dimension(s)!");
+    if (!(arr.flags() & py::array::c_style))
+        throw std::runtime_error(std::string(name) + " must be a C-contiguous array! "
+            "It is written to in place, so a strided or transposed view cannot be used.");
+}
+
 // check that the given Numpy array matches expected dimensions, and throw an
 // error if not. direction is true for incoming, false for outgoing.
 template<typename T>

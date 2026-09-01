@@ -128,8 +128,9 @@ void declare_xmap_reference_coord(py::module &m)
 }
 
 template<typename T>
-void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_grid& origin)
+void numpy_export_core_(const Xmap<T>& xmap, array_out<T> target, const Coord_grid& origin)
 {
+    check_c_contiguous_3d(target, "Export target");
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
     int nu, nv, nw;
@@ -157,8 +158,11 @@ void numpy_thread_core_(const Xmap<T>& xmap, T* target_ptr, int minu, int minv, 
 }
 
 template<typename T>
-void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_grid& origin, size_t n_threads)
+void numpy_export_core_(const Xmap<T>& xmap, array_out<T> target, const Coord_grid& origin, size_t n_threads)
 {
+    // The per-thread offset below (tptr + i*u_per_thread*nv*nw) assumes a C-contiguous
+    // row-major layout, so this check is load-bearing, not merely defensive.
+    check_c_contiguous_3d(target, "Export target");
     if (n_threads < 1) n_threads=1;
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
@@ -188,8 +192,10 @@ void numpy_export_core_(const Xmap<T>& xmap, py::array_t<T> target, const Coord_
 }
 
 template<typename T>
-void numpy_import_core_(Xmap<T>& xmap, py::array_t<T> vals, const Coord_grid& origin)
+void numpy_import_core_(Xmap<T>& xmap, c_array_in<T> vals, const Coord_grid& origin)
 {
+    if (vals.ndim() != 3)
+        throw std::runtime_error("Input array must be 3D!");
     auto vbuf = vals.request();
     T* vptr = (T*)vbuf.ptr;
     int nu, nv, nw;
@@ -216,21 +222,21 @@ void add_xmap_numpy_functions(py::class_<C, Xmap_base>& pyclass)
             // grid plane in every axis (one plane short — corrupted periodic
             // wrapping for cell-edge voxels).
             auto s = g.max()-g.min()+Coord_grid(1,1,1);
-            auto target = py::array_t<T>({s.u(), s.v(), s.w()});
+            array_out<T> target({s.u(), s.v(), s.w()});
             numpy_export_core_(self, target, g.min());
             return target;
         })
         .def("export_section_numpy", [](const C& self, const Coord_grid& origin, const Coord_grid& size)
         {
-            auto target = py::array_t<T>({size[0], size[1], size[2]});
+            array_out<T> target({size[0], size[1], size[2]});
             numpy_export_core_(self, target, origin);
             return target;
         })
-        .def("export_section_numpy", [](const C& self, const Coord_grid& origin, py::array_t<T> target )
+        .def("export_section_numpy", [](const C& self, const Coord_grid& origin, array_out<T> target )
         {
             numpy_export_core_(self, target, origin);
         })
-        .def("export_section_numpy", [](const C& self, const Coord_grid& origin, py::array_t<T> target, size_t n_threads)
+        .def("export_section_numpy", [](const C& self, const Coord_grid& origin, array_out<T> target, size_t n_threads)
         {
             numpy_export_core_(self, target, origin, n_threads);
          })
@@ -238,7 +244,7 @@ void add_xmap_numpy_functions(py::class_<C, Xmap_base>& pyclass)
         // the same shape produced by export_section_numpy.  Use in conjunction with
         // data.transpose() when starting from a ChimeraX (nz, ny, nx) region array.
         .def("import_section_numpy",
-            [](C& self, const Coord_grid& origin, py::array_t<T> vals)
+            [](C& self, const Coord_grid& origin, c_array_in<T> vals)
             {
                 numpy_import_core_(self, vals, origin);
             })

@@ -33,9 +33,10 @@ using namespace clipper;
 
 template<typename T>
 void numpy_export_core_(const NXmap<T>& nxmap,
-    py::array_t<T> target,
+    array_out<T> target,
     const Coord_grid& origin)
 {
+    check_c_contiguous_3d(target, "Export target");
     auto tbuf = target.request();
     T* tptr = (T*)tbuf.ptr;
     Coord_grid duvw(tbuf.shape[0], tbuf.shape[1], tbuf.shape[2]);
@@ -56,9 +57,11 @@ void numpy_export_core_(const NXmap<T>& nxmap,
 
 template<typename T>
 void numpy_import_core_(NXmap<T>& nxmap,
-    py::array_t<T> vals,
+    c_array_in<T> vals,
     const Coord_grid& origin)
 {
+    if (vals.ndim() != 3)
+        throw std::runtime_error("Input array must be 3D!");
     auto vbuf = vals.request();
     T* vptr = (T*)vbuf.ptr;
     Coord_grid duvw(vbuf.shape[0], vbuf.shape[1], vbuf.shape[2]);
@@ -86,12 +89,12 @@ void add_nxmap_numpy_functions(py::class_<C>& pyclass)
         .def("export_numpy", [](const C& self)
         {
             auto g = self.grid();
-            auto target = py::array_t<T>({g.nu(),g.nv(),g.nw()});
+            array_out<T> target({g.nu(),g.nv(),g.nw()});
             numpy_export_core_(self, target, Coord_grid(0,0,0));
             return target;
         },
         "Export the whole map to a Numpy array.")
-        .def("export_numpy", [](const C& self, py::array_t<T> target)
+        .def("export_numpy", [](const C& self, array_out<T> target)
         { numpy_export_core_(self, target, Coord_grid(0,0,0)); },
         "Export the map into the given numpy array, starting at the origin. "
         "If the target array is smaller than the map, the output will be "
@@ -101,17 +104,17 @@ void add_nxmap_numpy_functions(py::class_<C>& pyclass)
         {
             if (!self.in_map(origin+size))
                 throw std::out_of_range("Requested data extends beyond the range of the map!");
-            auto target = py::array_t<T>({size[0], size[1], size[2]});
+            array_out<T> target({size[0], size[1], size[2]});
             numpy_export_core_(self, target, origin);
             return target;
         },
         "Export a fragment of the map with the given origin and size, as a "
          "numpy array.")
         .def("export_fragment_numpy", [](const C& self, const Coord_grid& origin,
-            py::array_t<T> target)
+            array_out<T> target)
             { numpy_export_core_(self, target, origin); },
         "Export a fragment of the map with the given origin into the given numpy array.")
-        .def("import_numpy", [](C& self, const Coord_grid& origin, py::array_t<T> vals)
+        .def("import_numpy", [](C& self, const Coord_grid& origin, c_array_in<T> vals)
             { numpy_import_core_(self, vals, origin); },
             "Import data from numpy. Import will start at the origin of the numpy "
             "array, and be written to the map starting at the given origin.")
