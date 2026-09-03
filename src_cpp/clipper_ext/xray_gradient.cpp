@@ -28,6 +28,7 @@
 #include "aniso_scale.h"
 #include "vdw.h"
 #include <clipper/contrib/sfcalc.h>   // SFcalc_aniso_sum (exact direct-summation Fcalc)
+#include <algorithm>                  // std::equal (from-last staleness guard)
 #include <limits>
 
 #include <algorithm>
@@ -231,6 +232,14 @@ struct XrayGradientEvaluator::Impl {
     bool                         has_scale = false;
     double                       scale     = 1.0;   // real-space map scale
     std::vector<double>          refl_scale_;        // reciprocal per-reflection s(h)
+
+    // Snapshot of the parameters of the most recent value_and_gradient, so a
+    // "from last" R emission can verify (fail-closed) that the resident fcalc_hkl
+    // and refl_scale_ describe the geometry the caller is asking R for. Populated at
+    // the END of a successful evaluate(); until then has_last_eval_ is false.
+    bool                         has_last_eval_ = false;
+    std::vector<double>          last_coords_, last_uiso_, last_uaniso_, last_occ_;
+    std::vector<uint8_t>         last_isaniso_;
 
     // ---- reciprocal ctor ----
     Impl(const std::vector<String>&        el,
@@ -608,7 +617,62 @@ struct XrayGradientEvaluator::Impl {
         }
 
         std::copy(raw_grad.begin(), raw_grad.end(), out_grad);
+
+        // Snapshot the parameters just evaluated, so fobs_scaled_fcalc_from_last can
+        // fail closed if asked for R at a different geometry than the resident Fcalc.
+        // Only meaningful in reciprocal mode (the only mode from_last serves).
+        if (!realspace) {
+            last_coords_.assign(coords, coords + (size_t)N * 3);
+            last_uiso_.assign(u_iso, u_iso + (size_t)N);
+            last_uaniso_.assign(u_aniso, u_aniso + (size_t)N * 6);
+            last_occ_.assign(occ, occ + (size_t)N);
+            last_isaniso_.assign(is_aniso, is_aniso + (size_t)N);
+            has_last_eval_ = true;
+        }
         return T;
+    }
+
+    // Emit (Fo, s(h)*|Fc|) from the fcalc_hkl and refl_scale_ left resident by the
+    // most recent value_and_gradient — NO structure-factor calculation. See the
+    // header for semantics. Fail-closed: throws if there is no prior evaluation, no
+    // scale, or the given parameters differ from that evaluation's.
+    void fobs_scaled_fcalc_from_last(
+        const double* coords, const double* u_iso, const double* u_aniso,
+        const double* occ, const uint8_t* is_aniso,
+        double* out_fo, double* out_sfc)
+    {
+        if (realspace)
+            throw std::runtime_error(
+                "fobs_scaled_fcalc_from_last: reciprocal (structure-factor) mode only");
+        if (!has_last_eval_ || !has_scale)
+            throw std::runtime_error(
+                "fobs_scaled_fcalc_from_last: no prior value_and_gradient to reuse "
+                "(call value_and_gradient at these parameters first)");
+        const size_t N = (size_t)n_atoms();
+        const bool same =
+            std::equal(last_coords_.begin(),  last_coords_.end(),  coords)  &&
+            std::equal(last_uiso_.begin(),    last_uiso_.end(),    u_iso)   &&
+            std::equal(last_uaniso_.begin(),  last_uaniso_.end(),  u_aniso) &&
+            std::equal(last_occ_.begin(),     last_occ_.end(),     occ)     &&
+            std::equal(last_isaniso_.begin(), last_isaniso_.end(), is_aniso);
+        if (!same)
+            throw std::runtime_error(
+                "fobs_scaled_fcalc_from_last: parameters differ from the last "
+                "value_and_gradient; the resident Fcalc is for a different geometry "
+                "(reuse is valid only immediately after value_and_gradient at the "
+                "same coordinates/ADPs/occupancies)");
+        (void)N;
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
+            const size_t i = (size_t)ih.index();
+            const bool measured = !fobs[ih].missing() && working(usage, ih)
+                                  && fobs[ih].sigf() > 0.0;
+            if (!measured || fcalc_hkl[ih].missing()) {
+                out_fo[i] = nan; out_sfc[i] = nan; continue;
+            }
+            out_fo[i]  = fobs[ih].f();
+            out_sfc[i] = refl_scale_[(size_t)ih.index()] * fcalc_hkl[ih].f();
+        }
     }
 };
 
@@ -647,6 +711,15 @@ void XrayGradientEvaluator::fobs_scaled_fcalc(
 {
     p_->fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, use_summation,
                           out_fo, out_scaled_fcalc);
+}
+
+void XrayGradientEvaluator::fobs_scaled_fcalc_from_last(
+    const double* coords, const double* u_iso, const double* u_aniso,
+    const double* occ, const uint8_t* is_aniso,
+    double* out_fo, double* out_scaled_fcalc)
+{
+    p_->fobs_scaled_fcalc_from_last(coords, u_iso, u_aniso, occ, is_aniso,
+                                    out_fo, out_scaled_fcalc);
 }
 
 double XrayGradientEvaluator::value_and_gradient(

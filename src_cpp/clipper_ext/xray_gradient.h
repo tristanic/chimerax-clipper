@@ -202,6 +202,25 @@ public:
         const double* occ, const uint8_t* is_aniso, bool use_summation,
         double* out_fo, double* out_scaled_fcalc);
 
+    //! Reciprocal mode only. Emit (Fo, s(h)*|Fc|) from the Fcalc AND per-reflection
+    //! scale the LAST value_and_gradient already computed — NO new structure-factor
+    //! calculation. This is the free per-visit R path: after a value_and_gradient the
+    //! evaluator still holds that call's FFT Fcalc (with bulk) and its frozen scale
+    //! s(h), which is exactly the pair the loss saw, so the resulting R is
+    //! loss-consistent (the 'fft' method, frozen scale — NOT the fresh-scale /
+    //! summation metric fobs_scaled_fcalc offers). Cost is one O(n_reflections) pass.
+    //!
+    //! FAIL-CLOSED ON STALENESS: the per-atom parameters passed here MUST equal those
+    //! of the most recent value_and_gradient (identical values — same coordinates,
+    //! same units, same ADPs/occ/flags); otherwise the resident Fcalc describes a
+    //! different geometry and the R would be silently wrong. A mismatch (or no prior
+    //! value_and_gradient, or no scale yet) throws std::runtime_error. Arrays sized as
+    //! for value_and_gradient / fobs_scaled_fcalc; outputs sized n_reflections().
+    void fobs_scaled_fcalc_from_last(
+        const double* coords, const double* u_iso, const double* u_aniso,
+        const double* occ, const uint8_t* is_aniso,
+        double* out_fo, double* out_scaled_fcalc);
+
     //! Number of reflections in the observed list (reciprocal mode; 0 in real-space
     //! mode). Sizes the arrays passed to fobs_scaled_fcalc.
     int n_reflections() const;

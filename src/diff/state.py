@@ -266,7 +266,7 @@ class XrayTargetState:
         return float(L)
 
     def fobs_scaled_fcalc(self, coords, u_iso=None, u_aniso=None, occ=None,
-                          is_aniso=None, method='fft'):
+                          is_aniso=None, method='fft', reuse_last=False):
         '''
         Reciprocal (fobs) mode only. Return ``(fo, scaled_fc)`` — aligned 1-D arrays of
         the observed amplitude and the SCALED calculated amplitude ``s(h)|Fc|`` over the
@@ -278,13 +278,23 @@ class XrayTargetState:
         matching ``io.small_molecule`` ``recomputed_r_factor``. Both apply the same
         ``scale_fcalc_to_fobs``. Feed the pair to
         :func:`chimerax.clipper.reflection_tools.compute_r_factors`.
+
+        ``reuse_last=True`` skips the structure-factor calculation entirely and emits from
+        the Fcalc AND frozen scale the immediately preceding :meth:`value_and_gradient`
+        left resident — the free per-visit R path. It is **loss-consistent** by
+        construction (the loss's own ``'fft'`` Fcalc and frozen ``s(h)``) and **fail-closed
+        on staleness**: the parameters passed here must be identical to that call's, else it
+        raises. ``method`` is ignored when ``reuse_last`` (always the loss's ``'fft'``);
+        ``'sum'`` has no cached form and must recompute (``reuse_last=False``).
         '''
-        use_summation = _resolve_r_method(method)
         c, ui, ua, oc, ia = self._prepare(coords, u_iso, u_aniso, occ, is_aniso)
+        if reuse_last:
+            return self._ev.fobs_scaled_fcalc_from_last(c, ui, ua, oc, ia)
+        use_summation = _resolve_r_method(method)
         return self._ev.fobs_scaled_fcalc(c, ui, ua, oc, ia, use_summation)
 
     def r_factors(self, coords, u_iso=None, u_aniso=None, occ=None, is_aniso=None,
-                  method='fft'):
+                  method='fft', reuse_last=False):
         '''
         Crystallographic R at ``coords`` via the shared
         :func:`~chimerax.clipper.reflection_tools.compute_r_factors` core. Small-molecule
@@ -298,9 +308,17 @@ class XrayTargetState:
         ~0.01-in-R FFT grid error on heavy-scatterer crystals — for a metric that isn't
         biased by heavy-atom FFT noise. Both use the same ``scale_fcalc_to_fobs``, so the
         only difference is FFT vs summation Fcalc.
+
+        ``reuse_last=True`` returns R from the Fcalc/scale the immediately preceding
+        :meth:`value_and_gradient` already computed — no second structure-factor
+        calculation, so it is ~free (the ``r_settled`` per-visit diagnostic). It is
+        loss-consistent (``'fft'`` Fcalc, frozen scale) and fail-closed on staleness (the
+        parameters must match that call's). Use it right after the loss at the SAME
+        coordinates; for the fresh-scale or ``'sum'`` metric, leave it False.
         '''
         import numpy
-        fo, sfc = self.fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso, method)
+        fo, sfc = self.fobs_scaled_fcalc(coords, u_iso, u_aniso, occ, is_aniso,
+                                         method, reuse_last=reuse_last)
         good_fc = numpy.where(sfc > 0, sfc, numpy.nan)
         from ..reflection_tools import compute_r_factors
         return compute_r_factors(fo, good_fc)
@@ -572,7 +590,7 @@ class EnsembleXrayTargetState:
         return L
 
     def r_factors(self, box_coords, u_iso=None, u_aniso=None, occ=None,
-                  is_aniso=None, method='fft'):
+                  is_aniso=None, method='fft', reuse_last=False):
         '''
         Crystallographic R for the box at ``box_coords`` (the occupancy-weighted
         ``1/n_asu`` overlay), via :meth:`XrayTargetState.r_factors` on the underlying
@@ -583,6 +601,12 @@ class EnsembleXrayTargetState:
         ``method`` ``'fft'`` (default, loss-consistent) or ``'sum'`` (exact summation,
         matches ``recomputed_r_factor``; recommended for a heavy-scatterer-robust metric).
         Returns an :class:`~chimerax.clipper.reflection_tools.RFactors`.
+
+        ``reuse_last=True`` returns the R from the Fcalc/scale the immediately preceding
+        :meth:`value_and_gradient` (e.g. the ``xray_loss`` forward) already computed — no
+        second structure-factor calculation, so per-visit R is ~free. Loss-consistent and
+        fail-closed on staleness: pass the SAME ``box_coords`` (and ADP/occ defaults) as the
+        preceding loss call, or it raises. ``method`` is ignored when ``reuse_last``.
         '''
         n = self._M
         box = numpy.ascontiguousarray(box_coords, numpy.double).reshape(n, 3)
@@ -591,4 +615,4 @@ class EnsembleXrayTargetState:
         b_occ = self._def_occ if occ is None else numpy.ascontiguousarray(occ, numpy.double).reshape(n)
         b_isan = self._def_isan if is_aniso is None else numpy.ascontiguousarray(is_aniso, numpy.uint8).reshape(n)
         return self._state.r_factors(box, u_iso=b_uiso, u_aniso=b_uan, occ=b_occ,
-                                     is_aniso=b_isan, method=method)
+                                     is_aniso=b_isan, method=method, reuse_last=reuse_last)

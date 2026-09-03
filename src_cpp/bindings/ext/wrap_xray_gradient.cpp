@@ -168,5 +168,41 @@ void init_xray_gradient(py::module& m)
             py::arg("u_aniso"),
             py::arg("occ"),
             py::arg("is_aniso"),
-            py::arg("use_summation") = false);
+            py::arg("use_summation") = false)
+
+        // Same (fo, scaled_fcalc) emission, but reusing the Fcalc AND scale the LAST
+        // value_and_gradient already computed — NO new structure-factor calculation
+        // (the free per-visit R path). Loss-consistent (fft Fcalc, frozen scale).
+        // FAIL-CLOSED: raises if the given parameters differ from that call's, or if
+        // there was no prior value_and_gradient / no scale yet.
+        .def("fobs_scaled_fcalc_from_last",
+            [](cx::XrayGradientEvaluator& self,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> coords,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> u_iso,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> u_aniso,
+               py::array_t<double,  py::array::c_style | py::array::forcecast> occ,
+               py::array_t<uint8_t, py::array::c_style | py::array::forcecast> is_aniso) -> py::tuple
+            {
+                const int N = self.n_atoms();
+                const int R = self.n_reflections();
+                if (R == 0)
+                    throw std::invalid_argument("fobs_scaled_fcalc_from_last: reciprocal (fobs) mode only");
+                if ((int)coords.size()   != 3*N) throw std::invalid_argument("coords must have shape (N,3)");
+                if ((int)u_iso.size()    != N)   throw std::invalid_argument("u_iso must have length N");
+                if ((int)u_aniso.size()  != 6*N) throw std::invalid_argument("u_aniso must have shape (N,6)");
+                if ((int)occ.size()      != N)   throw std::invalid_argument("occ must have length N");
+                if ((int)is_aniso.size() != N)   throw std::invalid_argument("is_aniso must have length N");
+                py::array_t<double> fo(R), sfc(R);
+                self.fobs_scaled_fcalc_from_last(
+                    coords.data(), u_iso.data(), u_aniso.data(), occ.data(),
+                    is_aniso.data(),
+                    static_cast<double*>(fo.request().ptr),
+                    static_cast<double*>(sfc.request().ptr));
+                return py::make_tuple(fo, sfc);
+            },
+            py::arg("coords"),
+            py::arg("u_iso"),
+            py::arg("u_aniso"),
+            py::arg("occ"),
+            py::arg("is_aniso"));
 }
