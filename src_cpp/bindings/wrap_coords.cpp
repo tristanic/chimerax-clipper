@@ -106,12 +106,12 @@ py::class_<HKL, Vec3<int>>(m, "HKL")
         [](HKL& self, const int& h){ self.h() = h; }
     )
     .def_property("k",
-        [](const HKL& self){ return self.h(); },
-        [](HKL& self, const int& h){ self.h() = h; }
+        [](const HKL& self){ return self.k(); },
+        [](HKL& self, const int& k){ self.k() = k; }
     )
     .def_property("l",
-        [](const HKL& self){ return self.h(); },
-        [](HKL& self, const int& h){ self.h() = h; }
+        [](const HKL& self){ return self.l(); },
+        [](HKL& self, const int& l){ self.l() = l; }
     )
     // Get/set to/from numpy
     .def_property("hkl",
