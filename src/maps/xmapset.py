@@ -1280,13 +1280,15 @@ class XmapSet(MapSetBase):
         'small molecule' snapshot block and install it as self._small_molecule_data, so the
         cell/spacegroup/grid/hklinfo accessors work while the child maps restore.'''
         import numpy
-        from .. import (Cell, Cell_descr, Spacegroup, Spgr_descr, Resolution,
+        from .. import (Cell, Cell_descr, Spacegroup, Spgr_descr,
                         Grid_sampling, HKL_info, HKL_data_F_sigF)
+        from ..io.small_molecule import _padded_resolution
         cell = Cell(Cell_descr(*sm['cell dim'], *sm['cell angles']))
         spacegroup = Spacegroup(Spgr_descr(sm['hall symbol'], Spgr_descr.Hall))
         grid = Grid_sampling(*sm['grid'])
         res = sm['resolution']
-        hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
+        # Same padded limit as at build, so the d_min reflection's slot exists to restore.
+        hklinfo = HKL_info(spacegroup, cell, _padded_resolution(res), True)
         fobs = HKL_data_F_sigF(hklinfo)
         fobs.set_data(numpy.asarray(sm['fobs hkls']), numpy.asarray(sm['fobs values']))
         self._radiation = sm.get('radiation', 'xray')

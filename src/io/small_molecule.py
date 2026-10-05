@@ -690,7 +690,7 @@ def _resolve_radiation(radiation, path):
     return str(radiation).lower()
 
 
-def read_small_molecule_fobs(path, cell, spacegroup):
+def read_small_molecule_fobs(path, cell, spacegroup, merge_equivalents=False):
     '''
     Read a small-molecule reflection file (a COD ``.hkl`` / CIF ``_refln_`` loop of
     ``F_squared_meas``) into the observed-data HKL_data objects a reciprocal
@@ -716,10 +716,12 @@ def read_small_molecule_fobs(path, cell, spacegroup):
     composition of :func:`_parse_reflection_file` (the file read) and
     :func:`fobs_from_arrays` (the pure numpy->Clipper transform); a caller that has
     cached the raw ``(hkl, fsq, sig)`` arrays can skip the file and call
-    :func:`fobs_from_arrays` directly.
+    :func:`fobs_from_arrays` directly. ``merge_equivalents`` is passed through to
+    :func:`fobs_from_arrays`.
     '''
     hkl, fsq, sig = _parse_reflection_file(path)
-    return fobs_from_arrays(hkl, fsq, sig, cell, spacegroup)
+    return fobs_from_arrays(hkl, fsq, sig, cell, spacegroup,
+                            merge_equivalents=merge_equivalents)
 
 
 def _parse_reflection_file(path):
@@ -727,34 +729,142 @@ def _parse_reflection_file(path):
     Parse a small-molecule reflection file (COD ``.hkl`` / CIF ``_refln_`` loop) into
     the raw post-parse columns ``(hkl, fsq, sig)``: Miller indices ``int32[N,3]``,
     ``F_squared_meas`` (intensity I) ``float64[N]``, and ``sigma(F_squared)``
-    ``float64[N]`` (1.0 where absent). No transform is applied — this is the
-    file-reading half of :func:`read_small_molecule_fobs`, split out so a caller that
-    has cached these arrays (e.g. the COD structure-factor cache) can rebuild the
+    ``float64[N]`` (NaN where the file gives none). No transform is applied — this is
+    the file-reading half of :func:`read_small_molecule_fobs`, split out so a caller
+    that has cached these arrays (e.g. the COD structure-factor cache) can rebuild the
     observed data via :func:`fobs_from_arrays` with no file access. The
     corrupt/short-loop guards live here, so cached arrays inherit the vetted output.
     Raises ``UserError`` when no reflections are present.
     '''
-    import numpy
     from chimerax.core.errors import UserError
 
     refln = _find_reflection_table(path)
     if refln is None:
         raise UserError('No reflections (F_squared_meas) found for %r' % path)
-
-    rows = refln.fields(('index_h', 'index_k', 'index_l',
-                         'F_squared_meas', 'F_squared_sigma'),
-                        allow_missing_fields=True)
-    hkl = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
-    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
-    sig = numpy.array([float(_strip_su(r[4]))
-                       if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
-                       for r in rows], numpy.double)
+    hkl, fsq, sig = _reflection_arrays(refln)
     if len(hkl) == 0:
         raise UserError('Reflection loop for %r is empty' % path)
     return hkl, fsq, sig
 
 
-def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup):
+def _reflection_arrays(refln):
+    '''The raw ``(hkl, fsq, sig)`` columns of a ``_refln_`` table, as returned by
+    :func:`_parse_reflection_file`. A missing sigma (absent column, ``?`` or ``.``) is
+    NaN rather than a stand-in value, so "not given" stays distinguishable from a
+    genuine 1.0.'''
+    import numpy
+    rows = refln.fields(('index_h', 'index_k', 'index_l',
+                         'F_squared_meas', 'F_squared_sigma'),
+                        allow_missing_fields=True)
+    hkl = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows],
+                      numpy.int32).reshape(-1, 3)
+    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
+    sig = numpy.array([float(_strip_su(r[4]))
+                       if (len(r) > 4 and r[4] not in ('', '?', '.')) else numpy.nan
+                       for r in rows], numpy.double)
+    return hkl, fsq, sig
+
+
+# Per-index offset used to pack a Miller index triple into one non-negative int64 key.
+_HKL_KEY_OFFSET = 1 << 16
+
+
+def merge_equivalent_reflections(hkl, fsq, sig, spacegroup):
+    '''
+    Merge symmetry- and Friedel-equivalent reflection rows (an unmerged or partly merged
+    small-molecule data set) into one observation per unique reflection, by the
+    inverse-variance mean in intensity space:
+
+        I = sum(I_i / sig_i^2) / sum(1 / sig_i^2),    sig = 1 / sqrt(sum(1 / sig_i^2))
+
+    Friedel mates are merged as well, since the calculated structure factors carry no
+    anomalous term.
+
+    Rows with no usable sigma (<= 0, non-finite, or NaN for "not given") cannot be
+    weighted and are discarded, as are rows with a non-finite I; a reflection made up
+    only of such rows is lost. The exception is a data set with no usable sigma at all,
+    where every row gets sigma = 1 (a plain mean). Systematic absences and (0,0,0) are
+    dropped.
+
+    Returns ``(hkl, fsq, sig, multiplicity)`` over the unique reflections. Each ``hkl``
+    row is one member of its equivalent set (not necessarily in Clipper's reciprocal
+    ASU, which ``HKL_data.set_data`` maps to itself).
+    '''
+    import numpy
+    from chimerax.core.errors import UserError
+    from ..clipper_python import HKL
+
+    hkl = numpy.ascontiguousarray(hkl, numpy.int32).reshape(-1, 3)
+    fsq = numpy.ascontiguousarray(fsq, numpy.double).reshape(-1)
+    sig = numpy.ascontiguousarray(sig, numpy.double).reshape(-1)
+    if len(fsq) != len(hkl) or len(sig) != len(hkl):
+        raise UserError('merge_equivalent_reflections: hkl/fsq/sig length mismatch '
+                        '(%d/%d/%d)' % (len(hkl), len(fsq), len(sig)))
+    if len(hkl) and numpy.abs(hkl).max() >= _HKL_KEY_OFFSET:
+        raise UserError('merge_equivalent_reflections: Miller index out of range')
+
+    usable = numpy.isfinite(sig) & (sig > 0)
+    if not usable.any():
+        sig = numpy.ones(len(sig), numpy.double)
+        usable[:] = True
+    keep = usable & numpy.isfinite(fsq)
+    hkl, fsq, sig = hkl[keep], fsq[keep], sig[keep]
+
+    # Every member of an equivalent set shares the Laue orbit {+-h.R} over the primitive
+    # operators (Clipper's reciprocal convention: h' = h.R), so the largest packed key in
+    # the orbit is a canonical label for the set.
+    rots = numpy.array([numpy.rint(spacegroup.primitive_symop(i).rot.as_numpy())
+                        for i in range(spacegroup.num_primitive_symops)], numpy.int64)
+    orbit = numpy.einsum('nj,sjk->nsk', hkl.astype(numpy.int64), rots)
+    orbit = numpy.concatenate([orbit, -orbit], axis=1)
+    off, base = _HKL_KEY_OFFSET, 2 * _HKL_KEY_OFFSET
+    keys = ((orbit[..., 0] + off) * base + (orbit[..., 1] + off)) * base + (orbit[..., 2] + off)
+    best = keys.argmax(axis=1)
+    rows = numpy.arange(len(hkl))
+    _, first, inv = numpy.unique(keys[rows, best], return_index=True, return_inverse=True)
+    inv = inv.reshape(-1)
+    rep = orbit[first, best[first]].astype(numpy.int32)
+
+    w = 1.0 / sig**2
+    wsum = numpy.bincount(inv, weights=w)
+    i_merged = numpy.bincount(inv, weights=w * fsq) / wsum
+    sig_merged = 1.0 / numpy.sqrt(wsum)
+    multiplicity = numpy.bincount(inv)
+
+    present = numpy.array([h.any() and not spacegroup.hkl_class(HKL(h.tolist())).sys_abs
+                           for h in rep], bool).reshape(-1)
+    return rep[present], i_merged[present], sig_merged[present], multiplicity[present]
+
+
+def _d_min(hkl, cell):
+    '''Resolution (d, Angstroms) of the highest-resolution reflection in ``hkl``.'''
+    import numpy
+    from ..clipper_python import HKL
+    invresolsq = numpy.array([HKL(hkl[i].tolist()).invresolsq(cell) for i in range(len(hkl))])
+    return 1.0 / numpy.sqrt(invresolsq.max())
+
+
+def _padded_resolution(d_min):
+    '''A Resolution limit just beyond ``d_min``. Clipper generates only reflections with
+    1/d^2 strictly below the limit, so a limit placed exactly at the highest-resolution
+    observation would drop it.'''
+    from ..clipper_python import Resolution
+    return Resolution(d_min * (1.0 - 1e-6))
+
+
+def _amplitudes_from_intensities(fsq, sig):
+    '''Small-molecule amplitude convention: ``Fo = sqrt(I)`` and
+    ``sigF = sigma(I) / (2 sqrt(I))`` for ``I > 0``; ``Fo = 0``, ``sigF = 1`` otherwise.'''
+    import numpy
+    valid = fsq > 0.0
+    fo = numpy.zeros(len(fsq), numpy.double)
+    sigf = numpy.ones(len(fsq), numpy.double)
+    fo[valid] = numpy.sqrt(fsq[valid])
+    sigf[valid] = sig[valid] / (2.0 * numpy.sqrt(fsq[valid]))
+    return fo, sigf
+
+
+def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup, merge_equivalents=False):
     '''
     Build the observed-data HKL_data objects a reciprocal differentiable target needs
     from raw reflection arrays (the pure numpy->Clipper half of
@@ -765,8 +875,17 @@ def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup):
     Args:
         * hkl: Miller indices, integer array shaped ``(N, 3)``.
         * fsq: ``F_squared_meas`` (intensity I), ``(N,)``.
-        * sig: ``sigma(F_squared)``, ``(N,)`` (use 1.0 where unknown).
+        * sig: ``sigma(F_squared)``, ``(N,)`` (NaN where unknown).
         * cell / spacegroup: the crystal ``Cell`` / ``Spacegroup``.
+        * merge_equivalents: if True, merge symmetry- and Friedel-equivalent rows by
+          their inverse-variance mean (see :func:`merge_equivalent_reflections`) and set
+          the resolution limit just beyond the highest-resolution reflection so that it
+          is kept. If False (the default), the rows are written as given: when several
+          rows are equivalent the last one in file order wins, the reflection defining
+          d_min is dropped, and an unknown sigma counts as 1.0. The default is kept so
+          that an existing training target stays byte-identical; switching it on changes
+          every affected crystal's target, so a caller with a signed corpus should record
+          it in the corpus signature.
 
     Returns ``(hkl_info, fobs, phi_fom, usage)``:
       * ``fobs`` (``HKL_data<F_sigF>``): ``Fo = sqrt(I)`` for ``I > 0`` (else 0),
@@ -782,7 +901,7 @@ def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup):
     import numpy
     from chimerax.core.errors import UserError
     from .. import HKL_info, HKL_data_F_sigF, HKL_data_Phi_fom, HKL_data_Flag
-    from ..clipper_python import HKL, Resolution
+    from ..clipper_python import Resolution
 
     hkls = numpy.ascontiguousarray(hkl, numpy.int32).reshape(-1, 3)
     fsq = numpy.ascontiguousarray(fsq, numpy.double).reshape(-1)
@@ -792,16 +911,19 @@ def fobs_from_arrays(hkl, fsq, sig, cell, spacegroup):
         raise UserError('fobs_from_arrays: hkl/fsq/sig length mismatch or empty '
                         '(%d/%d/%d)' % (n, len(fsq), len(sig)))
 
-    valid = fsq > 0.0
-    fo = numpy.zeros(n, numpy.double)
-    sigf = numpy.ones(n, numpy.double)
-    fo[valid] = numpy.sqrt(fsq[valid])
-    sigf[valid] = sig[valid] / (2.0 * numpy.sqrt(fsq[valid]))
+    if merge_equivalents:
+        hkls, fsq, sig, _ = merge_equivalent_reflections(hkls, fsq, sig, spacegroup)
+        n = len(hkls)
+        if n == 0:
+            raise UserError('fobs_from_arrays: no usable reflections')
+    else:
+        sig = numpy.where(numpy.isfinite(sig), sig, 1.0)
+    fo, sigf = _amplitudes_from_intensities(fsq, sig)
 
     # Resolution from the measured reflections, so the generated ASU covers them all.
-    invresolsq = numpy.array([HKL(hkls[i].tolist()).invresolsq(cell) for i in range(n)])
-    res = 1.0 / numpy.sqrt(invresolsq.max())
-    hkl_info = HKL_info(spacegroup, cell, Resolution(res), True)
+    res = _d_min(hkls, cell)
+    resolution = _padded_resolution(res) if merge_equivalents else Resolution(res)
+    hkl_info = HKL_info(spacegroup, cell, resolution, True)
 
     fobs = HKL_data_F_sigF(hkl_info)
     fobs.set_data(hkls, numpy.stack([fo, sigf], axis=1).astype(numpy.float32))
@@ -828,23 +950,18 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
     (SmallMoleculeXmapMgr) and the published R use — NOT a single linear scale, which
     piles the residual onto the heaviest scatterer and biases R low on metal-containing
     entries. (Not French-Wilson, a macromolecular technique that would not match the
-    published small-molecule R.)
+    published small-molecule R.) Symmetry- and Friedel-equivalent rows are merged first
+    (see :func:`merge_equivalent_reflections`).
     '''
     refln = _find_reflection_table(path)
     if refln is None:
         return None
 
     import numpy
-    rows = refln.fields(('index_h', 'index_k', 'index_l',
-                         'F_squared_meas', 'F_squared_sigma'),
-                        allow_missing_fields=True)
-    hkls = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
-    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
-    # sigma(F^2) may be absent from some reflection files; default to 1.0 (the
-    # I > 2 sigma observed cut then has no effect and R is reported over all data).
-    sig = numpy.array([float(_strip_su(r[4]))
-                       if (len(r) > 4 and r[4] not in ('', '?', '.')) else 1.0
-                       for r in rows], numpy.double)
+    hkls, fsq, sig = _reflection_arrays(refln)
+    # A file with no sigma(F^2) at all merges with unit weights (the I > 2 sigma observed
+    # cut then means little and R is best read over all data).
+    hkls, fsq, sig, _ = merge_equivalent_reflections(hkls, fsq, sig, spacegroup)
 
     # Too few measured reflections to support the aniso+spline scale (a truncated /
     # malformed COD _refln_ loop): skip it rather than feed a singular fit to Clipper's
@@ -855,24 +972,18 @@ def _structure_factor_metrics(session, model, path, cell, spacegroup, grid, radi
                 'n_reflections_used': 0, 'n_reflections_measured': n_measured}
 
     from .. import HKL_info
-    from ..clipper_python import HKL, Resolution, SFcalc_aniso_sum_float
+    from ..clipper_python import SFcalc_aniso_sum_float
     from ..clipper_python.data32 import HKL_data_F_phi_float, HKL_data_F_sigF_float
     from ..clipper_python.ext import scale_fcalc_to_fobs
 
     # Resolution limit from the measured reflections, so the generated ASU covers
     # every observation.
-    invresolsq = numpy.array([HKL(hkls[i].tolist()).invresolsq(cell)
-                              for i in range(len(hkls))])
-    res = 1.0 / numpy.sqrt(invresolsq.max())
-    hkl_info = HKL_info(spacegroup, cell, Resolution(res), True)
+    res = _d_min(hkls, cell)
+    hkl_info = HKL_info(spacegroup, cell, _padded_resolution(res), True)
 
     # Observed amplitudes for the aniso+spline scaling: Fo = sqrt(I) (I > 0),
     # sigma(Fo) ~= sigma(I) / (2 sqrt(I)).
-    valid = fsq > 0.0
-    fo_amp = numpy.zeros(len(fsq), numpy.double)
-    sig_amp = numpy.ones(len(fsq), numpy.double)
-    fo_amp[valid] = numpy.sqrt(fsq[valid])
-    sig_amp[valid] = sig[valid] / (2.0 * numpy.sqrt(fsq[valid]))
+    fo_amp, sig_amp = _amplitudes_from_intensities(fsq, sig)
     fobs = HKL_data_F_sigF_float(hkl_info)
     fobs.set_data(hkls, numpy.stack([fo_amp, sig_amp], axis=1).astype(numpy.float32))
 
@@ -1222,11 +1333,11 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radi
     '''Assemble the small_molecule_data dict consumed by XmapSet: crystal definition,
     Fobs amplitudes aligned to a fresh HKL_info, and the live model. The live map builds
     its per-atom structure-factor inputs directly from the model each recompute (see
-    SmallMoleculeXmapMgr), so no frozen scaffold or atom-index map is needed. Returns
-    None if no reflections are available.'''
+    SmallMoleculeXmapMgr), so no frozen scaffold or atom-index map is needed. Symmetry-
+    and Friedel-equivalent rows are merged (see :func:`merge_equivalent_reflections`).
+    Returns None if no reflections are available.'''
     import numpy
     from .. import HKL_info, HKL_data_F_sigF
-    from ..clipper_python import HKL, Resolution
 
     refln = None
     if hkl_path:
@@ -1240,21 +1351,19 @@ def _small_molecule_map_data(model, path, hkl_path, cell, spacegroup, grid, radi
     if refln is None:
         return None
 
-    rows = refln.fields(('index_h', 'index_k', 'index_l', 'F_squared_meas'),
-                        allow_missing_fields=True)
-    h = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows], numpy.int32)
-    fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
+    h, fsq, sig = _reflection_arrays(refln)
+    h, fsq, sig, _ = merge_equivalent_reflections(h, fsq, sig, spacegroup)
     # Too few measured reflections to support the aniso+spline scale the live map runs
     # each recompute (see _MIN_SCALING_REFLECTIONS): treat as "no usable reflections" so
     # no live map is built, rather than let SmallMoleculeXmapMgr feed a singular fit to
     # Clipper (a hard crash on Linux). Also guards the max() below against an empty list.
     if int((fsq > 0).sum()) < _MIN_SCALING_REFLECTIONS:
         return None
-    res = 1.0 / numpy.sqrt(max(HKL(h[i].tolist()).invresolsq(cell) for i in range(len(h))))
-    hklinfo = HKL_info(spacegroup, cell, Resolution(res), True)
+    res = _d_min(h, cell)
+    hklinfo = HKL_info(spacegroup, cell, _padded_resolution(res), True)
     fobs = HKL_data_F_sigF(hklinfo)
-    fo = numpy.sqrt(numpy.clip(fsq, 0, None))
-    fobs.set_data(h, numpy.stack([fo, numpy.ones_like(fo)], axis=1))
+    fo, sigf = _amplitudes_from_intensities(fsq, sig)
+    fobs.set_data(h, numpy.stack([fo, sigf], axis=1))
 
     return {'cell': cell, 'spacegroup': spacegroup, 'grid': grid, 'hklinfo': hklinfo,
             'resolution': res, 'fobs': fobs, 'structure': model, 'path': path,

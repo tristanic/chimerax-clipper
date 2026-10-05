@@ -135,7 +135,8 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                                    param_names=('X', 'Y', 'Z'), kind='amplitude',
                                    radiation='auto', recover_scattered_hydrogens=True,
                                    complete_fragments=True,
-                                   n_cells=None, min_box_size=None, n_threads=1):
+                                   n_cells=None, min_box_size=None, n_threads=1,
+                                   merge_equivalents=False):
     '''
     One-call, GUI-free builder: a small-molecule (COD) CIF plus its reflections ->
     a ready :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for
@@ -191,6 +192,9 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
           a single unit cell. If both ``n_cells`` and ``min_box_size`` are given, the
           per-axis maximum of the two is used.
         * n_threads: SF / gradient worker threads.
+        * merge_equivalents: merge symmetry- and Friedel-equivalent reflection rows and
+          keep the d_min reflection (default False, the legacy last-row-wins target; see
+          :func:`chimerax.clipper.io.small_molecule.fobs_from_arrays`).
 
     The returned ``box_model`` defines the atom order the target expects
     coordinates in: feed ``box_model.atoms.coords`` (or a torch tensor of them) to
@@ -235,7 +239,7 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                         path=cif_path, log=session.logger)
 
     hkl_info, fobs, phi_fom, usage = read_small_molecule_fobs(
-        hkl_path or cif_path, cell, spacegroup)
+        hkl_path or cif_path, cell, spacegroup, merge_equivalents=merge_equivalents)
 
     na, nb, nc = _supercell_multiples(cell, n_cells, min_box_size)
     if (na, nb, nc) != (1, 1, 1):

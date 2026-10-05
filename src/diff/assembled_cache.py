@@ -116,7 +116,8 @@ def _cell_spacegroup_from_box(box):
 
 
 def assembled_target_from_box(session, box, hkl, fsq, sig, *,
-                              param_names=('X', 'Y', 'Z'), kind='amplitude', n_threads=1):
+                              param_names=('X', 'Y', 'Z'), kind='amplitude', n_threads=1,
+                              merge_equivalents=False):
     '''Rebuild the :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for an
     already-expanded ``box`` (fresh or session-restored) WITHOUT re-running
     ``realize_symmetry_copies``.
@@ -124,7 +125,9 @@ def assembled_target_from_box(session, box, hkl, fsq, sig, *,
     The raw reflection arrays ``(hkl, fsq, sig)`` come from the caller's cache (see
     :func:`~chimerax.clipper.io.small_molecule.fobs_from_arrays`); the crystal definition,
     ``n_asu`` and radiation are read from the box's stamped attributes (see
-    :func:`stamp_box`). Returns ``(state, box)``.
+    :func:`stamp_box`). ``merge_equivalents`` is passed to ``fobs_from_arrays``; it must
+    match the setting used wherever else the same crystal's target is built. Returns
+    ``(state, box)``.
 
     The returned state pins the rebuilt ``HKL_info`` (and the cell/spacegroup it references):
     Clipper ``HKL_data`` holds a *non-owning* pointer to its ``HKL_info``, so it must be kept
@@ -133,7 +136,8 @@ def assembled_target_from_box(session, box, hkl, fsq, sig, *,
     from .crystal import ensemble_target_from_box
     radiation = getattr(box, 'clipper_radiation', 'xray')
     cell, spacegroup = _cell_spacegroup_from_box(box)
-    hkl_info, fobs, phi_fom, usage = fobs_from_arrays(hkl, fsq, sig, cell, spacegroup)
+    hkl_info, fobs, phi_fom, usage = fobs_from_arrays(
+        hkl, fsq, sig, cell, spacegroup, merge_equivalents=merge_equivalents)
     state = ensemble_target_from_box(
         box, fobs, phi_fom, usage, param_names=param_names, kind=kind,
         radiation=radiation, n_threads=n_threads)

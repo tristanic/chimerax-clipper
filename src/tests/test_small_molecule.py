@@ -201,6 +201,179 @@ def test_ionic_electron_factors(session):
     assert xr.f(4.0 * 0.02 * 0.02) < 30.0
 
 
+def _pbca_arrays():
+    from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
+    from chimerax.clipper.io.small_molecule import _parse_reflection_file
+    path = os.path.join(_DATA, 'cod_2213867.cif')
+    cell, sg, grid = crystal_symmetry_from_cif_file(path)
+    hkl, fsq, sig = _parse_reflection_file(path)
+    return cell, sg, hkl, fsq, sig
+
+
+def _slot_values(fobs, hkl):
+    '''(f, sigf) held in the slot of each hkl; NaN where the slot is empty.'''
+    import numpy
+    from chimerax.clipper.clipper_python import HKL
+    out = numpy.full((len(hkl), 2), numpy.nan)
+    for i, h in enumerate(hkl):
+        d = fobs[HKL(h.tolist())]
+        if not d.missing:
+            out[i] = d.f, d.sigf
+    return out
+
+
+# NB: keep each fobs_from_arrays HKL_info bound for as long as its HKL_data is used - the
+# HKL_data hold a non-owning pointer to it (unpacking it into `_` leaves them dangling).
+def _filled(fobs):
+    import numpy
+    return int(numpy.isfinite(fobs.data[1][:, 0]).sum())
+
+
+def test_merge_equivalents_inverse_variance(session):
+    '''Symmetry- and Friedel-equivalent copies of a reflection merge into its one slot as
+    the inverse-variance mean of I, with the propagated sigma.'''
+    import numpy
+    from chimerax.clipper.io.small_molecule import fobs_from_arrays
+    cell, sg, hkl, fsq, sig = _pbca_arrays()
+    rot = numpy.rint(sg.primitive_symop(1).rot.as_numpy()).astype(numpy.int32)
+    n = 200
+    sub = hkl[:n]
+    i_rows = numpy.stack([fsq[:n], fsq[:n] * 1.3 + 5.0, fsq[:n] * 0.8 + 2.0])
+    s_rows = numpy.stack([sig[:n], sig[:n] * 2.0, sig[:n] * 0.5])
+    hkl_d = numpy.concatenate([hkl, sub @ rot, -sub])
+    fsq_d = numpy.concatenate([fsq, i_rows[1], i_rows[2]])
+    sig_d = numpy.concatenate([sig, s_rows[1], s_rows[2]])
+
+    ref_info, ref, _, _ = fobs_from_arrays(hkl, fsq, sig, cell, sg, merge_equivalents=True)
+    info, fobs, _, _ = fobs_from_arrays(hkl_d, fsq_d, sig_d, cell, sg, merge_equivalents=True)
+    assert _filled(fobs) == _filled(ref) == len(hkl), (_filled(fobs), _filled(ref), len(hkl))
+
+    w = 1.0 / s_rows**2
+    i_m = (w * i_rows).sum(0) / w.sum(0)
+    s_m = 1.0 / numpy.sqrt(w.sum(0))
+    got = _slot_values(fobs, sub)
+    pos = i_m > 0
+    assert numpy.allclose(got[pos, 0], numpy.sqrt(i_m[pos]), rtol=1e-6)
+    assert numpy.allclose(got[pos, 1], s_m[pos] / (2 * numpy.sqrt(i_m[pos])), rtol=1e-6)
+    assert numpy.all(got[~pos, 0] == 0)
+    # Reflections without copies are untouched.
+    assert numpy.array_equal(_slot_values(fobs, hkl[n:]), _slot_values(ref, hkl[n:]))
+
+
+def test_merge_friedel_noncentrosymmetric(session):
+    '''In a non-centrosymmetric group, Friedel mates h and -h share one slot and merge.'''
+    import numpy
+    from chimerax.clipper import Spacegroup, Spgr_descr
+    from chimerax.clipper.io.small_molecule import fobs_from_arrays
+    cell, _, hkl, fsq, sig = _pbca_arrays()
+    sg = Spacegroup(Spgr_descr('P 2ac 2ab', Spgr_descr.Hall))     # P 21 21 21
+    n = 300
+    sub = hkl[:n]
+    i_plus, i_minus = fsq[:n] + 10.0, fsq[:n] * 1.2 + 10.0
+    s_plus, s_minus = sig[:n], sig[:n] * 3.0
+    info, fobs, _, _ = fobs_from_arrays(
+        numpy.concatenate([sub, -sub]), numpy.concatenate([i_plus, i_minus]),
+        numpy.concatenate([s_plus, s_minus]), cell, sg, merge_equivalents=True)
+    assert _filled(fobs) == n, _filled(fobs)
+    w_p, w_m = 1 / s_plus**2, 1 / s_minus**2
+    i_m = (w_p * i_plus + w_m * i_minus) / (w_p + w_m)
+    assert numpy.allclose(_slot_values(fobs, sub)[:, 0], numpy.sqrt(i_m), rtol=1e-6)
+
+
+def test_merge_orbit_matches_clipper_find_sym(session):
+    '''The numpy Laue-orbit grouping agrees with Clipper's own reflection-to-slot mapping
+    across crystal systems (hexagonal/trigonal included, where a fractional rotation's
+    transpose is not itself a group operator).'''
+    import numpy
+    from chimerax.clipper import (Cell, Cell_descr, Spacegroup, Spgr_descr, HKL_info,
+                                  HKL_data_F_sigF)
+    from chimerax.clipper.clipper_python import Resolution
+    from chimerax.clipper.io.small_molecule import (merge_equivalent_reflections,
+                                                    fobs_from_arrays)
+    hexagonal = (9.0, 9.0, 13.0, 90, 90, 120)
+    cases = [
+        ('-P 1', (9.0, 10.0, 11.0, 80, 85, 95)),
+        ('-C 2yc', (9.0, 10.0, 11.0, 90, 105, 90)),
+        ('P 4nw 2abw', (9.0, 9.0, 13.0, 90, 90, 90)),
+        ('-R 3', hexagonal),
+        ('-P 3 2c', hexagonal),
+        ('P 61', hexagonal),
+        ('P 2ac 2ab 3', (11.0, 11.0, 11.0, 90, 90, 90)),
+    ]
+    rng = numpy.random.default_rng(10061865)
+    for hall, dims in cases:
+        cell = Cell(Cell_descr(*dims))
+        sg = Spacegroup(Spgr_descr(hall, Spgr_descr.Hall))
+        hi = HKL_info(sg, cell, Resolution(1.5), True)
+        asu = HKL_data_F_sigF(hi).data[0]
+        asu = asu[asu.any(axis=1)]      # the list includes F000, which is never measured
+        n = len(asu)
+        rots = [numpy.rint(sg.primitive_symop(i).rot.as_numpy()).astype(numpy.int32)
+                for i in range(sg.num_primitive_symops)]
+        ops = rng.integers(len(rots), size=n)
+        signs = rng.choice([-1, 1], size=n)
+        rows = numpy.array([s * (h @ rots[o]) for h, o, s in zip(asu, ops, signs)],
+                           numpy.int32)
+        fsq = numpy.arange(n) + 1.0
+        hkl_m, _, _, mult = merge_equivalent_reflections(rows, fsq, numpy.ones(n), sg)
+        assert len(hkl_m) == n and numpy.all(mult == 1), (hall, len(hkl_m), n)
+        info, fobs, _, _ = fobs_from_arrays(rows, fsq, numpy.ones(n), cell, sg,
+                                            merge_equivalents=True)
+        got = _slot_values(fobs, asu)[:, 0]
+        assert numpy.allclose(got, numpy.sqrt(fsq), rtol=1e-6), hall
+        del fobs, info
+
+
+def test_merge_drops_unusable_sigma(session):
+    '''Rows with no usable sigma do not enter the merge; with no usable sigma anywhere,
+    the merge falls back to unit weights. The legacy path treats an unknown sigma as 1.'''
+    import numpy
+    from chimerax.clipper.io.small_molecule import fobs_from_arrays
+    cell, sg, hkl, fsq, sig = _pbca_arrays()
+    a, b = hkl[0], hkl[1]
+    rows = numpy.concatenate([[a, -a, b, -b], hkl[2:]])
+    i_rows = numpy.concatenate([[100.0, 300.0, 50.0, 70.0], fsq[2:]])
+    s_rows = numpy.concatenate([[0.0, 10.0, numpy.nan, numpy.nan], sig[2:]])
+    info, fobs, _, _ = fobs_from_arrays(rows, i_rows, s_rows, cell, sg, merge_equivalents=True)
+    got = _slot_values(fobs, numpy.array([a, b]))
+    assert numpy.isclose(got[0, 0], numpy.sqrt(300.0), rtol=1e-6), got
+    assert numpy.isclose(got[0, 1], 10.0 / (2 * numpy.sqrt(300.0)), rtol=1e-6), got
+    assert numpy.isnan(got[1, 0]), got
+
+    n = 50
+    nan = numpy.full(2 * n, numpy.nan)
+    i_two = numpy.concatenate([fsq[:n] + 1.0, fsq[:n] + 3.0])
+    info2, fobs2, _, _ = fobs_from_arrays(numpy.concatenate([hkl[:n], -hkl[:n]]), i_two,
+                                          nan, cell, sg, merge_equivalents=True)
+    i_m = fsq[:n] + 2.0
+    got = _slot_values(fobs2, hkl[:n])
+    assert numpy.allclose(got[:, 0], numpy.sqrt(i_m), rtol=1e-6)
+    assert numpy.allclose(got[:, 1], (1 / numpy.sqrt(2)) / (2 * numpy.sqrt(i_m)), rtol=1e-6)
+
+    unknown_info, unknown, _, _ = fobs_from_arrays(
+        hkl, fsq, numpy.full(len(hkl), numpy.nan), cell, sg)
+    unit_info, unit, _, _ = fobs_from_arrays(hkl, fsq, numpy.ones(len(hkl)), cell, sg)
+    assert numpy.array_equal(unknown.data[1], unit.data[1], equal_nan=True)
+
+
+def test_boundary_reflection_kept(session):
+    '''The reflection that defines d_min gets a slot (the resolution limit is padded).'''
+    import numpy
+    from chimerax.clipper.symmetry import crystal_symmetry_from_cif_file
+    from chimerax.clipper.clipper_python import HKL
+    from chimerax.clipper.io.small_molecule import _parse_reflection_file, fobs_from_arrays
+    for name in ('cod_1100908.cif', 'cod_2213867.cif'):
+        path = os.path.join(_DATA, name)
+        cell, sg, grid = crystal_symmetry_from_cif_file(path)
+        hkl, fsq, sig = _parse_reflection_file(path)
+        info, fobs, _, _ = fobs_from_arrays(hkl, fsq, sig, cell, sg, merge_equivalents=True)
+        assert _filled(fobs) == len(hkl), (name, _filled(fobs), len(hkl))
+        s = numpy.array([HKL(h.tolist()).invresolsq(cell) for h in hkl])
+        edge = hkl[s == s.max()]
+        assert not numpy.isnan(_slot_values(fobs, edge)[:, 0]).any(), (name, edge)
+        del fobs, info
+
+
 def run_all(session):
     tests = [v for k, v in sorted(globals().items())
              if k.startswith('test_') and callable(v)]
