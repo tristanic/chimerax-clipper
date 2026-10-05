@@ -33,7 +33,7 @@ _B2U = 1.0 / (8.0 * math.pi * math.pi)
 
 def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
                              param_names=('X', 'Y', 'Z'), kind='amplitude',
-                             radiation='xray', n_threads=1):
+                             radiation='xray', n_threads=1, iobs=None):
     '''
     Build an :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` (the
     small-molecule ensemble crystallographic target) from a symmetry-expanded box.
@@ -61,6 +61,10 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
         * kind: ``'amplitude'`` (default) or ``'intensity'``.
         * radiation: ``'xray'`` (default) or ``'electron'`` — selects the
           scattering-factor identifiers.
+        * iobs: ``kind='intensity'`` only, optional — the measured intensities
+          (``HKL_data<I_sigI>`` on fobs' reflection list), fitted directly instead of
+          ``|Fo|^2``. :func:`chimerax.clipper.io.sf_target.observations_from_arrays`
+          builds fobs/phi_fom/usage/kind/iobs together.
 
     Returns the ready target; feed box coordinates (and, if refining them, box ADPs)
     to its ``value_and_gradient(...)`` or wrap it with
@@ -104,7 +108,7 @@ def ensemble_target_from_box(box_model, fobs, phi_fom, usage, *,
     return EnsembleXrayTargetState(
         elements, param_names=param_names, fobs=fobs, phi_fom=phi_fom,
         usage=usage, kind=kind, u_iso=u_iso, u_aniso=u_aniso, is_aniso=is_aniso,
-        occupancy=1.0 / n_asu, n_threads=n_threads)
+        occupancy=1.0 / n_asu, n_threads=n_threads, iobs=iobs)
 
 
 def _supercell_multiples(cell, n_cells, min_box_size):
@@ -136,7 +140,7 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
                                    radiation='auto', recover_scattered_hydrogens=True,
                                    complete_fragments=True,
                                    n_cells=None, min_box_size=None, n_threads=1,
-                                   merge_equivalents=False):
+                                   merge_equivalents=False, sf_target=None):
     '''
     One-call, GUI-free builder: a small-molecule (COD) CIF plus its reflections ->
     a ready :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for
@@ -195,6 +199,15 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
         * merge_equivalents: merge symmetry- and Friedel-equivalent reflection rows and
           keep the d_min reflection (default False, the legacy last-row-wins target; see
           :func:`chimerax.clipper.io.small_molecule.fobs_from_arrays`).
+        * sf_target: a :class:`chimerax.clipper.io.sf_target.SFTarget` choosing the
+          observation space, weights and extinction correction (default None: the
+          legacy target, as selected by ``kind``). A non-default target needs
+          ``merge_equivalents=True``, leaves ``kind`` at its default, and reads the
+          depositor's refinement record and Clipper's Fcalc at the deposited model from
+          the files itself (:func:`~chimerax.clipper.io.sf_target.small_molecule_target_aux`),
+          so it is the reference for a cached-arrays rebuild through
+          :func:`chimerax.clipper.diff.assembled_cache.assembled_target_from_box`.
+          ``state.sf_observations`` then holds the observations' arrays and flags.
 
     The returned ``box_model`` defines the atom order the target expects
     coordinates in: feed ``box_model.atoms.coords`` (or a torch tensor of them) to
@@ -210,9 +223,11 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
     from ..io.small_molecule import (open_small_molecule_cif,
         hydrate_small_molecule_model, _resolve_radiation,
         read_small_molecule_fobs, reassemble_symmetry_scattered_hydrogens)
+    from ..io.sf_target import check_target_args, is_default_target
     from ..sym_realize import unit_cell_places, realize_symmetry_copies
     from ..clipper_util import site_multiplicities
 
+    kind = check_target_args(sf_target, kind, merge_equivalents)
     radiation = _resolve_radiation(radiation, cif_path)
     # open repairs connectivity internally (coords come correct from corecif on the daily).
     model = open_small_molecule_cif(session, cif_path)
@@ -238,8 +253,19 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
         split_fragments(session, model, cell, spacegroup, grid, mode='complete',
                         path=cif_path, log=session.logger)
 
-    hkl_info, fobs, phi_fom, usage = read_small_molecule_fobs(
-        hkl_path or cif_path, cell, spacegroup, merge_equivalents=merge_equivalents)
+    obs = iobs = None
+    if is_default_target(sf_target):
+        hkl_info, fobs, phi_fom, usage = read_small_molecule_fobs(
+            hkl_path or cif_path, cell, spacegroup, merge_equivalents=merge_equivalents)
+    else:
+        from ..io.small_molecule import _parse_reflection_file
+        from ..io.sf_target import small_molecule_target_aux, observations_from_arrays
+        aux = (small_molecule_target_aux(cif_path, hkl_path, radiation=radiation)
+               if sf_target.needs_aux else None)
+        hkl, fsq, sig = _parse_reflection_file(hkl_path or cif_path)
+        obs = observations_from_arrays(hkl, fsq, sig, cell, spacegroup, sf_target, aux)
+        hkl_info, fobs, phi_fom, usage, iobs = (obs.hkl_info, obs.fobs, obs.phi_fom,
+                                                obs.usage, obs.iobs)
 
     na, nb, nc = _supercell_multiples(cell, n_cells, min_box_size)
     if (na, nb, nc) != (1, 1, 1):
@@ -259,9 +285,11 @@ def small_molecule_ensemble_target(session, cif_path, hkl_path=None, *,
 
     state = ensemble_target_from_box(box, fobs, phi_fom, usage,
                                      param_names=param_names, kind=kind,
-                                     radiation=radiation, n_threads=n_threads)
+                                     radiation=radiation, n_threads=n_threads, iobs=iobs)
     # Keep the HKL_info alive for the lifetime of the state: Clipper HKL_data holds a
     # non-owning pointer to it, and the state's own refs cover fobs/phi_fom/usage but
     # not the HKL_info that owns their reflection list.
     state._hkl_info_keepalive = hkl_info
+    if obs is not None:
+        state.sf_observations = obs
     return state, box

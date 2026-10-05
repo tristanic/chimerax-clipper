@@ -117,7 +117,7 @@ def _cell_spacegroup_from_box(box):
 
 def assembled_target_from_box(session, box, hkl, fsq, sig, *,
                               param_names=('X', 'Y', 'Z'), kind='amplitude', n_threads=1,
-                              merge_equivalents=False):
+                              merge_equivalents=False, sf_target=None, aux=None):
     '''Rebuild the :class:`~chimerax.clipper.diff.state.EnsembleXrayTargetState` for an
     already-expanded ``box`` (fresh or session-restored) WITHOUT re-running
     ``realize_symmetry_copies``.
@@ -129,18 +129,36 @@ def assembled_target_from_box(session, box, hkl, fsq, sig, *,
     match the setting used wherever else the same crystal's target is built. Returns
     ``(state, box)``.
 
+    ``sf_target`` (a :class:`chimerax.clipper.io.sf_target.SFTarget`) selects a
+    non-default target, built by
+    :func:`~chimerax.clipper.io.sf_target.observations_from_arrays`; it needs
+    ``merge_equivalents=True``, and ``aux`` -- the
+    :func:`~chimerax.clipper.io.sf_target.small_molecule_target_aux` record cached beside
+    the same raw arrays -- whenever the target applies weights or an extinction
+    correction. ``state.sf_observations`` then holds the observations' arrays and flags.
+
     The returned state pins the rebuilt ``HKL_info`` (and the cell/spacegroup it references):
     Clipper ``HKL_data`` holds a *non-owning* pointer to its ``HKL_info``, so it must be kept
     alive for as long as the target is used.'''
     from ..io.small_molecule import fobs_from_arrays
+    from ..io.sf_target import check_target_args, is_default_target, observations_from_arrays
     from .crystal import ensemble_target_from_box
+    kind = check_target_args(sf_target, kind, merge_equivalents)
     radiation = getattr(box, 'clipper_radiation', 'xray')
     cell, spacegroup = _cell_spacegroup_from_box(box)
-    hkl_info, fobs, phi_fom, usage = fobs_from_arrays(
-        hkl, fsq, sig, cell, spacegroup, merge_equivalents=merge_equivalents)
+    obs = iobs = None
+    if is_default_target(sf_target):
+        hkl_info, fobs, phi_fom, usage = fobs_from_arrays(
+            hkl, fsq, sig, cell, spacegroup, merge_equivalents=merge_equivalents)
+    else:
+        obs = observations_from_arrays(hkl, fsq, sig, cell, spacegroup, sf_target, aux)
+        hkl_info, fobs, phi_fom, usage, iobs = (obs.hkl_info, obs.fobs, obs.phi_fom,
+                                                obs.usage, obs.iobs)
     state = ensemble_target_from_box(
         box, fobs, phi_fom, usage, param_names=param_names, kind=kind,
-        radiation=radiation, n_threads=n_threads)
+        radiation=radiation, n_threads=n_threads, iobs=iobs)
+    if obs is not None:
+        state.sf_observations = obs
     # Non-owning HKL_data -> HKL_info pointer: keep the owner (and its cell/spacegroup) alive.
     state._restored_hkl_info = hkl_info
     state._restored_cell = cell

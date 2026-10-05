@@ -210,6 +210,8 @@ struct XrayGradientEvaluator::Impl {
     HKL_data<Flag>               usage;
     HKL_data<F_phi<ftype32>>     fbulk;
     bool                         has_bulk = false;
+    HKL_data<I_sigI<ftype32>>    iobs;
+    bool                         has_iobs = false;
     XrayTargetKind               kind     = XrayTargetKind::AmplitudeLS;
     Cell                         cell;
     Grid_sampling                grid_sampling;
@@ -249,7 +251,8 @@ struct XrayGradientEvaluator::Impl {
          XrayTargetKind                    kd,
          const HKL_data<F_phi<ftype32>>&   fb,
          int                               nt,
-         bool                              threaded)
+         bool                              threaded,
+         const HKL_data<I_sigI<ftype32>>&  io)
         : realspace(false), n_threads(std::max(1, nt)), elements(el),
           fobs(fo), phi_fom(pf), usage(us), kind(kd), threaded_density(threaded)
     {
@@ -258,6 +261,15 @@ struct XrayGradientEvaluator::Impl {
         // walks the parent). Without the is_null() guard the empty-bulk default
         // dereferences null.
         if (!fb.is_null() && fb.num_obs() > 0) { fbulk = fb; has_bulk = true; }
+        if (!io.is_null()) {
+            if (kd != XrayTargetKind::IntensityLS)
+                throw std::invalid_argument(
+                    "XrayGradientEvaluator: iobs is only meaningful for IntensityLS");
+            if (&io.base_hkl_info() != &fo.base_hkl_info())
+                throw std::invalid_argument(
+                    "XrayGradientEvaluator: iobs and fobs must share one HKL_info");
+            iobs = io; has_iobs = true;
+        }
         const HKL_info& hkls = fobs.base_hkl_info();
         cell          = fobs.base_cell();
         grid_sampling = Grid_sampling(hkls.spacegroup(), cell, hkls.resolution());
@@ -383,13 +395,23 @@ struct XrayGradientEvaluator::Impl {
     // robust anisotropic-Gaussian x isotropic-spline scaling (scale_fcalc_to_fobs,
     // all reflections -> deterministic, so gradients are reproducible). fcalc_hkl
     // must be current. Cached in refl_scale_ and held fixed until the next refit.
+    // Fed intensities (has_iobs), the isotropic spline is fitted to the signed I.
+    void fit_scale(HKL_data<F_phi<ftype32>>& scaled) const
+    {
+        U_aniso_orth uaniso;
+        std::vector<ftype> aniso_params;
+        if (has_iobs)
+            scale_fcalc_to_fobs_iobs<ftype32>(fcalc_hkl, fobs, iobs, scaled, uaniso,
+                                              aniso_params);
+        else
+            scale_fcalc_to_fobs<ftype32>(fcalc_hkl, fobs, scaled, uaniso, aniso_params);
+    }
+
     void refit_scale_reciprocal()
     {
         const HKL_info& hkls = fobs.base_hkl_info();
         HKL_data<F_phi<ftype32>> scaled(hkls, cell);
-        U_aniso_orth uaniso;
-        std::vector<ftype> aniso_params;
-        scale_fcalc_to_fobs<ftype32>(fcalc_hkl, fobs, scaled, uaniso, aniso_params);
+        fit_scale(scaled);
         refl_scale_.assign((size_t)hkls.num_reflections(), 1.0);
         for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
             if (fcalc_hkl[ih].missing() || scaled[ih].missing()) continue;
@@ -408,6 +430,30 @@ struct XrayGradientEvaluator::Impl {
     {
         double T = 0.0;
         for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
+            if (has_iobs) {
+                // Intensities supplied directly: Io and σ(Io) as measured, so an
+                // I <= 0 reflection takes part with its own σ instead of dropping out.
+                if (iobs[ih].missing() || !working(usage, ih) || !(iobs[ih].sigI() > 0.0)) {
+                    driving_hkl.set_data(ih.hkl(), F_phi<ftype32>());
+                    continue;
+                }
+                const double fc   = fcalc_hkl[ih].f();
+                const double phi  = fcalc_hkl[ih].phi();
+                const double Io   = iobs[ih].I();
+                const double sigI = iobs[ih].sigI();
+                const double s    = refl_scale_[ih.index()];
+                const double ew   = eps_weight(ih);
+                const double w    = 1.0 / (sigI * sigI);
+                const double s2   = s * s;
+                const double fc2  = fc * fc;
+                const double resid = s2 * fc2 - Io;
+                T += 0.5 * w * resid * resid;
+                const double coeff_mag = ew * 2.0 * s2 * w * (Io - s2 * fc2) * fc;
+                std::complex<ftype32> coeff =
+                    ftype32(coeff_mag) * std::polar(ftype32(1.0f), ftype32(phi));
+                driving_hkl.set_data(ih.hkl(), F_phi<ftype32>(coeff));
+                continue;
+            }
             if (fobs[ih].missing() || !working(usage, ih)) {
                 driving_hkl.set_data(ih.hkl(), F_phi<ftype32>());
                 continue;
@@ -502,11 +548,10 @@ struct XrayGradientEvaluator::Impl {
             }
         }
         // Local aniso-Gaussian x iso-spline scale (the SAME scale_fcalc_to_fobs that
-        // recomputed_r_factor and the live map use); scaled[ih].f() == s(h)·|Fc|.
+        // recomputed_r_factor and the live map use, or its signed-I form when fed
+        // intensities, as the loss is); scaled[ih].f() == s(h)·|Fc|.
         HKL_data<F_phi<ftype32>> scaled(fobs.base_hkl_info(), cell);
-        U_aniso_orth      scale_u;
-        std::vector<ftype> scale_params;
-        scale_fcalc_to_fobs<ftype32>(fcalc_hkl, fobs, scaled, scale_u, scale_params);
+        fit_scale(scaled);
         const double nan = std::numeric_limits<double>::quiet_NaN();
         for (HKL_info::HKL_reference_index ih = fobs.first(); !ih.last(); ih.next()) {
             const size_t i = (size_t)ih.index();
@@ -684,9 +729,10 @@ XrayGradientEvaluator::XrayGradientEvaluator(
     XrayTargetKind                    kind,
     const HKL_data<F_phi<ftype32>>&   f_bulk,
     int                               n_threads,
-    bool                              threaded_density)
+    bool                              threaded_density,
+    const HKL_data<I_sigI<ftype32>>&  iobs)
     : p_(new Impl(elements, fobs, phi_fom, usage, kind, f_bulk, n_threads,
-                  threaded_density))
+                  threaded_density, iobs))
 {}
 
 XrayGradientEvaluator::XrayGradientEvaluator(

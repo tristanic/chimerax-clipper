@@ -140,7 +140,9 @@ class XrayTargetState:
       crystal so it reduces to a pure 1/σ²-weighted fit), ``usage``
       (``HKL_data<Flag>``; non-zero flag = working reflection). ``kind='amplitude'``
       (default) minimises ½Σw(k|Fc|−m|Fo|)²; ``kind='intensity'`` minimises the
-      SHELX-style ½Σw(Io−s|Fc|²)². Optional ``f_bulk`` adds a fixed bulk-solvent
+      SHELX-style ½Σw(Io−s|Fc|²)², with Io = |Fo|² (so every I ≤ 0 reflection drops
+      out) unless ``iobs`` (``HKL_data<I_sigI>`` on the same reflection list) supplies
+      the measured I and σ(I) directly. Optional ``f_bulk`` adds a fixed bulk-solvent
       contribution (omit for small molecules).
 
     * **real-space** — least-squares against a fixed target ``Xmap``. Pass
@@ -165,7 +167,7 @@ class XrayTargetState:
     def __init__(self, elements, *, param_names=('X', 'Y', 'Z'),
                  fobs=None, phi_fom=None, usage=None, kind='amplitude',
                  f_bulk=None, target_map=None, target_origin=None, n_threads=1,
-                 threaded_density=True):
+                 threaded_density=True, iobs=None):
         from ..clipper_python import AtomShapeFn, Coord_orth
         from ..clipper_python.ext import XrayGradientEvaluator, XrayTargetKind
 
@@ -198,6 +200,10 @@ class XrayTargetState:
                           threaded_density=threaded_density)
             if f_bulk is not None:
                 kwargs['f_bulk'] = f_bulk
+            if iobs is not None:
+                if kind != 'intensity':
+                    raise ValueError("iobs needs kind='intensity'")
+                kwargs['iobs'] = iobs
             self._ev = XrayGradientEvaluator(**kwargs)
         else:
             raise ValueError('give either target_map (real-space) or fobs '
@@ -208,7 +214,7 @@ class XrayTargetState:
         # no keep_alive, so the caller must ALSO keep whatever owns that HKL_info
         # (e.g. the reflection dataset / crystal manager) alive — otherwise
         # base_hkl_info() dangles and the next evaluation reads garbage.
-        self._refs = (fobs, phi_fom, usage, f_bulk, target_map, target_origin)
+        self._refs = (fobs, phi_fom, usage, f_bulk, target_map, target_origin, iobs)
 
     @property
     def n_atoms(self):
@@ -360,8 +366,8 @@ class SupercellXrayTargetState:
           correction expects (feed ``occ/m``; the C++ layer scales the density back up).
           Default: all ones (all general positions).
         * remaining keyword args (param_names, fobs, phi_fom, usage, kind, f_bulk,
-          target_map, target_origin, n_threads, threaded_density): forwarded verbatim
-          to the per-ASU :class:`XrayTargetState`.
+          target_map, target_origin, n_threads, threaded_density, iobs): forwarded
+          verbatim to the per-ASU :class:`XrayTargetState`.
 
     A separate :class:`XrayTargetState` is built per ASU so each holds its own frozen
     scale (independent samples); they share the same read-only reference data. The
@@ -377,7 +383,7 @@ class SupercellXrayTargetState:
     def __init__(self, asu_elements, groups, *, multiplicity=None,
                  param_names=('X', 'Y', 'Z'), fobs=None, phi_fom=None, usage=None,
                  kind='amplitude', f_bulk=None, target_map=None, target_origin=None,
-                 n_threads=1, threaded_density=True):
+                 n_threads=1, threaded_density=True, iobs=None):
         self._groups = [numpy.ascontiguousarray(g, numpy.intp).reshape(-1)
                         for g in groups]
         if not self._groups:
@@ -399,7 +405,7 @@ class SupercellXrayTargetState:
         common = dict(param_names=param_names, fobs=fobs, phi_fom=phi_fom,
                       usage=usage, kind=kind, f_bulk=f_bulk, target_map=target_map,
                       target_origin=target_origin, n_threads=n_threads,
-                      threaded_density=threaded_density)
+                      threaded_density=threaded_density, iobs=iobs)
         self._states = [XrayTargetState(asu_elements, **common)
                         for _ in range(self._n_asu)]
         self.param_names = self._states[0].param_names
@@ -519,6 +525,8 @@ class EnsembleXrayTargetState:
         * param_names: subset of the eleven parameters (see above).
         * fobs / phi_fom / usage: observed data (reciprocal; small molecules supply
           ``phi_fom.fom()==1``).
+        * iobs: optional measured intensities for ``kind='intensity'`` (see
+          :class:`XrayTargetState`).
         * u_iso / u_aniso / is_aniso / occupancy: default **box-frame** ADPs / flags /
           occupancy (the builder passes the model's values and ``1/n_asu``).
     '''
@@ -527,7 +535,8 @@ class EnsembleXrayTargetState:
 
     def __init__(self, elements, *, param_names=('X', 'Y', 'Z'),
                  fobs, phi_fom, usage, kind='amplitude', u_iso=None, u_aniso=None,
-                 is_aniso=None, occupancy=None, n_threads=1, threaded_density=True):
+                 is_aniso=None, occupancy=None, n_threads=1, threaded_density=True,
+                 iobs=None):
         self.param_names = tuple(param_names)
         bad = [p for p in self.param_names if p not in self._ALL]
         if bad:
@@ -537,7 +546,7 @@ class EnsembleXrayTargetState:
         self._state = XrayTargetState(
             elements, param_names=self.param_names, fobs=fobs, phi_fom=phi_fom,
             usage=usage, kind=kind, n_threads=n_threads,
-            threaded_density=threaded_density)          # NO f_bulk (small molecule)
+            threaded_density=threaded_density, iobs=iobs)   # NO f_bulk (small molecule)
         # Default BOX-frame ADPs / occupancy (used when a call leaves them None).
         self._def_uiso = (None if u_iso is None
                           else numpy.ascontiguousarray(u_iso, numpy.double).reshape(n))

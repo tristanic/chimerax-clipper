@@ -642,6 +642,12 @@ def _find_reflection_table(path):
     loop); some CIFs embed the loop directly. Returns the CIFTable for 'refln',
     or None.
     '''
+    return _find_reflection_source(path)[1]
+
+
+def _find_reflection_source(path):
+    '''As :func:`_find_reflection_table`, returning ``(file_path, refln_table)`` (or
+    ``(None, None)``), so the reflection file's own header items can be read too.'''
     import os
     from chimerax.mmcif import get_cif_tables
     candidates = []
@@ -654,8 +660,8 @@ def _find_reflection_table(path):
         tables = get_cif_tables(cand, ['refln'])
         refln = tables[0] if tables else None
         if refln is not None and refln.has_field('index_h') and refln.has_field('F_squared_meas'):
-            return refln
-    return None
+            return cand, refln
+    return None, None
 
 
 def _radiation_enum(radiation):
@@ -752,17 +758,25 @@ def _reflection_arrays(refln):
     :func:`_parse_reflection_file`. A missing sigma (absent column, ``?`` or ``.``) is
     NaN rather than a stand-in value, so "not given" stays distinguishable from a
     genuine 1.0.'''
+    return _reflection_columns(refln)[:3]
+
+
+def _reflection_columns(refln, extra=()):
+    ''':func:`_reflection_arrays` plus optional further numeric ``_refln_`` columns
+    (e.g. ``'F_squared_calc'``), each a float64 array over the SAME rows, NaN where the
+    column is absent or a row gives ``?`` / ``.``.'''
     import numpy
-    rows = refln.fields(('index_h', 'index_k', 'index_l',
-                         'F_squared_meas', 'F_squared_sigma'),
-                        allow_missing_fields=True)
+    names = ('index_h', 'index_k', 'index_l', 'F_squared_meas', 'F_squared_sigma')
+    rows = refln.fields(names + tuple(extra), allow_missing_fields=True)
     hkl = numpy.array([[int(r[0]), int(r[1]), int(r[2])] for r in rows],
                       numpy.int32).reshape(-1, 3)
     fsq = numpy.array([float(_strip_su(r[3])) for r in rows], numpy.double)
-    sig = numpy.array([float(_strip_su(r[4]))
-                       if (len(r) > 4 and r[4] not in ('', '?', '.')) else numpy.nan
-                       for r in rows], numpy.double)
-    return hkl, fsq, sig
+
+    def column(c):
+        return numpy.array([float(_strip_su(r[c]))
+                            if (len(r) > c and r[c] not in ('', '?', '.')) else numpy.nan
+                            for r in rows], numpy.double)
+    return (hkl, fsq) + tuple(column(c) for c in range(4, len(names) + len(extra)))
 
 
 # Per-index offset used to pack a Miller index triple into one non-negative int64 key.
@@ -792,7 +806,6 @@ def merge_equivalent_reflections(hkl, fsq, sig, spacegroup):
     '''
     import numpy
     from chimerax.core.errors import UserError
-    from ..clipper_python import HKL
 
     hkl = numpy.ascontiguousarray(hkl, numpy.int32).reshape(-1, 3)
     fsq = numpy.ascontiguousarray(fsq, numpy.double).reshape(-1)
@@ -800,6 +813,44 @@ def merge_equivalent_reflections(hkl, fsq, sig, spacegroup):
     if len(fsq) != len(hkl) or len(sig) != len(hkl):
         raise UserError('merge_equivalent_reflections: hkl/fsq/sig length mismatch '
                         '(%d/%d/%d)' % (len(hkl), len(fsq), len(sig)))
+    g = _equivalence_groups(hkl, fsq, sig, spacegroup)
+    i_merged, sig_merged, multiplicity = g.merge_inverse_variance(fsq)
+    return g.rep[g.present], i_merged, sig_merged, multiplicity
+
+
+class _EquivalenceGroups:
+    '''Which raw rows :func:`merge_equivalent_reflections` keeps and how it groups them:
+    ``keep`` (raw-row mask), ``sig`` (the raw sigma, all ones for a file with no usable
+    sigma), ``inv`` (group index of each kept row), ``rep`` (one hkl per group) and
+    ``present`` (groups that survive: not (0,0,0), not systematically absent).'''
+    def __init__(self, keep, sig, inv, rep, present):
+        self.keep, self.sig, self.inv, self.rep, self.present = keep, sig, inv, rep, present
+
+    def merge_inverse_variance(self, fsq):
+        '''``(I, sigma, multiplicity)`` of the surviving groups, in merged order.'''
+        import numpy
+        fsq, sig, inv, present = fsq[self.keep], self.sig[self.keep], self.inv, self.present
+        w = 1.0 / sig**2
+        wsum = numpy.bincount(inv, weights=w)
+        i_merged = numpy.bincount(inv, weights=w * fsq) / wsum
+        sig_merged = 1.0 / numpy.sqrt(wsum)
+        multiplicity = numpy.bincount(inv)
+        return i_merged[present], sig_merged[present], multiplicity[present]
+
+    def merge_mean(self, column):
+        '''Plain per-group mean of a further raw per-row column (e.g. a depositor's
+        Fc^2), over the surviving groups in merged order; NaN propagates.'''
+        import numpy
+        col = numpy.ascontiguousarray(column, numpy.double).reshape(-1)[self.keep]
+        mean = numpy.bincount(self.inv, weights=col) / numpy.bincount(self.inv)
+        return mean[self.present]
+
+
+def _equivalence_groups(hkl, fsq, sig, spacegroup):
+    import numpy
+    from chimerax.core.errors import UserError
+    from ..clipper_python import HKL
+
     if len(hkl) and numpy.abs(hkl).max() >= _HKL_KEY_OFFSET:
         raise UserError('merge_equivalent_reflections: Miller index out of range')
 
@@ -808,32 +859,32 @@ def merge_equivalent_reflections(hkl, fsq, sig, spacegroup):
         sig = numpy.ones(len(sig), numpy.double)
         usable[:] = True
     keep = usable & numpy.isfinite(fsq)
-    hkl, fsq, sig = hkl[keep], fsq[keep], sig[keep]
 
-    # Every member of an equivalent set shares the Laue orbit {+-h.R} over the primitive
-    # operators (Clipper's reciprocal convention: h' = h.R), so the largest packed key in
-    # the orbit is a canonical label for the set.
-    rots = numpy.array([numpy.rint(spacegroup.primitive_symop(i).rot.as_numpy())
-                        for i in range(spacegroup.num_primitive_symops)], numpy.int64)
-    orbit = numpy.einsum('nj,sjk->nsk', hkl.astype(numpy.int64), rots)
-    orbit = numpy.concatenate([orbit, -orbit], axis=1)
-    off, base = _HKL_KEY_OFFSET, 2 * _HKL_KEY_OFFSET
-    keys = ((orbit[..., 0] + off) * base + (orbit[..., 1] + off)) * base + (orbit[..., 2] + off)
+    orbit, keys = _orbit_keys(hkl[keep], spacegroup)
     best = keys.argmax(axis=1)
-    rows = numpy.arange(len(hkl))
+    rows = numpy.arange(len(keys))
     _, first, inv = numpy.unique(keys[rows, best], return_index=True, return_inverse=True)
     inv = inv.reshape(-1)
     rep = orbit[first, best[first]].astype(numpy.int32)
 
-    w = 1.0 / sig**2
-    wsum = numpy.bincount(inv, weights=w)
-    i_merged = numpy.bincount(inv, weights=w * fsq) / wsum
-    sig_merged = 1.0 / numpy.sqrt(wsum)
-    multiplicity = numpy.bincount(inv)
-
     present = numpy.array([h.any() and not spacegroup.hkl_class(HKL(h.tolist())).sys_abs
                            for h in rep], bool).reshape(-1)
-    return rep[present], i_merged[present], sig_merged[present], multiplicity[present]
+    return _EquivalenceGroups(keep, sig, inv, rep, present)
+
+
+def _orbit_keys(hkl, spacegroup):
+    '''``(orbit, keys)`` for each row of ``hkl``: its Laue orbit and the packed int64 key
+    of every orbit member. Every member of an equivalent set shares the Laue orbit
+    {+-h.R} over the primitive operators (Clipper's reciprocal convention: h' = h.R), so
+    the largest key in the orbit is a canonical label for the set.'''
+    import numpy
+    rots = numpy.array([numpy.rint(spacegroup.primitive_symop(i).rot.as_numpy())
+                        for i in range(spacegroup.num_primitive_symops)], numpy.int64)
+    orbit = numpy.einsum('nj,sjk->nsk', numpy.asarray(hkl).astype(numpy.int64), rots)
+    orbit = numpy.concatenate([orbit, -orbit], axis=1)
+    off, base = _HKL_KEY_OFFSET, 2 * _HKL_KEY_OFFSET
+    keys = ((orbit[..., 0] + off) * base + (orbit[..., 1] + off)) * base + (orbit[..., 2] + off)
+    return orbit, keys
 
 
 def _d_min(hkl, cell):

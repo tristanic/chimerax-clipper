@@ -27,7 +27,8 @@ void init_xray_gradient(py::module& m)
         "  AmplitudeLS : 1/2 sum w (k|Fc| - m|Fo|)^2  (m = FOM; set m=1 for small\n"
         "                molecules via a phi_fom whose fom()=1; w = 1/sigma^2(Fo)).\n"
         "  IntensityLS : 1/2 sum w (Io - s|Fc|^2)^2, w = 1/sigma^2(Io) (SHELX-style;\n"
-        "                Io = |Fo|^2, sigma(Io) ~ 2|Fo|sigma(F) when only F/sigF given).")
+        "                Io/sigma(Io) from the evaluator's iobs when given, else\n"
+        "                Io = |Fo|^2, sigma(Io) ~ 2|Fo|sigma(F), which skips I <= 0).")
         .value("AmplitudeLS", cx::XrayTargetKind::AmplitudeLS)
         .value("IntensityLS", cx::XrayTargetKind::IntensityLS);
 
@@ -41,7 +42,9 @@ void init_xray_gradient(py::module& m)
         "Gradients are returned for a runtime-selected subset of the eleven per-atom\n"
         "parameters {X,Y,Z,Uiso,Occ,U11,U22,U33,U12,U13,U23}, including coordinates.")
 
-        // Reciprocal-space constructor (least-squares vs observed Fo / Io).
+        // Reciprocal-space constructor (least-squares vs observed Fo / Io). iobs
+        // (IntensityLS only) supplies the measured I and sigma(I) directly, keeping
+        // the I <= 0 reflections the Fo-derived intensity target leaves out.
         .def(py::init([](std::vector<std::string>            elements,
                          const HKL_data<F_sigF<ftype32>>&    fobs,
                          const HKL_data<Phi_fom<ftype32>>&   phi_fom,
@@ -49,12 +52,13 @@ void init_xray_gradient(py::module& m)
                          cx::XrayTargetKind                  kind,
                          const HKL_data<F_phi<ftype32>>&     f_bulk,
                          int                                 n_threads,
-                         bool                                threaded_density)
+                         bool                                threaded_density,
+                         const HKL_data<I_sigI<ftype32>>&    iobs)
             {
                 std::vector<String> els(elements.begin(), elements.end());
                 return new cx::XrayGradientEvaluator(els, fobs, phi_fom, usage,
                                                      kind, f_bulk, n_threads,
-                                                     threaded_density);
+                                                     threaded_density, iobs);
             }),
             py::arg("elements"),
             py::arg("fobs"),
@@ -63,7 +67,8 @@ void init_xray_gradient(py::module& m)
             py::arg("kind") = cx::XrayTargetKind::AmplitudeLS,
             py::arg("f_bulk") = HKL_data<F_phi<ftype32>>(),
             py::arg("n_threads") = 1,
-            py::arg("threaded_density") = true)
+            py::arg("threaded_density") = true,
+            py::arg("iobs") = HKL_data<I_sigI<ftype32>>())
 
         // Real-space constructor (least-squares vs a fixed target Xmap).
         .def(py::init([](std::vector<std::string> elements,

@@ -164,12 +164,30 @@ def _build_reference_crystal(sg_symbol, cell_params, res_limit=2.0):
     xmap = Xmap_float(sg, cell, grid)
     xmap.fft_from(fcalc)
 
+    # Synthetic measured intensities for the iobs (I-direct) target: |Fc|^2 shifted down
+    # so the weakest ~15% are NEGATIVE, with a sigma that varies with I (as a SHELXL
+    # effective sigma does). fobs_i is the matching amplitude set (Fo = sqrt(I) for I > 0,
+    # else 0), which the evaluator still needs for its log-space scale stage.
+    from chimerax.clipper import HKL_data_I_sigI
+    i2 = Fc.astype(numpy.double) ** 2
+    i_obs = i2 - numpy.percentile(i2, 15)
+    s_obs = 0.05 * i2 + 0.1 * numpy.median(i2)
+    iobs = HKL_data_I_sigI(hklinfo)
+    iobs.set_data(hkls_i, numpy.stack([i_obs, s_obs], axis=1).astype(numpy.float32))
+    pos = i_obs > 0
+    fo_i = numpy.where(pos, numpy.sqrt(numpy.maximum(i_obs, 0)), 0.0)
+    sf_i = numpy.where(pos, s_obs / (2 * numpy.sqrt(numpy.maximum(i_obs, 1e-30))), 1.0)
+    fobs_i = HKL_data_F_sigF(hklinfo)
+    fobs_i.set_data(hkls_i, numpy.stack([fo_i, sf_i], axis=1).astype(numpy.float32))
+
     return {
         'hklinfo': hklinfo, 'cell': cell, 'spacegroup': sg, 'grid': grid,
         'n_sym': sg.num_symops, 'n_refl': hklinfo.num_reflections,
         'elements': elements, 'coords': coords, 'occ': occ, 'is_aniso': is_aniso,
         'u_iso': u_iso, 'u_aniso': u_aniso,
         'fobs': fobs, 'phi_fom': phi_fom, 'usage': usage, 'xmap': xmap,
+        'iobs': iobs, 'fobs_i': fobs_i, 'n_negative_i': int((i_obs < 0).sum()),
+        'hkls': hkls_i, 'fc': Fc,
     }
 
 
@@ -215,15 +233,43 @@ def _realspace_param_result(ref):
                                  occ=occ, is_aniso=ref['is_aniso'], prime=prime)
 
 
-def _reciprocal_param_result(ref, kind='amplitude'):
+def _reciprocal_param_result(ref, kind='amplitude', direct_intensities=False):
     from chimerax.clipper.diff.state import XrayTargetState
     from chimerax.clipper.diff._checks import check_param_gradients
     coords, u_iso, u_aniso, occ, prime = _evaluation_point(ref)
-    state = XrayTargetState(ref['elements'], param_names=_ALL_PARAMS,
-                            fobs=ref['fobs'], phi_fom=ref['phi_fom'],
-                            usage=ref['usage'], kind=kind)
+    if direct_intensities:
+        state = XrayTargetState(ref['elements'], param_names=_ALL_PARAMS,
+                                fobs=ref['fobs_i'], phi_fom=ref['phi_fom'],
+                                usage=ref['usage'], kind='intensity', iobs=ref['iobs'])
+    else:
+        state = XrayTargetState(ref['elements'], param_names=_ALL_PARAMS,
+                                fobs=ref['fobs'], phi_fom=ref['phi_fom'],
+                                usage=ref['usage'], kind=kind)
     return check_param_gradients(state, coords, u_iso=u_iso, u_aniso=u_aniso,
                                  occ=occ, is_aniso=ref['is_aniso'], prime=prime)
+
+
+def _iobs_matches_derived(ref):
+    '''Wiring check: iobs = (Fo^2, 2 Fo sigF) built from the reference fobs must give the
+    legacy Fo-derived intensity target's value (to float32 rounding of Io; both scale
+    fits then see the same, all-positive, intensities).'''
+    from chimerax.clipper import HKL_data_I_sigI
+    from chimerax.clipper.diff.state import XrayTargetState
+    coords, u_iso, u_aniso, occ, _ = _evaluation_point(ref)
+    fo = ref['fc'].astype(numpy.double)
+    iobs = HKL_data_I_sigI(ref['hklinfo'])
+    iobs.set_data(ref['hkls'], numpy.stack([fo ** 2, 2.0 * fo * 1.0], axis=1)
+                  .astype(numpy.float32))
+    common = dict(param_names=('X', 'Y', 'Z'), fobs=ref['fobs'], phi_fom=ref['phi_fom'],
+                  usage=ref['usage'], kind='intensity')
+    legacy = XrayTargetState(ref['elements'], **common)
+    direct = XrayTargetState(ref['elements'], iobs=iobs, **common)
+    args = (coords, u_iso, u_aniso, occ, ref['is_aniso'])
+    l0, g0 = legacy.value_and_gradient(*args, refresh_scale=True)
+    l1, g1 = direct.value_and_gradient(*args, refresh_scale=True)
+    rel_l = abs(l1 - l0) / abs(l0)
+    rel_g = numpy.abs(g1 - g0).max() / numpy.abs(g0).max()
+    return rel_l, rel_g
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +304,33 @@ def test_reciprocal_param_gradients():
         assert r['passed'], '%s reciprocal param FD check failed: %s' % (sg, bad)
 
 
+def test_reciprocal_intensity_param_gradients():
+    '''IntensityLS from Fo (Io = Fo^2): all 11 param gradients == FD, P1 and P2_1.'''
+    for sg, cp in _SPACEGROUPS:
+        ref = _build_reference_crystal(sg, cp)
+        r = _reciprocal_param_result(ref, kind='intensity')
+        bad = {k: v for k, v in r['per_param'].items() if not v['passed']}
+        assert r['passed'], '%s intensity param FD check failed: %s' % (sg, bad)
+
+
+def test_reciprocal_iobs_param_gradients():
+    '''IntensityLS fed measured I/sigma(I) directly, with negative I and a varying sigma:
+    all 11 param gradients == FD, P1 and P2_1.'''
+    for sg, cp in _SPACEGROUPS:
+        ref = _build_reference_crystal(sg, cp)
+        assert ref['n_negative_i'] > 0
+        r = _reciprocal_param_result(ref, direct_intensities=True)
+        bad = {k: v for k, v in r['per_param'].items() if not v['passed']}
+        assert r['passed'], '%s iobs param FD check failed: %s' % (sg, bad)
+
+
+def test_iobs_matches_derived_intensities():
+    '''iobs = (Fo^2, 2 Fo sigF) reproduces the Fo-derived intensity target.'''
+    for sg, cp in _SPACEGROUPS:
+        rel_l, rel_g = _iobs_matches_derived(_build_reference_crystal(sg, cp))
+        assert rel_l < 1e-4 and rel_g < 1e-3, '%s: rel L %.2e, rel grad %.2e' % (sg, rel_l, rel_g)
+
+
 # ---------------------------------------------------------------------------
 # Headless runner (ChimeraX --script). Prints a table + OVERALL PASS/FAIL.
 # ---------------------------------------------------------------------------
@@ -289,6 +362,21 @@ def main():
         r_rc = _reciprocal_param_result(ref)
         _print_param_table('XrayTargetState reciprocal param check', r_rc)
         all_ok = all_ok and r_rc['passed']
+
+        r_ri = _reciprocal_param_result(ref, kind='intensity')
+        _print_param_table('XrayTargetState reciprocal intensity (Io = Fo^2) check', r_ri)
+        all_ok = all_ok and r_ri['passed']
+
+        r_io = _reciprocal_param_result(ref, direct_intensities=True)
+        _print_param_table('XrayTargetState reciprocal iobs check (%d negative I)'
+                           % ref['n_negative_i'], r_io)
+        all_ok = all_ok and r_io['passed'] and ref['n_negative_i'] > 0
+
+        rel_l, rel_g = _iobs_matches_derived(ref)
+        ok = rel_l < 1e-4 and rel_g < 1e-3
+        print('  iobs == Fo-derived intensities: passed=%s rel_L=%.2e rel_grad=%.2e'
+              % (ok, rel_l, rel_g))
+        all_ok = all_ok and ok
         print('')
 
     print('OVERALL: %s' % ('PASS' if all_ok else 'FAIL'))

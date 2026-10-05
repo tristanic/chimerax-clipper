@@ -47,7 +47,10 @@ using namespace clipper::datatypes;
   intensities,
     T = ½ Σ_h w_h (Io − s·|Fc|²)²,   w_h = 1/σ²(Io),
   with s the intensity scale.  When only F/σF are available the intensity and
-  its error are taken as Io = |Fo|², σ(Io) ≈ 2|Fo|σ(F).
+  its error are taken as Io = |Fo|², σ(Io) ≈ 2|Fo|σ(F) — which leaves out every
+  reflection with I ≤ 0 (Fo = 0).  Supplying the measured intensities themselves
+  (the evaluator's optional iobs) keeps those reflections, negative I and all,
+  each with its own σ(I).
 */
 enum class XrayTargetKind {
     AmplitudeLS = 0,
@@ -141,6 +144,12 @@ public:
     //!                          when false it falls back to the single-threaded
     //!                          companion builder. Both share the gradient kernel's
     //!                          density model, so results are identical.
+    //! \param iobs  IntensityLS only, optional: the observed intensities and their
+    //!              σ(I), on the same HKL_info as fobs. When given, the target takes
+    //!              Io and σ(Io) from here (negative I included) instead of deriving
+    //!              them from fobs, and the isotropic part of the scale is fitted
+    //!              against the signed I. fobs is still required: it carries the
+    //!              anisotropic log-scale fit (I > 0 rows) and the reported Fo.
     XrayGradientEvaluator(
         const std::vector<String>&        elements,
         const HKL_data<F_sigF<ftype32>>&  fobs,
@@ -149,7 +158,8 @@ public:
         XrayTargetKind                    kind,
         const HKL_data<F_phi<ftype32>>&   f_bulk    = HKL_data<F_phi<ftype32>>(),
         int                               n_threads = 1,
-        bool                              threaded_density = true);
+        bool                              threaded_density = true,
+        const HKL_data<I_sigI<ftype32>>&  iobs      = HKL_data<I_sigI<ftype32>>());
 
     //! Real-space constructor (least-squares vs a fixed target density).
     //! \param target_map     Fixed target Xmap.
