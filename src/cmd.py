@@ -185,9 +185,14 @@ def spotlight(session, models=None, enable=True, radius=None):
 
 def associate_volumes(session, volumes, to_model=None):
     if to_model is None:
-        from chimerax.core.errors import UserError
         raise UserError('The toModel argument must be provided!')
+    if not volumes:
+        raise UserError('No volumes were specified for association.')
     from chimerax.clipper.symmetry import get_map_mgr
+    from .maps.nxmapset import validate_nxmap_source
+    # Validate the whole request before creating a system or consuming volumes.
+    for v in volumes:
+        validate_nxmap_source(v)
     mgr = get_map_mgr(to_model, create=True)
     for v in volumes:
         mgr.nxmapset.add_nxmap_handler_from_volume(v)
@@ -358,12 +363,12 @@ class VolumesArg(AtomSpecArg):
     @classmethod
     def parse(cls, text, session):
         '''
-        Returns only Volume objects (not subclasses)
+        Returns volumes, including subclasses, for association validation.
         '''
         from chimerax.map import Volume
         aspec, text, rest = super().parse(text, session)
         models = aspec.evaluate(session).models
-        volumes = [m for m in models if type(m) == Volume]
+        volumes = [m for m in models if isinstance(m, Volume)]
         return volumes, text, rest
 
 class XmapSetsArg(AtomSpecArg):

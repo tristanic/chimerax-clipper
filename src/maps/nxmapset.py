@@ -52,16 +52,52 @@ class NXmapSet(MapSetBase):
 
 
     def add_nxmap_handler_from_volume(self, volume,
-        is_difference_map=False,
+        is_difference_map=None,
         color=None, style=None, contour=None):
-        h = NXmapHandler(self, volume)
+        '''Associate a volume, sharing GridData when it is already managed.
+
+        Each mapset owns its display/mask state. The density and grid geometry
+        remain shared, so edits to either affect every handler using the grid.
+        '''
+        validate_nxmap_source(volume)
+        for existing in self.all_maps:
+            if existing.data is volume.data:
+                return existing
+        shared = isinstance(volume, NXmapHandler)
+        if is_difference_map is None:
+            is_difference_map = volume.is_difference_map if shared else False
+        if shared:
+            h = NXmapHandler(self, data=volume.data, name=volume.name,
+                is_difference_map=is_difference_map,
+                statistics=volume.mean_sd_rms(), show=False)
+            self._set_initial_region(h)
+            # Copy appearance, but let the new system choose its own region,
+            # transform and zone. copy_settings_from creates independent surfaces.
+            h.copy_settings_from(volume, copy_region=False, copy_xform=False,
+                copy_zone=False)
+            if color is not None:
+                h.set_parameters(surface_colors=color)
+            if contour is not None:
+                h.set_parameters(surface_levels=contour)
+            if style is not None:
+                h.set_display_style(style)
+        else:
+            h = NXmapHandler(self, volume,
+                is_difference_map=is_difference_map)
+            self._set_initial_region(h)
+            self.set_nxmap_display_style(h, is_difference_map=is_difference_map,
+                color=color, style=style, contour=contour)
+        return self._add_nxmap_handler(h)
+
+    def _set_initial_region(self, h):
         if self.spotlight_mode:
             corners = _find_box_corners(self.box_center, self.display_radius,
                 h.data.xyz_to_ijk_transform)
             h.expand_to_cover_coords(corners, 15)
+
+    def _add_nxmap_handler(self, h):
+        h.display = True
         self.add([h])
-        self.set_nxmap_display_style(h, is_difference_map=is_difference_map,
-            color=color, style=style, contour=contour)
         self.crystal_mgr.normalize_scene_positions()
         self._mgr.rezone_needed()
         return h
@@ -138,10 +174,10 @@ class NXmapHandler(MapHandlerBase):
     '''
     #SESSION_SAVE=False
     def __init__(self, mapset, volume=None, data=None, name=None,
-            is_difference_map=False):
+            is_difference_map=False, statistics=None, show=True):
         '''
-        Takes ownership of the data from an existing Volume object.
-        The input volume will be closed.
+        With volume=, replaces an ordinary Volume and closes it. With data=,
+        shares GridData without taking ownership of any existing handler.
         '''
         if volume is None and data is None:
             raise RuntimeError('Must provide either a Volume or a GridData '
@@ -150,6 +186,9 @@ class NXmapHandler(MapHandlerBase):
             raise RuntimeError('Cannot provide both volume and data')
         session = mapset.session
         if volume is not None:
+            validate_nxmap_source(volume)
+            if isinstance(volume, NXmapHandler):
+                raise ValueError('Use data= to share an existing NXmapHandler')
             data = volume.data
             name = volume.name
             if volume in session.models.list():
@@ -160,7 +199,8 @@ class NXmapHandler(MapHandlerBase):
             if name is None:
                 name = "Unnamed map"
         super().__init__(mapset, name, data,
-            is_difference_map=is_difference_map)
+            is_difference_map=is_difference_map, statistics=statistics,
+            show=show)
 
 
     def _box_changed_cb(self, name, params):
@@ -236,6 +276,19 @@ class NXmapHandler(MapHandlerBase):
         set_map_state(ov_data['volume state'], v)
         v._drawings_need_update()
         return v
+
+
+def validate_nxmap_source(volume):
+    '''Check before creating managers or closing/reparenting any source models.'''
+    from chimerax.map import Volume
+    from chimerax.core.errors import UserError
+    if type(volume) is not Volume and not isinstance(volume, NXmapHandler):
+        raise UserError('Only ordinary volumes and Clipper real-space maps can '
+            'be associated. Crystallographic maps belong to their own system.')
+    if not volume.scene_position.is_identity():
+        raise UserError('The map must be in an absolute reference frame. Move '
+            'the atomic model to fit the map, then reset the map transform '
+            'before associating it.')
 
 _corners = numpy.array([(x,y,z) for x in (-1,1) for y in (-1,1) for z in (-1,1)])
 def _find_box_corners(center, radius, xyz_to_ijk_transform):
