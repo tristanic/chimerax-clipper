@@ -58,7 +58,10 @@ class NXmapSet(MapSetBase):
         if self.spotlight_mode:
             corners = _find_box_corners(self.box_center, self.display_radius,
                 h.data.xyz_to_ijk_transform)
-            h.expand_to_cover_coords(corners, 15)
+            # These corners are already grid indices, not XYZ coordinates.
+            # Use the same region as subsequent spotlight updates.
+            h.new_region(ijk_min=corners[0], ijk_max=corners[1],
+                ijk_step=[1,1,1], adjust_step=True)
         self.add([h])
         self.set_nxmap_display_style(h, is_difference_map=is_difference_map,
             color=color, style=style, contour=contour)
