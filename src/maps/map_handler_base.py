@@ -27,7 +27,8 @@ class MapHandlerBase(Volume):
     Base class for all Clipper map objects for use in ChimeraX.
     '''
     pickable=False
-    def __init__(self, mapset, name, data, is_difference_map=False):
+    def __init__(self, mapset, name, data, is_difference_map=False,
+            statistics=None, show=True):
         session = mapset.session
         super().__init__(session, data)
         self.name = name
@@ -36,7 +37,12 @@ class MapHandlerBase(Volume):
         self._is_difference_map = is_difference_map
         #self.initialize_thresholds()
 
-        self.show()
+        if show:
+            self.show()
+        else:
+            # Volume.show eagerly reads displayed_matrices(), initially the full
+            # grid. Shared handlers must set their region/appearance first.
+            self.display = False
         mh = self._mgr_handlers = []
         mh.append(
             (ms,
@@ -48,7 +54,10 @@ class MapHandlerBase(Volume):
         )
 
         # Cache the mean, sigma and RMS, since it's used all the time in contouring
-        self._mean_sd_rms = self._full_mean_sd_rms()
+        # Reusing a grid need not read it again or allocate the temporary arrays
+        # used to calculate full-map statistics.
+        self._mean_sd_rms = (self._full_mean_sd_rms() if statistics is None
+            else statistics)
         self.data.add_change_callback(self._update_mean_sd_rms_cb)
 
     def _full_mean_sd_rms(self):
@@ -61,6 +70,15 @@ class MapHandlerBase(Volume):
     def _update_mean_sd_rms_cb(self, reason):
         if reason == 'values changed':
             self._mean_sd_rms = self._full_mean_sd_rms()
+
+    def replace_data(self, data):
+        old_data = self.data
+        if old_data is data:
+            return
+        super().replace_data(data)
+        old_data.remove_change_callback(self._update_mean_sd_rms_cb)
+        data.add_change_callback(self._update_mean_sd_rms_cb)
+        self._mean_sd_rms = self._full_mean_sd_rms()
 
     @property
     def mapset(self):
@@ -102,7 +120,17 @@ class MapHandlerBase(Volume):
         pass
 
     def delete(self):
-        for (mgr, h) in self._mgr_handlers:
+        if self.deleted:
+            return
+        # Model.delete can close a registered model and re-enter here after
+        # Volume.delete has already set data=None, before deleted becomes True.
+        if self.data is not None:
+            try:
+                self.data.remove_change_callback(self._update_mean_sd_rms_cb)
+            except ValueError:
+                pass  # Already removed during an earlier cleanup step.
+        handlers, self._mgr_handlers = self._mgr_handlers, []
+        for (mgr, h) in handlers:
             try:
                 mgr.triggers.remove_handler(h)
             except:
