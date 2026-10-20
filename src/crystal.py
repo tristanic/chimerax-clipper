@@ -151,24 +151,25 @@ def crystal_symmetry_from_cif_file(path):
     that small-molecule crystals occupy.
     '''
     from chimerax.mmcif import get_cif_tables
-    cell_t, symm_t, sg_t, sgs_t, diffrn_t = get_cif_tables(
-        path, ['cell', 'symmetry', 'space_group', 'space_group_symop', 'diffrn'])
-    cell = _cell_from_cif_table(cell_t)
+    from .symmetry import _cif_items, _bragg_resolution, _CELL_ITEMS, _RESOLUTION_ITEMS
+    symm_t, sg_t, sgs_t = (get_cif_tables(
+        path, ['symmetry', 'space_group', 'space_group_symop']) + [None] * 3)[:3]
+    items = _cif_items(path, _CELL_ITEMS + _RESOLUTION_ITEMS)
+    cell = _cell_from_cif_items(items, _CELL_ITEMS)
     spacegroup = _spacegroup_from_cif_tables(symm_t, sg_t, sgs_t)
-    res = _resolution_from_cif(diffrn_t, cell_t)
+    res = _bragg_resolution(items)
+    if res is None:
+        res = 0.84  # sensible small-molecule default when collection limits are absent
     from .clipper_python import Resolution, Grid_sampling
     resolution = Resolution(res)
     grid_sampling = Grid_sampling(spacegroup, cell, resolution)
     return cell, spacegroup, grid_sampling
 
 
-def _cell_from_cif_table(cell_t):
+def _cell_from_cif_items(items, names):
     from .clipper_python import Cell_descr, Cell
-    names = ('length_a', 'length_b', 'length_c',
-             'angle_alpha', 'angle_beta', 'angle_gamma')
     try:
-        row = cell_t.fields(names)[0]
-        params = [float(_strip_su(v)) for v in row]
+        params = [float(_strip_su(items[n])) for n in names]
     except Exception:
         raise TypeError('Could not read unit cell from CIF!')
     return Cell(Cell_descr(*params))
@@ -203,29 +204,6 @@ def _spacegroup_from_cif_tables(symm_t, sg_t, sgs_t):
                 if sym not in ('', '?', '.'):
                     return Spacegroup(Spgr_descr(sym))
     raise TypeError('Could not determine space group from CIF!')
-
-
-def _resolution_from_cif(diffrn_t, cell_t):
-    # High-resolution limit d_min = lambda / (2 sin(theta_max)); theta in degrees.
-    from math import sin, radians
-    wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
-    theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
-    if theta is None:
-        theta = _first_cif_field(cell_t, 'measurement_theta_max')
-    try:
-        if wl is not None and theta is not None:
-            return float(_strip_su(wl)) / (2.0 * sin(radians(float(_strip_su(theta)))))
-    except (ValueError, ZeroDivisionError):
-        pass
-    return 0.84  # sensible small-molecule default when collection limits are absent
-
-
-def _first_cif_field(table, field):
-    if table is not None and table.has_field(field):
-        v = table.fields((field,))[0][0].strip()
-        if v not in ('', '?', '.'):
-            return v
-    return None
 
 
 def symmetry_from_model_metadata_pdb(model):

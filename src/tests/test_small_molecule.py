@@ -10,6 +10,9 @@
 #   cod_2010010  Pbca (#61), model only (no .hkl) - the common COD case.
 #   cod_2021365  P-1 (#2), structure factors, SHELXL EXTI x = 0.022, and the raw HKLF 4
 #                data embedded as _shelx_hkl_file - the extinction convention check.
+#   cod_2211522  P212121 (#19), model only; its wavelength sits in a late loop_ after
+#                the _diffrn_* header run - the split-category resolution read.
+#   cod_2237730, cod_2230861, cod_2236055  model only, contiguous _diffrn_* - controls.
 #
 # Run inside ChimeraX, e.g.:
 #   run_chimerax.bat --nogui --exit --script src/tests/test_small_molecule.py
@@ -768,6 +771,128 @@ def test_sf_target_turnkey_matches_cached(session):
     finally:
         from chimerax.core.commands import run
         run(session, 'close')
+
+
+# Core-CIF headers whose categories are split into runs, as unsorted (Acta E, raw SHELXL)
+# files write them. ChimeraX's get_cif_tables keeps only the last run of a category, so
+# each layout once lost items (see symmetry._cif_items).
+_CELL = ('_cell_length_a 10.0', '_cell_length_b 11.0', '_cell_length_c 12.0',
+         '_cell_angle_alpha 90', '_cell_angle_beta 90', '_cell_angle_gamma 90')
+_CELL_MEAS = ('_cell_measurement_temperature 293', '_cell_measurement_theta_max 17.0')
+_DIFFRN_T = ('_diffrn_ambient_temperature 150',)
+_DIFFRN_WL = (r'_diffrn_radiation_type MoK\a', '_diffrn_radiation_wavelength 0.71073')
+_DIFFRN_REFLNS = ('_diffrn_reflns_number 5000', '_diffrn_reflns_theta_max 26.0')
+_EXPTL = ('_exptl_crystal_colour colourless',)
+_REFINE_A = ('_refine_ls_structure_factor_coef Fsqd', '_refine_ls_weighting_scheme calc',
+             r"_refine_ls_weighting_details 'calc w=1/[\s^2^(Fo^2^)+(0.0398P)^2^+0.166P]"
+             r" where P=(Fo^2^+2Fc^2^)/3'")
+_SOLUTION = ('_atom_sites_solution_primary direct',)
+_REFINE_B = ('_refine_ls_hydrogen_treatment constr', '_refine_ls_extinction_method none',
+             '_refine_ls_number_reflns 1085', '_refine_ls_number_parameters 100',
+             '_refine_ls_number_restraints 0', '_refine_ls_R_factor_all 0.0617',
+             '_refine_ls_R_factor_gt 0.0455', '_refine_ls_wR_factor_ref 0.1128',
+             '_refine_ls_goodness_of_fit_ref 1.133')
+_SPLIT_LAYOUTS = {
+    'contiguous': (_CELL + _CELL_MEAS + _DIFFRN_T + _DIFFRN_WL + _DIFFRN_REFLNS + _EXPTL
+                   + _REFINE_A + _REFINE_B),
+    'wavelength_cell_theta': (_DIFFRN_WL + _CELL + _CELL_MEAS + _EXPTL + _DIFFRN_T
+                              + _DIFFRN_REFLNS + _REFINE_A + _REFINE_B),
+    'reflns_run_last': (_DIFFRN_T + _DIFFRN_WL + _CELL + _CELL_MEAS + _DIFFRN_REFLNS
+                        + _REFINE_A + _REFINE_B),
+    'shelxl_refine_split': (_CELL + _CELL_MEAS + _DIFFRN_T + _DIFFRN_WL + _DIFFRN_REFLNS
+                            + _REFINE_A + _SOLUTION + _REFINE_B),
+    'cell_split': (_CELL + _DIFFRN_T + _DIFFRN_WL + _DIFFRN_REFLNS + _CELL_MEAS
+                   + _REFINE_A + _REFINE_B),
+}
+
+
+def _split_cif(directory, name, header):
+    lines = ['data_' + name] + list(header) + [
+        'loop_', '_symmetry_equiv_pos_as_xyz', "'x, y, z'",
+        'loop_', '_atom_site_label', '_atom_site_type_symbol', '_atom_site_fract_x',
+        '_atom_site_fract_y', '_atom_site_fract_z', '_atom_site_U_iso_or_equiv',
+        'C1 C 0.1000 0.1000 0.1000 0.02', 'O1 O 0.2229 0.1000 0.1000 0.02']
+    path = os.path.join(directory, name + '.cif')
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+def _split_hkl(directory, name):
+    # Named apart from the .cif so the payload does not pick it up as the data.
+    lines = ['data_' + name + '_refl', '_shelx_refln_list_code 4',
+             '_shelx_F_squared_multiplier 1.0',
+             'loop_', '_refln_index_h', '_refln_index_k', '_refln_index_l',
+             '_refln_F_squared_calc', '_refln_F_squared_meas', '_refln_F_squared_sigma',
+             '1 0 0 10.0 10.5 0.5', '0 1 0 20.0 19.5 0.6', '0 0 1 30.0 30.5 0.7']
+    path = os.path.join(directory, name + '_refl.hkl')
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return path
+
+
+def test_split_category_metadata(session):
+    '''Every item comes back whichever run of its category it sits in: the payload's
+    resolution, temperature and refinement record, the cell, and the SF-target record.'''
+    import tempfile
+    from math import sin, radians
+    from chimerax.clipper.io.small_molecule import extract_cod_structure
+    from chimerax.clipper.io.sf_target import read_small_molecule_refinement
+    d_min = 0.71073 / (2 * sin(radians(26.0)))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        for name, header in _SPLIT_LAYOUTS.items():
+            cif = _split_cif(tmp, name, header)
+            p = extract_cod_structure(session, cif)
+            assert p['resolution'] is not None and abs(p['resolution'] - d_min) < 1e-9, \
+                (name, p['resolution'])
+            assert p['collection_temperature'] == 150, (name, p['collection_temperature'])
+            assert p['published_r_factor'] == 0.0617, (name, p['published_r_factor'])
+            assert abs(p['data_parameter_ratio'] - 10.85) < 1e-9, name
+            assert p['n_restraints'] == 0 and p['hydrogen_treatment'] == 'constr', name
+            assert [round(x, 6) for x in p['cell'][:3]] == [10.0, 11.0, 12.0], name
+            rec = read_small_molecule_refinement(cif, _split_hkl(tmp, name))
+            w = rec['weighting']
+            assert w['form'] == 'shelxl' and (w['a'], w['b']) == (0.0398, 0.166), (name, w)
+            assert rec['extinction']['method'] == 'none', (name, rec['extinction'])
+            assert rec['wavelength'] == 0.71073, (name, rec['wavelength'])
+            assert rec['structure_factor_coef'] == 'Fsqd', name
+            assert (rec['goof'], rec['wr2'], rec['n_parameters']) == (1.133, 0.1128, 100), \
+                (name, rec['goof'], rec['wr2'], rec['n_parameters'])
+            assert rec['shelx_refln_list_code'] == 4, name
+
+
+def test_resolution_ignores_cell_theta(session):
+    '''_cell_measurement_theta_max is the theta range of the cell-refinement reflections,
+    not the limit of the data, so with no _diffrn_reflns_theta_max the resolution is
+    unknown. Also: a lower-case _refine_ls_r_factor_all still reads, and nested
+    categories are refused.'''
+    import tempfile
+    from chimerax.clipper.io.small_molecule import extract_cod_structure
+    header = (_CELL + _CELL_MEAS + _DIFFRN_T + _DIFFRN_WL + ('_diffrn_reflns_number 5000',)
+              + _REFINE_A + tuple(l.replace('_R_factor_', '_r_factor_') for l in _REFINE_B))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        cif = _split_cif(tmp, 'cell_theta_only', header)
+        p = extract_cod_structure(session, cif)
+        assert p['resolution'] is None, p['resolution']
+        assert p['published_r_factor'] == 0.0617, p['published_r_factor']
+        from chimerax.clipper.symmetry import _cif_items
+        try:
+            _cif_items(cif, ('refine_ls_number_reflns', 'refine_ls_number_x_y'))
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('nested CIF categories must be refused')
+
+
+def test_cod_resolution_metadata(session):
+    '''COD 2211522 (garnet cod's test case): the old read lost _diffrn_reflns_theta_max
+    to the late wavelength loop_ and fell back to the cell theta, 1.2155 A. The three
+    controls read correctly before and after.'''
+    for name, d in (('cod_2211522.cif', 0.8106), ('cod_2237730.cif', 0.8309),
+                    ('cod_2230861.cif', 0.7699), ('cod_2236055.cif', 0.7008)):
+        p = _extract(session, name)
+        assert p['resolution'] is not None and abs(p['resolution'] - d) < 5e-4, \
+            (name, p['resolution'])
 
 
 def run_all(session):

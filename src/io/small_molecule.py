@@ -32,7 +32,8 @@ data/parameter ratio is still available from the refinement record) set to None;
 the absence is reported, not treated as an error.
 '''
 
-from ..symmetry import crystal_symmetry_from_cif_file, _strip_su, _first_cif_field
+from ..symmetry import (crystal_symmetry_from_cif_file, _strip_su, _cif_items,
+                        _bragg_resolution, _RESOLUTION_ITEMS)
 
 # Nuclear (neutron) X-H bond lengths in Angstroms, keyed by the bonded heavy-atom
 # element. Small-molecule X-ray refinement places H at the electron-density
@@ -98,10 +99,17 @@ def extract_cod_structure(session, path, file_name=None, keep_model=False,
     return payload
 
 
+_PAYLOAD_CIF_ITEMS = _RESOLUTION_ITEMS + (
+    'reflns_d_resolution_high',
+    'diffrn_ambient_temperature', 'cell_measurement_temperature',
+    'refine_ls_R_factor_all', 'refine_ls_R_factor_obs', 'refine_ls_R_factor_gt',
+    'refine_ls_number_reflns', 'refine_ls_number_parameters',
+    'refine_ls_number_restraints', 'refine_ls_hydrogen_treatment',
+)
+
+
 def _build_payload(session, model, path, radiation='auto'):
-    from chimerax.mmcif import get_cif_tables
-    refine_t, diffrn_t, reflns_t, cell_t = get_cif_tables(
-        path, ['refine', 'diffrn', 'reflns', 'cell'])
+    items = _cif_items(path, _PAYLOAD_CIF_ITEMS)
 
     radiation = _resolve_radiation(radiation, path)
     cell, spacegroup, grid = crystal_symmetry_from_cif_file(path)
@@ -124,12 +132,12 @@ def _build_payload(session, model, path, radiation='auto'):
         'connectivity': _connectivity(model),
         'occupancies': occupancies,
         'disorder': _disorder_flags(atoms),
-        'resolution': _resolution(diffrn_t, cell_t, reflns_t),
-        'collection_temperature': _temperature(diffrn_t, cell_t),
-        'data_parameter_ratio': _data_parameter_ratio(refine_t),
-        'published_r_factor': _published_r(refine_t),
-        'n_restraints': _int_field(refine_t, 'ls_number_restraints'),
-        'hydrogen_treatment': _first_cif_field(refine_t, 'ls_hydrogen_treatment'),
+        'resolution': _resolution(items),
+        'collection_temperature': _temperature(items),
+        'data_parameter_ratio': _data_parameter_ratio(items),
+        'published_r_factor': _published_r(items),
+        'n_restraints': _int_item(items, 'refine_ls_number_restraints'),
+        'hydrogen_treatment': items['refine_ls_hydrogen_treatment'],
         'hydrogens': _hydrogen_positions(model, coords),
         # Radiation used for the recomputed R-factor: 'xray' or 'electron' (micro-ED).
         'radiation': radiation,
@@ -564,10 +572,10 @@ def _hydrogen_positions(model, coords):
 
 # ---- crystallographic quality metrics (read from the refinement record) ----
 
-def _published_r(refine_t):
+def _published_r(items):
     # Prefer the all-data R; fall back to observed/gt subsets.
-    for field in ('ls_R_factor_all', 'ls_R_factor_obs', 'ls_R_factor_gt'):
-        v = _first_cif_field(refine_t, field)
+    for item in ('refine_ls_R_factor_all', 'refine_ls_R_factor_obs', 'refine_ls_R_factor_gt'):
+        v = items[item]
         if v is not None:
             try:
                 return float(_strip_su(v))
@@ -576,18 +584,18 @@ def _published_r(refine_t):
     return None
 
 
-def _data_parameter_ratio(refine_t):
-    nrefl = _int_field(refine_t, 'ls_number_reflns')
-    nparm = _int_field(refine_t, 'ls_number_parameters')
+def _data_parameter_ratio(items):
+    nrefl = _int_item(items, 'refine_ls_number_reflns')
+    nparm = _int_item(items, 'refine_ls_number_parameters')
     if nrefl and nparm:
         return nrefl / nparm
     return None
 
 
-def _temperature(diffrn_t, cell_t):
-    v = _first_cif_field(diffrn_t, 'ambient_temperature')
+def _temperature(items):
+    v = items['diffrn_ambient_temperature']
     if v is None:
-        v = _first_cif_field(cell_t, 'measurement_temperature')
+        v = items['cell_measurement_temperature']
     if v is not None:
         try:
             return float(_strip_su(v))
@@ -596,13 +604,12 @@ def _temperature(diffrn_t, cell_t):
     return None
 
 
-def _resolution(diffrn_t, cell_t, reflns_t):
+def _resolution(items):
     # Reported resolution for the payload metadata. Only physically meaningful
     # (positive) values are returned; a non-positive wavelength/theta (COD's
     # '-1'/'0' sentinels) or a garbage d_min is reported as None ("unknown")
     # rather than a negative number poisoning downstream consumers.
-    from math import sin, radians
-    v = _first_cif_field(reflns_t, 'd_resolution_high')
+    v = items['reflns_d_resolution_high']
     if v is not None:
         try:
             d = float(_strip_su(v))
@@ -610,23 +617,11 @@ def _resolution(diffrn_t, cell_t, reflns_t):
                 return d
         except ValueError:
             pass
-    wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
-    theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
-    if theta is None:
-        theta = _first_cif_field(cell_t, 'measurement_theta_max')
-    try:
-        if wl is not None and theta is not None:
-            wl = float(_strip_su(wl))
-            sin_theta = sin(radians(float(_strip_su(theta))))
-            if wl > 0 and sin_theta > 0:
-                return wl / (2.0 * sin_theta)
-    except (ValueError, ZeroDivisionError):
-        pass
-    return None
+    return _bragg_resolution(items)
 
 
-def _int_field(table, field):
-    v = _first_cif_field(table, field)
+def _int_item(items, item):
+    v = items[item]
     if v is not None:
         try:
             return int(_strip_su(v))
@@ -677,13 +672,8 @@ def _radiation_from_cif(path, default='xray'):
     '''Detect the experiment radiation from the CIF: 'electron' when
     _diffrn_radiation_probe (or _type) names electrons, else the default. Used to
     auto-select electron scattering factors for micro-ED / 3D-ED data.'''
-    from chimerax.mmcif import get_cif_tables
-    # get_cif_tables returns [] (not [empty_table]) when the file contains NONE of the
-    # requested categories - which happens for entries with no _diffrn_radiation_* data.
-    tables = get_cif_tables(path, ['diffrn_radiation'])
-    dr = tables[0] if tables else None
-    for field in ('probe', 'type'):
-        v = _first_cif_field(dr, field)
+    items = _cif_items(path, ('diffrn_radiation_probe', 'diffrn_radiation_type'))
+    for v in items.values():
         if v and 'electron' in v.lower():
             return 'electron'
     return default

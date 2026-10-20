@@ -262,6 +262,75 @@ def _first_cif_field(table, field):
     return None
 
 
+# ChimeraX's get_cif_tables gives each core-CIF tag to the longest requested category it
+# starts with, but keeps only the LAST contiguous run of a category's tags (a later run
+# replaces an earlier one), and once every requested category has been seen it skips
+# ahead to the next loop_. So a request for 'diffrn' silently loses the _diffrn_* header
+# items whenever a later run of the category follows: a loop_ of _diffrn_standard_refln_*
+# or of _diffrn_radiation_wavelength (COD 7703621, 2211522), or the rest of a header split
+# by the _cell_* items, as unsorted CIFs write it. _cif_items requests each item's own
+# parent category instead, whose runs are too short to be split. A category nested inside
+# another would cut the outer one's runs, so none may be; the sentinel is never seen, so
+# the reader never skips ahead.
+_CIF_NEVER_PRESENT = 'clipper_never_present'
+
+
+def _cif_items(path, items):
+    '''Values of single-valued core-CIF items, named in full without the leading
+    underscore (e.g. 'diffrn_radiation_wavelength'), as {item: value}. None where the
+    item is absent, '?' or '.'.'''
+    from chimerax.mmcif import get_cif_tables
+    parents = {}
+    for item in items:
+        category, field = item.rsplit('_', 1)
+        parents.setdefault(category, []).append((item, field))
+    folded = [c.lower() for c in parents]
+    for a in folded:
+        for b in folded:
+            if b.startswith(a + '_'):
+                raise ValueError('CIF category %r is nested in %r' % (b, a))
+    # A table is returned under the file's own spelling of its category, so a mixed-case
+    # category (refine_ls_R_factor) is also requested in lower case.
+    names = []
+    for category in parents:
+        names.append(category)
+        if category.lower() != category:
+            names.append(category.lower())
+    tables = dict(zip(names, get_cif_tables(path, names + [_CIF_NEVER_PRESENT])))
+    values = {}
+    for category, fields in parents.items():
+        for item, field in fields:
+            v = _first_cif_field(tables.get(category), field)
+            if v is None:
+                v = _first_cif_field(tables.get(category.lower()), field)
+            values[item] = v
+    return values
+
+
+_CELL_ITEMS = ('cell_length_a', 'cell_length_b', 'cell_length_c',
+               'cell_angle_alpha', 'cell_angle_beta', 'cell_angle_gamma')
+_RESOLUTION_ITEMS = ('diffrn_radiation_wavelength', 'diffrn_reflns_theta_max')
+
+
+def _bragg_resolution(items):
+    '''d_min = lambda / (2 sin(theta_max)) of the data from the _RESOLUTION_ITEMS of
+    _cif_items, or None unless both are present and positive. Deliberately no fallback
+    to _cell_measurement_theta_max: that is the theta range of the reflections used to
+    refine the cell, not the limit of the data.'''
+    from math import sin, radians
+    wl = items.get('diffrn_radiation_wavelength')
+    theta = items.get('diffrn_reflns_theta_max')
+    try:
+        if wl is not None and theta is not None:
+            wl = float(_strip_su(wl))
+            sin_theta = sin(radians(float(_strip_su(theta))))
+            if wl > 0 and sin_theta > 0:
+                return wl / (2.0 * sin_theta)
+    except (ValueError, ZeroDivisionError):
+        pass
+    return None
+
+
 def crystal_symmetry_from_cif_file(path):
     '''Build Clipper Cell, Spacegroup and Grid_sampling from a (small-molecule /
     core) CIF, with the space group built from its explicit symmetry operators.'''
@@ -273,14 +342,12 @@ def _crystal_symmetry_from_cif(path):
     from chimerax.mmcif import get_cif_tables
     from .clipper_python import (Cell_descr, Cell, Spgr_descr, Spacegroup,
         Resolution, Grid_sampling)
-    cell_t, symm_t, sg_t, sgs_t, diffrn_t = get_cif_tables(
-        path, ['cell', 'symmetry', 'space_group', 'space_group_symop', 'diffrn'])
+    symm_t, sg_t, sgs_t = (get_cif_tables(
+        path, ['symmetry', 'space_group', 'space_group_symop']) + [None] * 3)[:3]
+    items = _cif_items(path, _CELL_ITEMS + _RESOLUTION_ITEMS)
 
-    names = ('length_a', 'length_b', 'length_c',
-             'angle_alpha', 'angle_beta', 'angle_gamma')
     try:
-        row = cell_t.fields(names)[0]
-        params = [float(_strip_su(v)) for v in row]
+        params = [float(_strip_su(items[i])) for i in _CELL_ITEMS]
     except Exception:
         raise TypeError('Could not read unit cell from CIF!')
     cell = Cell(Cell_descr(*params))
@@ -316,7 +383,7 @@ def _crystal_symmetry_from_cif(path):
     # _resolution_from_cif).
     res = _resolution_from_reflections(path, cell)
     if res is None:
-        res = _resolution_from_cif(diffrn_t, cell_t)
+        res = _resolution_from_cif(items)
     res = min(max(res, 0.3), 5.0)
     grid = Grid_sampling(spacegroup, cell, Resolution(res))
     while grid.nu * grid.nv * grid.nw > 64000000 and res < 5.0:
@@ -325,7 +392,7 @@ def _crystal_symmetry_from_cif(path):
     return cell, spacegroup, grid, res
 
 
-def _resolution_from_cif(diffrn_t, cell_t):
+def _resolution_from_cif(items):
     # High-resolution limit d_min = lambda / (2 sin(theta_max)); theta in degrees.
     #
     # This resolution only sizes the Grid_sampling for the real-space map and the
@@ -339,22 +406,10 @@ def _resolution_from_cif(diffrn_t, cell_t):
     # absurd ~0.016 A d_min -> a multi-billion-point grid -> OUT-OF-MEMORY crash.
     # Reject non-positive inputs to the default and clamp to a physical small-molecule
     # range so neither can happen.
-    from math import sin, radians, isfinite
+    from math import isfinite
     default = 0.84  # sensible small-molecule default when collection limits are absent
-    wl = _first_cif_field(diffrn_t, 'radiation_wavelength')
-    theta = _first_cif_field(diffrn_t, 'reflns_theta_max')
-    if theta is None:
-        theta = _first_cif_field(cell_t, 'measurement_theta_max')
-    res = default
-    try:
-        if wl is not None and theta is not None:
-            wl = float(_strip_su(wl))
-            sin_theta = sin(radians(float(_strip_su(theta))))
-            if wl > 0 and sin_theta > 0:
-                res = wl / (2.0 * sin_theta)
-    except (ValueError, ZeroDivisionError):
-        res = default
-    if not isfinite(res) or res <= 0:
+    res = _bragg_resolution(items)
+    if res is None or not isfinite(res):
         res = default
     return min(max(res, 0.5), 5.0)
 

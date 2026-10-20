@@ -268,8 +268,7 @@ def read_small_molecule_refinement(cif_path, hkl_path=None):
     '''
     import numpy
     from chimerax.core.errors import UserError
-    from chimerax.mmcif import get_cif_tables
-    from ..symmetry import _first_cif_field
+    from ..symmetry import _cif_items
     from .small_molecule import _find_reflection_source, _reflection_columns
 
     sf_path = hkl_path or cif_path
@@ -279,34 +278,34 @@ def read_small_molecule_refinement(cif_path, hkl_path=None):
     hkl, _, _, fc_sq = _reflection_columns(refln, extra=('F_squared_calc',))
 
     multiplier = 1.0
-    shelx = get_cif_tables(refl_file, ['shelx'])
-    shelx = shelx[0] if shelx else None
-    v = cif_number(_first_cif_field(shelx, 'F_squared_multiplier'))
+    shelx = _cif_items(refl_file, ('shelx_F_squared_multiplier', 'shelx_refln_list_code'))
+    v = cif_number(shelx['shelx_F_squared_multiplier'])
     if v is not None and v > 0:
         multiplier = v
-    list_code = cif_number(_first_cif_field(shelx, 'refln_list_code'))
+    list_code = cif_number(shelx['shelx_refln_list_code'])
 
-    ref, dif, drad = (get_cif_tables(cif_path, ['refine', 'diffrn', 'diffrn_radiation'])
-                      + [None] * 3)[:3]
-    text = _first_cif_field(ref, 'ls_weighting_details')
+    ref = _cif_items(cif_path, (
+        'refine_ls_weighting_details', 'refine_ls_weighting_scheme',
+        'refine_ls_extinction_method', 'refine_ls_extinction_expression',
+        'refine_ls_extinction_coef', 'refine_ls_structure_factor_coef',
+        'refine_ls_goodness_of_fit_ref', 'refine_ls_wR_factor_ref',
+        'refine_ls_number_parameters', 'diffrn_radiation_wavelength'))
+    text = ref['refine_ls_weighting_details']
     if text is None:
-        scheme = _first_cif_field(ref, 'ls_weighting_scheme')
+        scheme = ref['refine_ls_weighting_scheme']
         if scheme is not None and '1/' in scheme:     # old CIFs: the formula is here
             text = scheme
     weighting = parse_shelxl_weighting(text)
     weighting['text'] = text
-    method = _first_cif_field(ref, 'ls_extinction_method')
-    expression = _first_cif_field(ref, 'ls_extinction_expression')
-    extinction = parse_extinction(method, expression,
-                                  _first_cif_field(ref, 'ls_extinction_coef'))
+    method = ref['refine_ls_extinction_method']
+    expression = ref['refine_ls_extinction_expression']
+    extinction = parse_extinction(method, expression, ref['refine_ls_extinction_coef'])
     extinction['method'] = method
     extinction['expression'] = expression
-    wavelength = cif_number(_first_cif_field(drad, 'wavelength'))
-    if wavelength is None:
-        wavelength = cif_number(_first_cif_field(dif, 'radiation_wavelength'))
+    wavelength = cif_number(ref['diffrn_radiation_wavelength'])
     if wavelength is not None and wavelength <= 0:
         wavelength = None
-    n_par = cif_number(_first_cif_field(ref, 'ls_number_parameters'))
+    n_par = cif_number(ref['refine_ls_number_parameters'])
     return {
         'hkl': hkl,
         'fc_sq_dep': fc_sq,
@@ -315,9 +314,9 @@ def read_small_molecule_refinement(cif_path, hkl_path=None):
         'wavelength': wavelength,
         'f_squared_multiplier': multiplier,
         'shelx_refln_list_code': None if list_code is None else int(list_code),
-        'structure_factor_coef': _first_cif_field(ref, 'ls_structure_factor_coef'),
-        'goof': cif_number(_first_cif_field(ref, 'ls_goodness_of_fit_ref')),
-        'wr2': cif_number(_first_cif_field(ref, 'ls_wR_factor_ref')),
+        'structure_factor_coef': ref['refine_ls_structure_factor_coef'],
+        'goof': cif_number(ref['refine_ls_goodness_of_fit_ref']),
+        'wr2': cif_number(ref['refine_ls_wR_factor_ref']),
         'n_parameters': None if n_par is None else int(n_par),
     }
 
